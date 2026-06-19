@@ -1,6 +1,7 @@
 // Starter unit tests for pure helper functions in ../../app.js
 //
-// Run from the project root with:  node --test tests/js
+// Run from the project root with:  node --test $(find tests/js -name '*.test.mjs')
+// (or simply `./run-tests.sh`).
 // Uses Node's built-in test runner (node:test) + assertions (node:assert) — no
 // third-party test framework, per the project's zero-new-dependency philosophy.
 //

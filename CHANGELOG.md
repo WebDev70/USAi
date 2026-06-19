@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+### Fixed — CI JS test discovery
+
+- **GitHub Actions "JS unit tests" job failed** with `Could not find
+  'tests/js/**/*.test.mjs'`. The `**` glob is a zsh feature; CI's non-interactive
+  bash has globstar off, so the literal pattern reached Node. Passing the directory
+  (`node --test tests/js`) needs Node ≥ 21, but CI runs Node 20 — so the portable
+  fix enumerates the files with `find`: `node --test $(find tests/js -name
+  '*.test.mjs')`. Applied consistently in `.github/workflows/tests.yml`,
+  `run-tests.sh`, `README.md`, `AGENTS.md`, and
+  `docs/testing-and-agents-strategy.md`.
+
 ### Changed — Accessibility & modern-UI design pass (UI/UX agent, USWDS-guided)
 
 First use of the new Front-End Design (UI/UX) agent (backlog #21), informed by

@@ -23,7 +23,11 @@ jobs:
       - name: Syntax check (app.js)
         run: node --check app.js
       - name: Run JS unit tests
-        run: node --test "tests/js/**/*.test.mjs"
+        # Use `find` to enumerate the test files explicitly. This is portable
+        # across Node versions (directory args to `node --test` need Node >= 21;
+        # CI runs Node 20) and avoids relying on bash globstar (`**`), which is
+        # off by default in non-interactive shells.
+        run: node --test $(find tests/js -name '*.test.mjs')
 
   python:
     name: Python unit tests (unittest)

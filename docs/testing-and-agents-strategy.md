@@ -80,7 +80,7 @@ tests/
 # Syntax gates
 node --check app.js && python3 -m py_compile server.py
 # Unit tests
-node --test tests/js
+node --test $(find tests/js -name '*.test.mjs')
 .venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'
 ```
 

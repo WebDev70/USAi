@@ -17,7 +17,10 @@ node --check app.js
 echo "  ✓ syntax OK"
 
 echo "── JS unit tests (node --test) ────────────────────────────"
-node --test "tests/js/**/*.test.mjs"
+# Enumerate test files with `find` and pass them explicitly. This is portable:
+# directory args to `node --test` require Node >= 21, and a quoted `**` glob
+# isn't expanded by bash (globstar off). `find` works everywhere.
+node --test $(find tests/js -name '*.test.mjs')
 
 echo "── Python unit tests (unittest) ───────────────────────────"
 "$PY" -m unittest discover -s tests/python -p 'test_*.py'

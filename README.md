@@ -127,7 +127,7 @@ Or run the pieces individually:
 
 ```bash
 node --check app.js && python3 -m py_compile server.py        # syntax gates
-node --test "tests/js/**/*.test.mjs"                          # JS unit tests
+node --test $(find tests/js -name '*.test.mjs')               # JS unit tests
 .venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'  # Python tests
 ```
 
