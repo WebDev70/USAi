@@ -1,0 +1,16 @@
+.env
+Archive/
+
+# Local Python virtual environment
+.venv/
+
+# Continue extension — MCP server configs may contain API keys (e.g. Context7)
+.continue/mcpServers/
+
+# Runtime/local state written by the server (not source)
+chat_history.json
+.chat_sessions/
+.chunk_cache/
+
+# macOS cruft
+.DS_Store

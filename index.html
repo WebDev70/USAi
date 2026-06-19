@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>USAi Chat</title>
+    <link rel="icon" href="data:,">
+        <link rel="stylesheet" href="styles.css?v=20">
+
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Sidebar -->
+      <aside class="sidebar" aria-label="Conversations and settings">
+        <div class="sidebar-header">
+          <button class="new-chat-btn" type="button"><span aria-hidden="true">＋</span> New Chat</button>
+        </div>
+        <h2 class="sr-only">Chat history</h2>
+        <div id="chatSessionsList" class="sessions-list" role="list" aria-label="Chat history"></div>
+
+        <!--
+          Settings Panel — placed at the bottom of the sidebar (just above the
+          Light Mode footer) so the chat history list above can grow and show
+          more sessions. The .sidebar-settings block has margin-top:auto to push
+          it (and the footer) to the bottom.
+        -->
+        <div class="sidebar-settings">
+          <!--
+            API Configuration & Model sections are hidden (Option B): their
+            controls are now driven from the composer toolbar (model + reasoning)
+            and the server .env (API key / base URL). The elements remain in the
+            DOM so all existing JS (Load Models, model select, etc.) keeps working.
+            BACKLOG (Option C): move Load Models / custom model id / API config
+            into a dedicated settings modal, then this hidden block can be removed.
+          -->
+          <div class="settings-hidden" aria-hidden="true">
+          <details class="settings-section">
+            <summary>API Configuration</summary>
+            <div class="settings-body">
+              <label for="apiKeyInput" class="settings-label">API Key</label>
+              <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Enter your API key" />
+
+              <label for="baseUrlInput" class="settings-label">Base URL</label>
+              <input id="baseUrlInput" type="text" placeholder="Enter Base URL" />
+            </div>
+          </details>
+
+          <details class="settings-section">
+            <summary>Model</summary>
+            <div class="settings-body">
+              <select id="modelSelect">
+                <optgroup label="Google AI models">
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                  <option value="gemini-2.0-pro">Gemini 2.0 Pro</option>
+                </optgroup>
+                <optgroup label="Anthropic models">
+                  <option value="claude_3_haiku">Claude Haiku 3.5</option>
+                  <option value="claude_sonnet_3_7">Claude Sonnet 3.7</option>
+                  <option value="claude_sonnet_4">Claude Sonnet 4</option>
+                  <option value="claude_opus_4">Claude Opus 4</option>
+                </optgroup>
+                <optgroup label="Meta models">
+                  <option value="llama3211b">Llama 3.2 11B</option>
+                  <option value="llama_4_maverick">Llama 4 Maverick</option>
+                </optgroup>
+                <option value="custom">Other (paste model id)</option>
+              </select>
+              <input id="modelCustom" type="text" placeholder="Enter model id" style="display:none;" />
+              <button class="sidebar-btn" id="loadModelsBtn">Load Models</button>
+              <div id="modelsStatus"></div>
+
+              <label for="reasoningEffort" class="settings-label" title="For reasoning models: how much internal thinking to do before answering">Reasoning effort</label>
+              <select id="reasoningEffort">
+                <option value="">Default (off)</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+          </details>
+          </div>
+          <!-- end hidden API Configuration & Model sections -->
+
+          <details class="settings-section">
+            <summary>Prompt &amp; Parameters</summary>
+            <div class="settings-body">
+              <label for="systemPrompt" class="settings-label">System prompt</label>
+              <input id="systemPrompt" type="text" placeholder="Optional system prompt" />
+
+              <label for="temperature" class="settings-label" title="Leave blank to omit — some models reject this parameter">Temperature <span style="opacity:0.7;">(blank = off)</span></label>
+              <input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="e.g. 0.5 (or leave blank)" />
+
+              <label for="maxTokens" class="settings-label" title="Leave blank to omit — some models reject this parameter">Max tokens <span style="opacity:0.7;">(blank = off)</span></label>
+              <input id="maxTokens" type="number" min="1" max="32768" placeholder="e.g. 512 (or leave blank)" />
+
+              <label class="toggle-label" title="Force the model to return valid JSON matching a schema you provide">
+                <input type="checkbox" id="jsonModeToggle" />
+                Structured output (JSON)
+              </label>
+              <textarea id="jsonSchema" placeholder='Optional JSON Schema, e.g.&#10;{&#10;  "name": "person",&#10;  "schema": {&#10;    "type": "object",&#10;    "properties": { "name": {"type":"string"} },&#10;    "required": ["name"]&#10;  }&#10;}' style="display:none;width:100%;min-height:90px;font-family:monospace;font-size:0.75rem;margin-top:4px;"></textarea>
+              <div id="jsonSchemaStatus" style="font-size:0.72rem;color:var(--color-text-secondary);margin-top:2px;"></div>
+            </div>
+          </details>
+
+          <details class="settings-section">
+            <summary>MCP &amp; Plugins</summary>
+            <div class="settings-body">
+              <label class="toggle-label" title="Stream the response token-by-token as it is generated">
+                <input type="checkbox" id="streamToggle" checked />
+                Stream responses
+              </label>
+              <label class="toggle-label" title="Let the model call tools (calculator, file search, Context7 docs) automatically">
+                <input type="checkbox" id="toolsToggle" />
+                Tool calling
+              </label>
+              <label class="toggle-label" title="Enable or disable Context7 context fetching">
+                <input type="checkbox" id="context7Toggle" />
+                Context7
+              </label>
+              <p class="settings-hint">
+                Context7 must be checked for the model to use it as a tool during
+                Tool calling. When unchecked, the model can still use the
+                calculator and uploaded-file search tools.
+              </p>
+              <label class="toggle-label" id="memoryToggleRow" title="Let the model save to and recall from your Obsidian vault.">
+                <input type="checkbox" id="memoryToggle" />
+                Obsidian Memory
+              </label>
+              <label class="toggle-label" id="memoryAutoRecallRow" title="Automatically search your vault and inject relevant memories before each message.">
+                <input type="checkbox" id="memoryAutoRecallToggle" />
+                Auto-recall memories
+              </label>
+              <p class="settings-hint">
+                <strong>Obsidian Memory</strong> (with Tool calling on) lets the
+                model save to and recall from your vault on its own.
+                <strong>Auto-recall</strong> always injects relevant memories
+                before each message. Hover over any message and click
+                <strong> 💾  Remember</strong> to save it manually. Set
+                <code>OBSIDIAN_VAULT_PATH</code> in <code>.env</code> to enable.
+              </p>
+              <button class="sidebar-btn" id="fetchContextBtn" title="Fetch context from Context7">Fetch Context</button>
+</div>
+          </details>
+
+          <details class="settings-section">
+            <summary>File Uploads</summary>
+            <div class="settings-body">
+
+              <label for="fileUpload" class="sidebar-btn" id="uploadFilesBtn" title="Upload text files for context or images for vision models">Upload Files / Images</label>
+              <input id="fileUpload" type="file" multiple accept="image/*,text/*,.txt,.md,.json,.csv,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log" style="display:none;" />
+              <div id="uploadedFilesDisplay" style="font-size:0.8rem;color:var(--color-text-secondary);margin-top:4px;"></div>
+
+              <label for="chunkSize" class="settings-label">Chunk size</label>
+              <input id="chunkSize" type="number" min="50" max="1000" value="200" style="width:70px;" title="Lines per chunk" />
+
+              <label for="topChunks" class="settings-label">Top chunks</label>
+              <input id="topChunks" type="number" min="1" max="20" value="5" style="width:60px;" title="Max chunks per message" />
+              <div id="cachedFilesPanel" style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:4px;"></div>
+            </div>
+          </details>
+        </div>
+
+        <div class="sidebar-footer">
+          <button class="theme-toggle" id="themeToggle">🌙 Dark Mode</button>
+        </div>
+      </aside>
+
+      <!-- Main Chat Area -->
+
+      <main class="main-content">
+        <header class="chat-header">
+          <div class="chat-header-left">
+            <button id="sidebarToggle" class="sidebar-toggle" type="button" title="Toggle sidebar" aria-label="Toggle sidebar" aria-expanded="true"><span aria-hidden="true">☰</span></button>
+            <h2 class="chat-title">USAi Chat</h2>
+          </div>
+          <button id="debugToggle" class="debug-toggle-btn">Debug Logs</button>
+        </header>
+
+        <!-- This container will hold both the empty state and the active chat -->
+        <div class="chat-view-container">
+
+          <!-- Empty State (visible by default) -->
+          <div class="empty-chat-area">
+            <div class="empty-chat-icon">AI</div>
+            <h2 class="empty-chat-greeting">How can I help you today?</h2>
+            <div class="example-prompts">
+              <button class="example-prompt-chip" type="button">Explain a concept in simple terms</button>
+              <button class="example-prompt-chip" type="button">Help me debug some code</button>
+              <button class="example-prompt-chip" type="button">Summarize an uploaded document</button>
+              <button class="example-prompt-chip" type="button">Brainstorm ideas for a project</button>
+            </div>
+          </div>
+
+          <!-- Active Chat (hidden by default) -->
+          <div class="chat-area">
+            <div class="messages-container" id="conversation" role="log" aria-label="Conversation" aria-live="polite"></div>
+            <div id="contextPreview" class="message-stats" aria-live="polite" style="white-space:pre-wrap; display:none;"></div>
+            <div id="responseLog" class="message-stats" aria-live="polite"></div>
+          </div>
+
+        </div>
+
+        <!-- Input Area -->
+        <div class="input-area">
+          <div class="input-wrapper">
+            <div id="pendingImages" class="pending-images"></div>
+            <div class="message-input">
+              <label for="content" class="sr-only">Message USAi</label>
+              <textarea id="content" placeholder="Message USAi... (Shift+Enter for new line)"></textarea>
+              <div class="composer-toolbar">
+                <button class="attach-button" id="composerAttach" type="button" title="Attach files or images" aria-label="Attach files or images"><span aria-hidden="true">📎</span></button>
+                <select id="composerModel" class="composer-select" title="Model" aria-label="Model"></select>
+                <select id="composerReasoning" class="composer-select" title="Reasoning effort" aria-label="Reasoning effort">
+                  <option value="">Reasoning: Off</option>
+                  <option value="low">Reasoning: Low</option>
+                  <option value="medium">Reasoning: Medium</option>
+                  <option value="high">Reasoning: High</option>
+                </select>
+                <button class="send-button" id="send" type="button" title="Send message (Ctrl+Enter)" aria-label="Send message"><span aria-hidden="true">↑</span></button>
+              </div>
+            </div>
+          </div>
+          <div class="composer-hint">USAi can make mistakes. Check important info.</div>
+        </div>
+
+        <!-- Debug Panel -->
+        <div class="debug-panel" id="debugPanel" style="display:none;">
+          <div class="debug-header">
+            <h3>Debug Logs</h3>
+            <div class="debug-controls">
+              <select id="debugLevel">
+                <option value="all">All Levels</option>
+                <option value="info">Info</option>
+                <option value="warn">Warn</option>
+                <option value="error">Error</option>
+              </select>
+              <input id="debugFilter" type="text" placeholder="Filter logs..." />
+              <button id="debugClear">Clear</button>
+            </div>
+          </div>
+          <div class="debug-logs" id="debugLogs"></div>
+        </div>
+      </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
