@@ -126,3 +126,84 @@ test('buildResponseFormat produces json_object when no schema is given', () => {
   assert.equal(error, undefined);
   assert.equal(responseFormat.type, 'json_object');
 });
+
+// ─── Added for the thorough-QA / TDD initiative (backlog #25) ────────────────
+
+test('buildResponseFormat wraps a bare schema and enforces strict mode', () => {
+  const { responseFormat, error } = app.buildResponseFormat({
+    jsonMode: true,
+    jsonSchema: JSON.stringify({ type: 'object', properties: { a: { type: 'string' } } }),
+  });
+  assert.equal(error, undefined);
+  assert.equal(responseFormat.type, 'json_schema');
+  const schema = responseFormat.json_schema.schema;
+  assert.equal(schema.additionalProperties, false, 'strict adds additionalProperties:false');
+  assert.deepEqual(schema.required, ['a'], 'strict lists all props as required');
+});
+
+test('buildResponseFormat reports an error for invalid JSON schema', () => {
+  const { error } = app.buildResponseFormat({ jsonMode: true, jsonSchema: '{not valid' });
+  assert.match(error, /Invalid JSON Schema/);
+});
+
+test('enforceStrictSchema recurses into nested objects and arrays', () => {
+  const out = app.enforceStrictSchema({
+    type: 'object',
+    properties: {
+      items: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' } } } },
+    },
+  });
+  assert.equal(out.additionalProperties, false);
+  assert.deepEqual(out.required, ['items']);
+  const itemSchema = out.properties.items.items;
+  assert.equal(itemSchema.additionalProperties, false);
+  assert.deepEqual(itemSchema.required, ['x']);
+});
+
+test('safeTrim handles null/undefined/whitespace', () => {
+  assert.equal(app.safeTrim(null), '');
+  assert.equal(app.safeTrim(undefined), '');
+  assert.equal(app.safeTrim('  hi  '), 'hi');
+  assert.equal(app.safeTrim(42), '42');
+});
+
+test('chunkText splits into line-sized, non-empty chunks', () => {
+  const text = Array.from({ length: 10 }, (_, i) => `line ${i}`).join('\n');
+  const chunks = app.chunkText(text, 4);
+  assert.equal(chunks.length, 3, '10 lines / 4 per chunk = 3 chunks');
+  assert.ok(chunks.every((c) => c.trim().length > 0));
+});
+
+test('chunkText drops whitespace-only chunks', () => {
+  const chunks = app.chunkText('\n\n   \n\n', 2);
+  assert.equal(chunks.length, 0);
+});
+
+test('scoreChunkByKeywords rewards more keyword hits', () => {
+  const q = 'pineapple pizza';
+  const high = app.scoreChunkByKeywords('pineapple pizza pineapple pizza', q);
+  const low = app.scoreChunkByKeywords('something unrelated entirely here', q);
+  assert.ok(high > low, 'more matches → higher score');
+});
+
+test('normalizeAssistantText stringifies objects and handles null', () => {
+  assert.equal(app.normalizeAssistantText(null), 'No assistant text received.');
+  assert.equal(app.normalizeAssistantText('hi'), 'hi');
+  assert.equal(app.normalizeAssistantText({ a: 1 }), JSON.stringify({ a: 1 }, null, 2));
+});
+
+test('extractJson recovers JSON from a ```json fenced block', () => {
+  const text = 'Here you go:\n```json\n{"ok": true, "n": 3}\n```\nThanks!';
+  assert.deepEqual(app.extractJson(text), { ok: true, n: 3 });
+});
+
+test('renderMarkdown does not pass through raw HTML (XSS-safe)', () => {
+  const html = app.renderMarkdown('<img src=x onerror=alert(1)>');
+  assert.ok(!html.includes('<img'), 'raw tags must be escaped');
+  assert.ok(html.includes('&lt;img'), 'angle brackets escaped');
+});
+
+test('renderMarkdown rejects javascript: links', () => {
+  const html = app.renderMarkdown('[click](javascript:alert(1))');
+  assert.ok(!html.includes('href="javascript:'), 'unsafe scheme not linkified');
+});

@@ -2211,8 +2211,12 @@ async function sendMessage() {
     : contextDetails;
   const contextNote = contextDetailsWithImages.join(' + ') || 'No external context';
 
-  // Render the user's message immediately (with image thumbnails)
-  appendMessage(conversation, inputs.content, 'user', contextNote, attachedImages);
+  // Render the user's message immediately (with image thumbnails).
+  // Its index in chatDisplayHistory will be the current length (persistExchange
+  // pushes the user turn next, then the assistant turn).
+  const userDisplayIndex = chatDisplayHistory.length;
+  const { group: userGroup } = appendMessage(conversation, inputs.content, 'user', contextNote, attachedImages);
+  addMessageActions(userGroup, 'user', userDisplayIndex);
   conversation.scrollTop = conversation.scrollHeight;
 
   // Clear the staged images now that they're part of the conversation
@@ -2252,6 +2256,7 @@ async function sendMessage() {
         : contextNote;
       const { group, noteEl } = appendMessage(conversation, finalText, 'assistant', contextNote);
       setMessageNote(group, noteEl, [contextNoteForAssistant, toolNote, usageText]);
+      addMessageActions(group, 'assistant', userDisplayIndex + 1);
       conversation.scrollTop = conversation.scrollHeight;
       await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages, [contextNoteForAssistant, toolNote]);
 
@@ -2287,6 +2292,7 @@ async function sendMessage() {
       renderBubbleText(bubble, finalText, true);
       const usageText = formatUsage(usage);
       setMessageNote(group, noteEl, [contextNote, aborted ? 'cancelled' : '', usageText]);
+      addMessageActions(group, 'assistant', userDisplayIndex + 1);
       conversation.scrollTop = conversation.scrollHeight;
       await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages);
       if (aborted) responseLog.textContent = 'Request cancelled (partial response kept).';
@@ -2324,6 +2330,7 @@ async function sendMessage() {
       const usageText = formatUsage(usage);
       const { group, noteEl } = appendMessage(conversation, finalText, 'assistant', contextNote);
       setMessageNote(group, noteEl, [contextNote, jsonNote, usageText]);
+      addMessageActions(group, 'assistant', userDisplayIndex + 1);
       conversation.scrollTop = conversation.scrollHeight;
       await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages);
 
@@ -2555,8 +2562,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('sidebarToggle')?.addEventListener('click', (e) => {
     const collapsed = document.querySelector('.app-container')
       ?.classList.toggle('sidebar-collapsed');
-    // Keep the control's accessible state in sync so screen readers announce
-    // whether the sidebar is currently shown (a11y, per the UI/UX rule).
     e.currentTarget.setAttribute('aria-expanded', String(!collapsed));
   });
 
@@ -2640,5 +2645,11 @@ if (typeof module !== 'undefined' && module.exports) {
     getExcludedParams,
     MODEL_PARAM_EXCLUSIONS,
     buildResponseFormat,
+    // Additional pure helpers exposed for unit testing (no browser effect):
+    safeTrim,
+    enforceStrictSchema,
+    scoreChunkByKeywords,
+    chunkText,
+    normalizeAssistantText,
   };
 }

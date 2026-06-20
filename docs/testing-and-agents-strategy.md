@@ -1,13 +1,30 @@
 # Testing & Agent Pipeline Strategy — USAi Chat
 
-This document defines (1) the **unit-testing strategy** for USAi Chat and (2) a
-**five-role agent pipeline** that automates planning, implementation, testing, QA
-review, and continuous improvement as we make changes. It is the reference for the
-rules (`.continue/rules/`), checks (`.continue/checks/`), and agents
-(`.continue/agents/`) we add to the repo.
+This document defines (1) the **TDD-first unit/integration-testing strategy** for
+USAi Chat and (2) a **five-role agent pipeline** that automates planning,
+implementation, testing, QA review, and continuous improvement as we make changes.
+It is the reference for the rules (`.continue/rules/`), checks (`.continue/checks/`),
+and agents (`.continue/agents/`) we add to the repo.
 
-> Status: **PLAN (approved).** Implementation lands incrementally; this doc is the
-> source of truth. Tracked as backlog item **#17**.
+> Status: **ACTIVE.** The TDD workflow + coverage gates are in force. Tracked as
+> backlog items **#17** (pipeline) and **#25** (TDD + coverage rigor).
+
+---
+
+## 0. Test-Driven Development (the default workflow)
+
+We practice **TDD** for any non-trivial change to testable logic. The loop is
+**Red → Green → Refactor** (see `.continue/rules/tdd-workflow.md`):
+
+1. **RED** — write the failing test(s) first in `tests/js/*.test.mjs` or
+   `tests/python/test_*.py`; run the suite and confirm they fail for the right
+   reason.
+2. **GREEN** — write the minimum code to pass without breaking existing tests.
+3. **REFACTOR** — clean up under green; re-run the suite.
+
+Bug fixes start with a **regression test** that fails before the fix. DOM-only
+wiring and pure copy/CSS edits are relaxed (verified by syntax gates + manual/in
+browser), but any real logic should be pushed into a tested pure helper.
 
 ---
 
@@ -27,61 +44,81 @@ rules (`.continue/rules/`), checks (`.continue/checks/`), and agents
 
 ---
 
-## 2. Test stack (no new deps)
+## 2. Test stack (no new RUNTIME deps)
 
 | Layer | Tool | Rationale |
 |-------|------|-----------|
-| **Python backend** (`server.py`) | **`unittest`** (stdlib) | No install; first-class for stdlib HTTP server logic. |
+| **Python backend** (`server.py`) | **`unittest`** (stdlib) — unit **and** HTTP integration tests | No install; integration tests boot the real `ThreadingHTTPServer` on an ephemeral port and hit routes with `urllib`. |
 | **JS frontend** (`app.js`) | **`node --test`** (Node 18+ built-in test runner) | No npm install, no framework; tests pure functions. |
+| **Coverage (dev-only)** | **`coverage.py`** (Python) + Node's built-in **`--experimental-test-coverage`** (Node ≥ 22) | Measures + gates coverage. Installed only in the dev venv / used via Node — **never** shipped in the app. |
 | **Syntax gates** | `node --check`, `python3 -m py_compile` | Already part of the workflow; cheap and fast. |
+
+### Coverage gates (enforced)
+
+- **Python:** `server.py` ≥ **90%** lines (gate in `.coveragerc` `fail_under`;
+  bootstrap glue like `run()`/`install_dependencies()`/`__main__` and a couple of
+  defensive `except` branches are excluded — see `.coveragerc`).
+- **JS:** **branch** coverage of the *exported* helpers ≥ **70%** (gate in
+  `tests/js-coverage.mjs`). Whole-file line-% reads low on purpose because browser
+  DOM/event wiring isn't unit-tested — judge the exported helpers, not the file.
+- Run locally with **`./run-tests.sh --coverage`**; CI enforces both on every push.
+- **Ratchet thresholds up** over time; never lower a gate to make a change pass —
+  add tests instead.
 
 ### Why not pytest / jest / vitest?
 They're excellent, but each adds dependencies/build tooling that conflicts with the
-project's "no build step, stdlib-only" philosophy. We can revisit if the suite
+project's "no build step, stdlib-only" philosophy. (Dev-only tools that ship no
+runtime dependency, like `coverage.py`, are fine.) We can revisit if the suite
 outgrows the stdlib runners.
 
-### What to test first (high value, low friction — pure functions)
+### What to test (layers, high → moderate value)
 
-**JS (`app.js`)** — extract/test pure helpers:
-- `renderMarkdown(src)` — escaping + whitelist (XSS safety is security-relevant).
-- `extractJson(text)` — recovers JSON from fenced/prose-wrapped replies.
-- `formatUsage(usage)` — tolerant of `prompt_tokens`/`input_tokens` naming.
-- `getExcludedParams(model)` / `MODEL_PARAM_EXCLUSIONS` — per-model param omission.
-- `buildResponseFormat(inputs)` — json_object vs json_schema shaping.
+**Pure functions (JS `app.js`)** — `renderMarkdown` (XSS safety), `extractJson`,
+`formatUsage`, `getExcludedParams`/`MODEL_PARAM_EXCLUSIONS`, `buildResponseFormat`,
+`enforceStrictSchema`, `safeTrim`, `chunkText`, `scoreChunkByKeywords`,
+`normalizeAssistantText` (exposed via the Node-only `module.exports` guard).
 
-**Python (`server.py`)** — security & filesystem behavior:
-- `get_memory_dir()` — resolves `<vault>/<subdir>/memories`, **rejects traversal**.
-- `_get_config` — returns **only** non-secret fields + `has_*` flags (never keys).
-- `/memory/save` + `/memory/list`/`/memory/read`/`/memory/search` — round-trip,
-  filename sanitization, frontmatter, confinement to the memory folder.
-- Route registration in `do_GET`/`do_POST`/`do_DELETE` — input-size limits.
+**Pure functions / helpers (Python `server.py`)** — `get_memory_dir` (traversal
+guard), `_slugify`, `_resolve_memory_file`, `add_log` (rotation), `load_config`.
 
-> **Testability note:** some helpers are currently inline. Part of this effort is
-> *lightly* refactoring a few pure functions so they're importable/exportable for
-> tests **without** changing behavior (e.g. guard `module.exports` in `app.js` for
-> Node, keep functions module-level in `server.py`).
+**HTTP integration (Python `server.py`)** — boot the real server and exercise:
+`/config` (redaction + `has_*` flags), the `/memory/*` lifecycle (save/list/read/
+search, tag handling, size limits, traversal 404), `/sessions` &amp; `/chunk-cache`
+round-trips + delete, `/chat-history` + `/new-chat-session` archiving, `/logs` +
+`/logs/clear`, routing 404s, malformed-body 400s, and the `/api/*` proxy +
+`/context7` (key injection, client-auth passthrough, SSE streaming relay, and
+upstream-error / unreachable-upstream paths via a fake stdlib upstream server).
+
+**Browser DOM wiring** — verified by the `node --check` syntax gate + manual/in
+browser testing; we deliberately avoid a jsdom/headless-browser dependency.
+
+> **Testability note:** keep helpers pure and module-level so they're importable.
+> In `app.js`, the Node-only `module.exports` guard at the bottom exposes helpers
+> to the test runner with no browser effect.
 
 ### Layout & conventions
 
 ```
 tests/
 ├── python/
-│   └── test_server.py        # unittest.TestCase classes; run with `python3 -m unittest`
-└── js/
-    └── app.test.mjs          # node:test + node:assert; run with `node --test`
+│   ├── test_server.py            # unit tests for pure helpers
+│   ├── test_server_http.py       # HTTP integration: config, memory, sessions, cache, limits
+│   ├── test_server_branches.py   # HTTP integration: branches, malformed bodies, logs
+│   └── test_server_proxy.py      # HTTP integration: /api proxy + /context7 (fake upstream)
+├── js/
+│   └── app.test.mjs              # node:test + node:assert; run with `node --test`
+└── js-coverage.mjs               # dev-only JS coverage gate (Node built-in coverage)
 ```
 - **Naming:** `test_*.py` (Python), `*.test.mjs` (JS).
-- **Determinism:** no live network/API calls; stub/monkeypatch where needed.
-- **Speed:** the whole suite should run in seconds.
+- **Determinism:** no live network/API calls; integration tests use a local fake
+  upstream and temp dirs (never the real vault / runtime files).
+- **Speed:** the whole suite runs in seconds.
 
 ### One-command runner (documented in README/CONTINUE.md)
 
 ```bash
-# Syntax gates
-node --check app.js && python3 -m py_compile server.py
-# Unit tests
-node --test $(find tests/js -name '*.test.mjs')
-.venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'
+./run-tests.sh             # syntax gates + JS + Python (unit + integration)
+./run-tests.sh --coverage  # the above + coverage measurement and gates
 ```
 
 ---

@@ -22,14 +22,23 @@ sessions.
     **`Continue Extension/memories/`**.
   - The **USAi Chat web app** (its 💾 Remember button + in-app memory tools) writes
     to `USAi/memories/` on its own via the backend — **don't** write there yourself.
-- **Access routes for Continue:** the `obsidian-mcp` server tools (`search-vault`,
-  `create-note`, `edit-note`, `read-note`, `add-tags`). Create the
-  `Continue Extension/memories/` directory if it doesn't exist.
+- **Access routes for Continue (in priority order):**
+  1. **Direct filesystem I/O — PRIMARY (most reliable).** The vault is just a
+     folder on disk, so read/write notes with your normal file tools
+     (`create_new_file`, `read_file`, `grep_search`/`ls`) under
+     `~/Documents/Obsidian Vault/Continue Extension/memories/`. This needs no Node
+     process or stdio pipe, never times out, and Obsidian auto-indexes the files.
+     **Prefer this for memory reads/writes.**
+  2. **`obsidian-mcp` server tools — OPTIONAL/SECONDARY.** Use `search-vault`,
+     `create-note`, `edit-note`, `read-note`, `add-tags` only when you need richer
+     tag/note operations. The stdio server is known to intermittently time out with
+     JSON-RPC `-32001` (even with a single clean process — see
+     `.continue/rules/CONTINUE.md` troubleshooting); when it does, fall back to (1).
+  - Create the `Continue Extension/memories/` directory if it doesn't exist.
 - **Recall first:** at the start of a task, search the vault (both
   `Continue Extension/memories/` and `USAi/memories/`) for relevant prior context
   before answering.
-- **Record continuously:** during/at the end of a task, save important facts,
-  decisions, preferences, and a concise session summary to
+- **Record continuously:** during/at the end of a task, save important detailed  facts, decisions, preferences, and a concise session summary to
   `Continue Extension/memories/` — without being asked.
 - **Note conventions:** one note per session named `YYYY-MM-DD-HHMMSS-title.md`;
   **append** with `edit-note` rather than spawning duplicates; include YAML
@@ -44,12 +53,16 @@ sessions.
 
 Non-trivial changes flow through a five-role pipeline (full detail:
 [`docs/testing-and-agents-strategy.md`](docs/testing-and-agents-strategy.md); each
-role is an always-on rule in `.continue/rules/`):
+role is an always-on rule in `.continue/rules/`). We practice **Test-Driven
+Development** — write the failing test first, then the code (see
+[`.continue/rules/tdd-workflow.md`](.continue/rules/tdd-workflow.md)):
 
-1. **Code Planner** — present a brief plan (goal, files, approach, test plan, docs,
-   risks) before editing. Skip only for trivial edits.
-2. **Development SME** — implement idiomatically (conventions below).
-3. **Full Test Suite** — add/update tests for the change (zero-dep stack).
+1. **Code Planner** — present a brief plan (goal, files, approach, **tests to write
+   first**, docs, risks) before editing. Skip only for trivial edits.
+2. **Development SME** — implement idiomatically (conventions below), TDD-style:
+   Red → Green → Refactor.
+3. **Full Test Suite** — add/update tests for the change (zero-dep stack: stdlib
+   `unittest` incl. HTTP integration tests, `node --test`). Coverage is gated.
 4. **QA Review** — run **`/check`** and fix failures before declaring done. Checks
    live in `.continue/checks/`: test-coverage, security-review, code-quality-review,
    docs-in-sync, and ui-ux-review (frontend changes only).
@@ -104,9 +117,11 @@ Validate changes with the zero-dependency test suite (see
 
 ```bash
 ./run-tests.sh                     # syntax gates + JS (node --test) + Python (unittest)
+./run-tests.sh --coverage          # the above + coverage gates (server.py ≥ 90%, JS branch ≥ 70%)
 ```
 
-Or run the pieces individually:
+Coverage tooling is **dev-only** (`coverage.py` in the venv; Node ≥ 22 built-in JS
+coverage) and never ships in the app. Or run the pieces individually:
 
 ```bash
 node --check app.js                                            # JS syntax

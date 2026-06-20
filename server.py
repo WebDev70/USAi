@@ -106,6 +106,12 @@ def add_log(level, component, message, details=None):
 
 
 class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
+    # Stream tokens to the browser the moment they arrive instead of letting the
+    # OS coalesce tiny SSE packets. Nagle's algorithm (on by default) buffers
+    # small writes for up to ~40ms waiting for an ACK, which — combined with
+    # many tiny token frames — adds noticeable latency to streamed responses.
+    disable_nagle_algorithm = True
+
     def _proxy_api(self, method, request_body=None):
         """Proxy /api/* requests to the base_url configured in .env."""
         config = CONFIG
@@ -140,19 +146,47 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             req = Request(upstream_url, data=request_body, headers=headers, method=method)
             with urlopen(req) as resp:
                 if wants_stream:
-                    # Relay the Server-Sent Events stream chunk-by-chunk without buffering
+                    # Relay the Server-Sent Events stream chunk-by-chunk without buffering.
+                    #
+                    # CRITICAL: speak HTTP/1.1 with *chunked* transfer-encoding for
+                    # the duration of this response. The handler's default protocol
+                    # is HTTP/1.0, which has no streaming framing — the browser's
+                    # fetch() ReadableStream then can't surface any bytes until the
+                    # whole connection closes, so the entire reply appears at once
+                    # after a long wait (the reported "1–2 min, all at once" bug).
+                    # We emit each upstream block as its own HTTP chunk so tokens
+                    # reach the browser the instant they arrive.
+                    self.protocol_version = 'HTTP/1.1'
                     self.send_response(resp.status)
                     self.send_header('Content-Type', resp.headers.get('Content-Type', 'text/event-stream'))
                     self.send_header('Cache-Control', 'no-cache')
                     self.send_header('X-Accel-Buffering', 'no')
+                    self.send_header('Transfer-Encoding', 'chunked')
+                    self.send_header('Connection', 'close')
                     self.end_headers()
+                    # IMPORTANT: read from the RAW, unbuffered upstream stream.
+                    # `urlopen()` returns an http.client.HTTPResponse whose
+                    # `.read(n)` is line/block-buffered — it blocks until it can
+                    # fill its internal buffer, so SSE tokens that trickle in one
+                    # at a time would be withheld for seconds. `resp.fp.raw` (the
+                    # underlying SocketIO) returns whatever bytes are currently
+                    # available, so we forward each token immediately. Fall back
+                    # to `resp.read` if `.raw` is unavailable.
+                    raw = getattr(getattr(resp, 'fp', None), 'raw', None)
+                    read_chunk = raw.read if raw is not None else resp.read
                     try:
                         while True:
-                            chunk = resp.read(1024)
+                            chunk = read_chunk(8192)
                             if not chunk:
                                 break
+                            # HTTP/1.1 chunked framing: <hex-length>\r\n<data>\r\n
+                            self.wfile.write(f'{len(chunk):X}\r\n'.encode('ascii'))
                             self.wfile.write(chunk)
+                            self.wfile.write(b'\r\n')
                             self.wfile.flush()
+                        # Final zero-length chunk terminates the response body.
+                        self.wfile.write(b'0\r\n\r\n')
+                        self.wfile.flush()
                     except (BrokenPipeError, ConnectionResetError):
                         # Client disconnected mid-stream; nothing more to do
                         pass

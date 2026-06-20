@@ -1,5 +1,125 @@
 ## [Unreleased]
 
+### Fixed — Streaming responses delayed (whole reply appeared at once)
+
+Streamed replies took a long time (seconds — up to a minute or two for long
+generations) and then appeared **all at once** instead of token-by-token, even
+though the upstream model was already emitting tokens. The frontend SSE reader
+(`app.js`) was fine — the **proxy was buffering**. Three server-side causes, all in
+`server.py`'s `_proxy_api` streaming branch:
+
+- **HTTP/1.0 response (the real culprit).** `SimpleHTTPRequestHandler` defaults to
+  `protocol_version = HTTP/1.0`, which has no streaming framing — so the browser's
+  `fetch()` `ReadableStream` cannot surface any bytes until the whole connection
+  closes (i.e. the entire reply lands at once after the model finishes). **Fix:**
+  for streaming responses, switch to **HTTP/1.1** and emit the body with
+  **`Transfer-Encoding: chunked`** (each upstream block wrapped as
+  `<hex-len>\r\n<data>\r\n`, terminated by `0\r\n\r\n`) so tokens reach the browser
+  as they arrive. Verified end-to-end against the live gateway (was `HTTP/1.0 200`,
+  now `HTTP/1.1 200` + `Transfer-Encoding: chunked`).
+- **Buffered upstream reads.** The relay read from `urlopen(...).read(1024)`, but
+  `http.client.HTTPResponse.read(n)` is block-buffered (blocks until it can fill its
+  buffer). **Fix:** read from the **raw, unbuffered** stream
+  (`resp.fp.raw.read(8192)`, fallback to `resp.read`).
+- **Nagle's algorithm.** TCP coalesced the many tiny SSE writes (~40ms each).
+  **Fix:** `EnvConfigHTTPRequestHandler.disable_nagle_algorithm = True`
+  (`TCP_NODELAY`).
+- **Regression test:** new `ProxyIncrementalStreamingTests` in
+  `tests/python/test_server_proxy.py` drives a *slow* fake upstream (0.3s between 4
+  SSE chunks) through the proxy over a **raw socket** and asserts (a) the response
+  is `HTTP/1.1` with `Transfer-Encoding: chunked`, and (b) the first chunk reaches
+  the client well before the last (first→last gap > 0.4s). Before the fix the proxy
+  replied HTTP/1.0 and the gap was ~0.0s; the test now fails if the proxy ever
+  reverts to buffering or HTTP/1.0. Suite: **57 Python + 25 JS** tests pass.
+
+### Added — Test-Driven Development workflow + thorough QA (coverage-gated)
+
+A major lift of the quality bar — TDD is now the enforced default and coverage is
+measured and gated, all **without adding any runtime dependency** (coverage tooling
+is dev-only and never ships).
+
+- **New always-on rule `.continue/rules/tdd-workflow.md`** — Red → Green → Refactor:
+  write the failing test first, implement minimally, refactor under green. Defines
+  when TDD applies, the test layers, the coverage gates, and a "definition of done."
+- **HTTP integration tests for `server.py` (zero deps).** Three new suites boot the
+  **real** `ThreadingHTTPServer` on an ephemeral port and exercise handlers
+  end-to-end with stdlib `urllib`:
+  - `tests/python/test_server_http.py` — `/config` redaction + `has_*` flags, the
+    `/memory/*` lifecycle (save/list/read/search, string-tag handling, auto-tagging,
+    5 MB size limit, traversal 404), `/sessions` & `/chunk-cache` round-trips +
+    delete, and input-size limits.
+  - `tests/python/test_server_branches.py` — unconfigured-state branches (memory/
+    context7 → 400), chunk-cache GET/DELETE-all, `/chat-history` + `/new-chat-session`
+    archiving, `/logs` + `/logs/clear`, malformed-body 400s, and routing 404s.
+  - `tests/python/test_server_proxy.py` — the `/api/*` proxy and `/context7` against
+    a **fake stdlib upstream**: server-key injection, client-auth passthrough, SSE
+    **streaming relay**, upstream-error relay (500), unreachable-upstream (502), and
+    missing-`base_url` (503).
+- **More `server.py` unit tests** — `_resolve_memory_file` (traversal→basename),
+  `add_log` (rotation at `MAX_LOGS`), and `load_config` (env + defaults).
+- **More `app.js` pure-helper tests + exports** — exposed `safeTrim`,
+  `enforceStrictSchema`, `scoreChunkByKeywords`, `chunkText`, `normalizeAssistantText`
+  via the Node-only `module.exports` guard and added 11 cases (now 25 JS tests),
+  covering strict-schema recursion, fenced-JSON extraction, and XSS-safety
+  (raw-HTML escaping, `javascript:` link rejection).
+- **Coverage measurement + enforced gates (dev-only tooling).**
+  - **`.coveragerc`** — `coverage.py` config with `fail_under = 88` and exclusions
+    for un-unit-testable bootstrap glue (`run()`, `install_dependencies()`,
+    `__main__`) and defensive `except` branches. `server.py` currently measures
+    **90%**.
+  - **`tests/js-coverage.mjs`** — a dev-only JS coverage gate using Node ≥ 22's
+    built-in `--experimental-test-coverage`; gates **branch coverage of the exported
+    helpers ≥ 70%** (currently 73%). Whole-file line-% is intentionally low because
+    browser DOM wiring isn't unit-tested.
+  - **`run-tests.sh --coverage`** — new mode that runs both gates; default mode
+    unchanged. `.gitignore` now excludes coverage artifacts (`.coverage*`, `htmlcov/`).
+- **CI upgraded** (`.github/workflows/tests.yml`) — JS job now runs on **Node 22**
+  and enforces the JS coverage gate; Python job installs dev-only `coverage` and
+  enforces the `server.py` gate (still on Python 3.9 + 3.11).
+- **Updated the `test-coverage` QA check** to require tests-first/regression tests,
+  integration tests for handler changes, and passing coverage gates.
+- **Docs synced** — `docs/testing-and-agents-strategy.md` rewritten for the TDD
+  workflow + integration layer + coverage gates; `AGENTS.md`, `.continue/rules/CONTINUE.md`,
+  and `README.md` "Running tests" sections updated; tracked as backlog **#25**.
+  Test count: **56 Python + 25 JS** (was 8 + 14), all passing.
+
+### Changed — Agent memory: prefer direct filesystem I/O over `obsidian-mcp`
+
+- **`AGENTS.md` / `.continue/rules/CONTINUE.md`:** reworked the Continue-agent
+  memory directive so **direct filesystem I/O is now the PRIMARY access route**
+  (read/write notes with normal file tools under
+  `<vault>/Continue Extension/memories/`), with `obsidian-mcp` demoted to an
+  **optional/secondary** route for richer tag/note operations. Rationale: the
+  stdio MCP server intermittently times out with JSON-RPC `-32001` — and this was
+  observed even with a **single, lone process** (no duplicates), so "exactly one
+  process" is necessary but not sufficient. Direct file I/O needs no Node child or
+  stdio pipe, never wedges, and Obsidian auto-indexes the files (the same approach
+  the USAi app's own `/memory/*` layer already uses). The `CONTINUE.md`
+  troubleshooting row for `-32001` now documents the single-process wedge and the
+  "reload again / use the filesystem" remedy. No app code changed.
+
+### Fixed — Obsidian MCP write timeouts (`-32001`) — Node 20 pin + single-instance ritual
+
+- **`.continue/mcpServers/new-mcp-server.yaml`**: pinned the Obsidian stdio server
+  to **Node 20 LTS**. `command` is now the explicit `.../v20.20.2/bin/node` binary
+  (not bare `node`, which resolves to whatever Node is active in PATH — previously
+  the non-LTS v24) and `args[0]` points at the obsidian-mcp build installed under
+  v20. Also renamed the Context7 server `Remote HTTP Server` → `Context7` and moved
+  its API key from a (no-op for remote servers) `env` block to an HTTP `headers`
+  block referencing `${{ secrets.CONTEXT7_API_KEY }}` (verified against the official
+  Context7 docs via Context7).
+- **Root cause (backlog #24):** Continue's `obsidian-mcp` requests timed out with
+  `-32001` (notably on `create-note` *writes*). The real culprit was **orphaned
+  duplicate processes** — each Continue reload/reset spawned a new server without
+  killing the old one, so 2–3 instances piled up and contended for the same vault
+  stdio pipe. (Backlog #23's npx→global-node change *reduced* but did not eliminate
+  the orphaning.) Direct JSON-RPC tests against the binary always succeeded, proving
+  the server itself was healthy. The reliable fix/ritual: **kill all processes
+  (`./scripts/kill-stale-obsidian-mcp.sh`) → fully quit VS Code (Cmd+Q) → reopen →
+  confirm exactly ONE process via `ps aux`.** A harmless `-32601 Method not found`
+  at load (Continue probing for "resource templates" the server doesn't implement)
+  is cosmetic. Documented in `CONTINUE.md` troubleshooting and backlog #24.
+
 ### Fixed — CI JS test discovery
 
 - **GitHub Actions "JS unit tests" job failed** with `Could not find
@@ -320,6 +440,18 @@ They were added incrementally, each building on the previous.
   streaming for performance, then added on the final render). **`styles.css`**:
   added `.copy-msg-btn`/`.copy-code-btn` styles. **`index.html`**: bumped to
   `?v=9`.
+
+- **Edit & resend / regenerate.** Each message now shows hover actions: assistant
+  turns get a **↻ Regenerate** button and user turns get an **✎ Edit** button
+  (inline editor with Send/Cancel). Both `regenerateFromUser(index, override?)`
+  and `startEditUserMessage(group, index)` in `app.js` truncate
+  `conversationHistory`/`chatDisplayHistory` back to the chosen user turn,
+  re-render the conversation (`rerenderConversation`), restage any attached
+  images, and re-send through `sendMessage()`. Actions are wired via
+  `addMessageActions()` in `appendMessage`/restore paths and are no-ops while a
+  request is in flight. **`styles.css`**: added `.msg-actions`/`.msg-action-btn`
+  and inline-editor (`.msg-edit-*`) styles with `:focus-visible` rings.
+  **`index.html`**: bumped to `?v=21`.
 
 ### Previously known issue (now resolved)
 - **Known issue: `/config` exposes secrets to the browser.** The server's

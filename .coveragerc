@@ -1,0 +1,23 @@
+# Coverage configuration for the DEV-ONLY coverage.py tool (not a runtime dep).
+# Keeps the threshold honest: we measure the request handlers and pure helpers,
+# but EXCLUDE process-bootstrap glue that can't be meaningfully unit-tested
+# (serve_forever, dependency install, the __main__ entrypoint) and unreachable
+# defensive branches. See docs/testing-and-agents-strategy.md.
+[run]
+source = server
+branch = True
+
+[report]
+# Fail the build if covered code drops below this. Ratchet UP over time.
+fail_under = 88
+show_missing = True
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    def run\(
+    def install_dependencies\(
+    raise NotImplementedError
+    # Defensive: client disconnected mid-stream / unreachable error glue.
+    except (BrokenPipeError, ConnectionResetError):
+omit =
+    tests/*

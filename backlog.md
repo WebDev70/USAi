@@ -59,9 +59,15 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     to each `pre.md-pre` code block. `copyToClipboard` uses the async Clipboard
     API with a legacy `execCommand` fallback for non-secure contexts.
 
-- [ ] **6. Edit & resend / regenerate**
+- [x] **6. Edit & resend / regenerate**
   - Regenerate the last assistant turn; edit a previous user message and re-run.
   - Files: `app.js`, `styles.css`.
+  - Done: per-message hover actions — "↻ Regenerate" on assistant turns and
+    "✎ Edit" (inline editor) on user turns. Both truncate `conversationHistory`
+    /`chatDisplayHistory` back to the chosen user turn, re-render the
+    conversation, and re-send via `sendMessage()` (preserving any attached
+    images). Guarded against running while a request is in flight. Buttons are
+    attached in `appendMessage` paths and on history/session restore.
 
 ## Medium effort
 
@@ -95,6 +101,73 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
   - Let users register their own tool definitions.
 - [ ] **14. Model comparison (side-by-side)**
 - [ ] **15. Voice input / TTS output**
+
+## Documentation
+
+- [ ] **22. Obsidian guide: how the Continue checks + rules workflow works**
+  - Write a full, detailed guide (stored in the Obsidian vault under
+    `Continue Extension/guides/`) explaining the agent pipeline end-to-end: what
+    **rules** (`.continue/rules/*`) vs **checks** (`.continue/checks/*`) are, the
+    rule trigger types (Always / Auto-attached via `globs` / Agent-requested /
+    Manual), how the five-role pipeline (Code Planner → Development SME → Full Test
+    Suite → QA Review → Continuous Improvement) flows, how `/check` runs the gates,
+    the UI/UX quality axis, how it ties to `AGENTS.md`, the test stack +
+    `run-tests.sh`, CI, and the Obsidian memory loop. Include a concrete
+    walkthrough of a real change going through the pipeline.
+  - **Blocked on #23** (the Obsidian MCP must be reliable to write into the vault),
+    though the guide could be drafted in-repo and copied over as a fallback.
+  - Source material: `docs/testing-and-agents-strategy.md`, `AGENTS.md`,
+    `.continue/rules/*`, `.continue/checks/*`.
+
+## Tooling / environment
+
+- [x] **23. Fix Obsidian MCP reliability (`Request timed out`, error -32001)**
+  - The `obsidian-mcp` stdio server intermittently timed out. Root cause:
+    **multiple stale `obsidian-mcp` processes** running at once (duplicate
+    `npm exec`/`npx` launches), which contend for the same vault/stdio pipe so
+    Continue's requests hang → `-32001`.
+  - **Fix:** changed `.continue/mcpServers/new-mcp-server.yaml` to launch `node`
+    directly against a **globally installed** obsidian-mcp
+    (`npm i -g obsidian-mcp`) instead of `npx -y obsidian-mcp`. This removes the
+    `npm exec` parent wrapper + per-launch package resolution that left orphans
+    on MCP reload, so Continue owns exactly one cleanly-managed process at a
+    stable path. Added `scripts/kill-stale-obsidian-mcp.sh` as a manual cleanup
+    escape hatch, and a Troubleshooting row in `CONTINUE.md`. Verified the global
+    binary boots ("Server running on stdio", all tools registered).
+  - **Note:** the global build path is nvm-version-specific; switching Node
+    versions requires re-running `npm i -g obsidian-mcp` and updating the path.
+  - Files: `.continue/mcpServers/new-mcp-server.yaml`,
+    `scripts/kill-stale-obsidian-mcp.sh` (new), `.continue/rules/CONTINUE.md`.
+
+- [x] **24. Obsidian MCP: write timeouts (`-32001`) — Node 20 pin + single-instance ritual**
+  - **Distinct from #23** (which fixed *duplicate* `npx` processes). Observed
+    2026-06-17: Continue's `obsidian-mcp` requests timed out with `-32001`, most
+    reliably on `create-note` **writes** (reads sometimes worked first).
+  - **Root cause:** **orphaned duplicate processes** still piled up — each Continue
+    reload/reset spawned a NEW obsidian-mcp process WITHOUT killing the old one
+    (observed 2–3 simultaneous PIDs), and they contended for the same vault stdio
+    pipe → every request hung. #23's npx→global-node change *reduced* but did not
+    *eliminate* the orphaning, because Continue itself leaves old MCP children alive
+    on reload/reset.
+  - **Proof the server was healthy:** piping a raw JSON-RPC `initialize` (and a
+    `tools/call` `create-note`) directly into the binary succeeded instantly and
+    shut down cleanly — the hang only happened via Continue when duplicates existed.
+  - **Fix / reliable ritual:**
+    1. Pinned **Node 20 LTS** (was non-LTS v24): installed v20.20.2 + obsidian-mcp
+       for v20; YAML now uses the explicit `.../v20.20.2/bin/node` binary + v20
+       build path (not bare `command: node`).
+    2. **kill-all → fully quit VS Code (Cmd+Q) → reopen → verify EXACTLY ONE
+       process** (`ps aux | grep obsidian-mcp`). With a single clean instance,
+       reads AND writes succeed.
+  - **Harmless companion error:** `-32601 Method not found` at load = Continue
+    probing for "resource templates"; obsidian-mcp exposes tools, not that optional
+    capability. Not a fault.
+  - **Fallback:** writing notes directly to the vault via the filesystem works when
+    MCP is flaky (Obsidian auto-indexes them).
+  - **Possible future hardening:** check whether Continue can be configured to
+    terminate MCP children on reload; otherwise the kill-all ritual stands.
+  - Files: `.continue/mcpServers/new-mcp-server.yaml`,
+    `scripts/kill-stale-obsidian-mcp.sh`, `.continue/rules/CONTINUE.md`, `CHANGELOG.md`.
 
 ## Front-end design (UI/UX)
 
@@ -170,6 +243,31 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     control), `styles.css`, `tests/js/app.test.mjs`.
 
 ## Testing & agent automation
+
+- [x] **25. Test-Driven Development workflow + thorough QA (coverage-gated)**
+  - Raise the quality bar to TDD-first with measured, **enforced** coverage —
+    keeping the zero-runtime-dependency rule (coverage tooling is dev-only).
+  - **Done:**
+    - New always-on rule `.continue/rules/tdd-workflow.md` (Red → Green → Refactor,
+      tests-first, layers, gates, definition of done).
+    - **HTTP integration tests** (boot the real `ThreadingHTTPServer`, stdlib
+      `urllib`): `tests/python/test_server_http.py`, `test_server_branches.py`,
+      `test_server_proxy.py` (proxy + `/context7` against a fake stdlib upstream,
+      incl. SSE streaming relay + 500/502/503 paths). More `server.py` unit tests
+      (`_resolve_memory_file`, `add_log` rotation, `load_config`).
+    - More `app.js` pure-helper tests + exports (`safeTrim`, `enforceStrictSchema`,
+      `scoreChunkByKeywords`, `chunkText`, `normalizeAssistantText`); 25 JS tests.
+    - Coverage gates: `.coveragerc` (`fail_under=88`, server.py at **90%**),
+      `tests/js-coverage.mjs` (branch ≥ 70% of exported helpers, at **73%**),
+      `run-tests.sh --coverage`, `.gitignore` for coverage artifacts.
+    - CI upgraded to Node 22 + coverage gates (`.github/workflows/tests.yml`);
+      `test-coverage` check tightened; docs synced (strategy doc, AGENTS.md,
+      CONTINUE.md, README). 56 Python + 25 JS tests pass.
+  - Files: `.continue/rules/tdd-workflow.md`, `.continue/checks/test-coverage.md`,
+    `tests/python/test_server_*.py`, `tests/js/app.test.mjs`, `tests/js-coverage.mjs`,
+    `.coveragerc`, `run-tests.sh`, `.github/workflows/tests.yml`, `.gitignore`,
+    `docs/testing-and-agents-strategy.md`, `AGENTS.md`, `.continue/rules/CONTINUE.md`,
+    `README.md`, `app.js` (exports only).
 
 - [~] **17. Unit testing + five-role agent pipeline**
   - Establish a zero-new-dependency test suite and a Continue-native agent

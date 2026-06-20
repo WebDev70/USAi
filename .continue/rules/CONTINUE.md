@@ -18,7 +18,10 @@ codebase. Continue automatically loads this file into context for this project.
   - The **Continue extension (VS Code)** saves to **`Continue Extension/memories/`**.
   - The **USAi Chat web app** (💾 Remember button + in-app tools) saves to
     **`USAi/memories/`** on its own via the backend (`OBSIDIAN_MEMORY_SUBDIR=USAi`).
-- **Access:** `obsidian-mcp` tools, or the USAi backend `/memory/*` endpoints.
+- **Access (Continue):** **prefer direct filesystem I/O** (your file tools on
+  `<vault>/Continue Extension/memories/`) — it never times out and needs no Node
+  process. The `obsidian-mcp` tools are optional/secondary (they intermittently
+  time out with `-32001`). See `AGENTS.md` for the full priority order.
 - One note per session (`YYYY-MM-DD-HHMMSS-title.md`), YAML frontmatter, consistent
   tags, never delete/overwrite.
 
@@ -105,19 +108,26 @@ lsof -ti:8000 | xargs kill
 ```
 
 ### Running tests
-The project uses a **zero-dependency** test stack — `node --test` (built into
-Node 18+) for `app.js` pure functions and stdlib `unittest` for `server.py`. Run
-everything with the helper script:
+The project uses a **zero-runtime-dependency, TDD-first** test stack — `node --test`
+(built into Node 18+) for `app.js` pure functions and stdlib `unittest` for
+`server.py` (unit **and** HTTP integration tests). We write the failing test first
+(Red → Green → Refactor; see [`.continue/rules/tdd-workflow.md`](tdd-workflow.md)).
+Run everything with the helper script:
 ```bash
-./run-tests.sh        # syntax gates + JS tests + Python tests
+./run-tests.sh             # syntax gates + JS tests + Python tests
+./run-tests.sh --coverage  # adds coverage gates (server.py ≥ 90%, JS branch ≥ 70%)
 ```
+Coverage tooling is **dev-only** (`coverage.py` in the venv; Node ≥ 22 built-in JS
+coverage) — it is never added to `requirements.txt` or shipped in the app.
 Or individually:
 ```bash
 node --check app.js && python3 -m py_compile server.py        # syntax gates
-node --test "tests/js/**/*.test.mjs"                          # JS unit tests
+node --test $(find tests/js -name '*.test.mjs')               # JS unit tests
 .venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'  # Python tests
 ```
-Tests live in `tests/js/*.test.mjs` and `tests/python/test_*.py`. See
+Tests live in `tests/js/*.test.mjs` and `tests/python/test_*.py` (with HTTP
+integration suites `test_server_http.py`, `test_server_branches.py`,
+`test_server_proxy.py`). See
 [`docs/testing-and-agents-strategy.md`](../../docs/testing-and-agents-strategy.md)
 for the full strategy and the five-role agent pipeline (Planner → SME → Tests →
 QA `/check` → Continuous Improvement).
@@ -255,6 +265,8 @@ lsof -ti:8000 | xargs kill
 | Model used Context7 unexpectedly | Uncheck **Context7** in MCP & Plugins; tools are gated on the toggle. |
 | CSS changes not showing | Bump `styles.css?v=N` and hard-refresh. |
 | `404 GET /favicon.ico` | Harmless — the app has no tab icon. |
+| Obsidian MCP `Request timed out` / JSON-RPC error `-32001` in Continue | **Two causes.** (1) **Orphaned duplicate `obsidian-mcp` processes** contending for the vault stdio pipe (Continue spawns a new one on each reload/reset without killing the old). (2) **A single, lone process can ALSO wedge its stdio pipe over time/idle** (observed 2026-06-19: one clean process, no duplicates, yet reads+writes all `-32001`) — so "exactly one process" is necessary but not sufficient. Ritual: `./scripts/kill-stale-obsidian-mcp.sh` → **fully quit VS Code (Cmd+Q)** → reopen → confirm **exactly ONE** process with `ps aux \| grep obsidian-mcp`; if a single process still times out, **reload the MCP server / VS Code window again**. **Most reliable: don't depend on the MCP for memory — use direct filesystem reads/writes to the vault** (Obsidian auto-indexes them); the app's own memory (`/memory/*`) already works this way and never wedges. The server is pinned to **Node 20 LTS** in `.continue/mcpServers/new-mcp-server.yaml` (switching Node means reinstalling obsidian-mcp for that version + updating both `command` and `args[0]`). To prove the binary is healthy independent of Continue, pipe a JSON-RPC `initialize` into it directly — if that succeeds but Continue times out, the fault is the long-lived Continue↔child stdio session, not obsidian-mcp. |
+| Obsidian MCP `-32601 Method not found` at load | **Harmless/cosmetic.** Continue probes for "resource templates"; `obsidian-mcp` exposes tools, not that optional capability. Not the cause of timeouts. |
 
 **Debugging tips:** open the **Debug Logs** panel (top-right) for frontend +
 proxied errors, and watch the `server.py` terminal output (every request and memory

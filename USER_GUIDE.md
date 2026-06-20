@@ -90,6 +90,17 @@ Assistant replies are rendered as **Markdown**, so you'll see proper headings, *
 - Each code block has its own **Copy** button.
 - A brief "Copied!" confirmation appears when it works.
 
+### Edit & regenerate
+- Hover over an **assistant** message to reveal a **↻ Regenerate** button — it
+  re-runs the same prompt to get a fresh answer (the old answer and anything
+  after it are replaced).
+- Hover over one of **your** messages to reveal an **✎ Edit** button — it opens
+  an inline editor; change the text and press **Send** (or `Enter`) to re-run the
+  conversation from that point. Press **Cancel** (or `Esc`) to discard.
+- Both actions discard the turns that came *after* the edited/regenerated point,
+  since those replies no longer apply. They're disabled while a response is
+  generating.
+
 ### Save to memory (💾 Remember)
 If an Obsidian vault is configured, hovering a message also shows a **💾 Remember**
 button that saves that message to your "second brain" with one click. See

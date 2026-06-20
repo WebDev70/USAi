@@ -736,6 +736,93 @@ body {
   opacity: 1;
 }
 
+/* ─── Per-message action buttons (Edit / Regenerate) ────────────────────── */
+.msg-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.message-group:hover .msg-actions {
+  opacity: 1;
+}
+.message-group.user .msg-actions {
+  justify-content: flex-end;
+}
+.msg-action-btn {
+  padding: 2px 10px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--color-text-secondary, #aaa);
+  background: transparent;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.msg-action-btn:hover {
+  color: var(--color-text-primary, #fff);
+  border-color: var(--color-accent, #3b82f6);
+  background: rgba(59, 130, 246, 0.1);
+}
+.msg-action-btn:focus-visible {
+  outline: 2px solid var(--color-accent, #3b82f6);
+  outline-offset: 2px;
+}
+
+/* ─── Inline user-message editor ────────────────────────────────────────── */
+.msg-edit-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 240px;
+}
+.msg-edit-area {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--color-text-primary, #111);
+  background: var(--color-bg-primary, #fff);
+  border: 1px solid var(--color-accent, #3b82f6);
+  border-radius: 8px;
+}
+.msg-edit-controls {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.msg-edit-save,
+.msg-edit-cancel {
+  padding: 4px 14px;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.msg-edit-save {
+  color: #fff;
+  background: var(--color-accent, #3b82f6);
+}
+.msg-edit-save:hover {
+  opacity: 0.9;
+}
+.msg-edit-cancel {
+  color: var(--color-text-secondary, #aaa);
+  background: transparent;
+  border-color: var(--color-border, rgba(255, 255, 255, 0.15));
+}
+.msg-edit-cancel:hover {
+  color: var(--color-text-primary, #fff);
+}
+.msg-edit-save:focus-visible,
+.msg-edit-cancel:focus-visible {
+  outline: 2px solid var(--color-accent, #3b82f6);
+  outline-offset: 2px;
+}
+
 .message-group.assistant .message-bubble {
   background-color: transparent;
   color: var(--color-text-primary);

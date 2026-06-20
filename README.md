@@ -115,13 +115,21 @@ Cmd/Ctrl+Shift+R after frontend changes).
 
 ## Running tests
 
-The project ships a **zero-dependency** test suite — `node --test` (built into
-Node 18+) for `app.js` pure functions and the Python standard-library `unittest`
-for `server.py`. Run everything with the helper script:
+The project follows **Test-Driven Development** and ships a **zero-runtime-dependency**
+test suite — `node --test` (built into Node 18+) for `app.js` pure functions and the
+Python standard-library `unittest` for `server.py` (both **unit** tests and **HTTP
+integration** tests that boot the real server). Run everything with the helper
+script:
 
 ```bash
-./run-tests.sh        # syntax gates + JS tests + Python tests
+./run-tests.sh             # syntax gates + JS tests + Python tests
+./run-tests.sh --coverage  # also measure coverage and enforce gates
 ```
+
+The `--coverage` mode enforces thresholds (**`server.py` ≥ 90%**, **JS branch ≥ 70%**
+of the exported helpers) using **dev-only** tooling — `coverage.py` (installed in
+the venv: `.venv/bin/pip install coverage`) and Node ≥ 22's built-in coverage. This
+tooling is never added to `requirements.txt` and never ships in the app.
 
 Or run the pieces individually:
 
@@ -131,13 +139,15 @@ node --test $(find tests/js -name '*.test.mjs')               # JS unit tests
 .venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'  # Python tests
 ```
 
-Tests live in `tests/js/*.test.mjs` and `tests/python/test_*.py`. See
+Tests live in `tests/js/*.test.mjs` and `tests/python/test_*.py` (the Python HTTP
+integration suites are `test_server_http.py`, `test_server_branches.py`, and
+`test_server_proxy.py`). See
 [`docs/testing-and-agents-strategy.md`](docs/testing-and-agents-strategy.md) for the
-full testing strategy and the five-role agent pipeline (Code Planner → Development
-SME → Full Test Suite → QA Review → Continuous Improvement) used for changes.
+full TDD strategy and the five-role agent pipeline (Code Planner → Development SME →
+Full Test Suite → QA Review → Continuous Improvement) used for changes.
 
-These same checks also run automatically in **CI** on every push / pull request via
-GitHub Actions (`.github/workflows/tests.yml`).
+These same checks (including the coverage gates) also run automatically in **CI** on
+every push / pull request via GitHub Actions (`.github/workflows/tests.yml`).
 
 ## Usage
 

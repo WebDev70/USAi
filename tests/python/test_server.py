@@ -89,5 +89,90 @@ class SlugifyTests(unittest.TestCase):
         self.assertLessEqual(len(slug), 10)
 
 
+class ResolveMemoryFileTests(unittest.TestCase):
+    """_resolve_memory_file() confines a user path to the memory folder."""
+
+    def test_resolves_basename_inside_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            mem = Path(d)
+            out = server._resolve_memory_file(mem, 'note.md')
+            self.assertEqual(out, (mem / 'note.md').resolve())
+
+    def test_strips_directory_components_to_basename(self):
+        with tempfile.TemporaryDirectory() as d:
+            mem = Path(d)
+            # Even a traversal attempt is reduced to its basename and stays inside.
+            out = server._resolve_memory_file(mem, '../../etc/passwd')
+            self.assertEqual(out, (mem / 'passwd').resolve())
+            out.relative_to(mem.resolve())  # must not raise
+
+    def test_empty_returns_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(server._resolve_memory_file(Path(d), ''))
+
+
+class AddLogTests(unittest.TestCase):
+    """add_log() appends entries and rotates at MAX_LOGS."""
+
+    def setUp(self):
+        self._saved_logs = list(server.server_logs)
+        self._saved_max = server.MAX_LOGS
+        server.server_logs.clear()
+
+    def tearDown(self):
+        server.server_logs.clear()
+        server.server_logs.extend(self._saved_logs)
+        server.MAX_LOGS = self._saved_max
+
+    def test_appends_entry_with_fields(self):
+        server.add_log('info', 'test', 'hello', {'k': 'v'})
+        self.assertEqual(len(server.server_logs), 1)
+        entry = server.server_logs[0]
+        self.assertEqual(entry['level'], 'info')
+        self.assertEqual(entry['component'], 'test')
+        self.assertEqual(entry['message'], 'hello')
+        self.assertEqual(entry['details'], {'k': 'v'})
+        self.assertIn('timestamp', entry)
+
+    def test_rotates_at_max_logs(self):
+        server.MAX_LOGS = 5
+        for i in range(10):
+            server.add_log('info', 'test', f'msg {i}')
+        self.assertLessEqual(len(server.server_logs), 6)
+        # Oldest entries dropped; the latest is retained.
+        self.assertEqual(server.server_logs[-1]['message'], 'msg 9')
+
+
+class LoadConfigTests(unittest.TestCase):
+    """load_config() reads env vars into CONFIG with sensible defaults."""
+
+    def setUp(self):
+        self._saved_config = dict(server.CONFIG)
+        self._saved_env = {k: os.environ.get(k) for k in (
+            'API_KEY', 'BASE_URL', 'DEFAULT_MODEL', 'OBSIDIAN_MEMORY_SUBDIR')}
+
+    def tearDown(self):
+        server.CONFIG = self._saved_config
+        for k, v in self._saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_reads_env_and_applies_defaults(self):
+        os.environ['API_KEY'] = 'k123'
+        os.environ['BASE_URL'] = 'https://api.example'
+        os.environ['DEFAULT_MODEL'] = 'gpt-test'
+        os.environ.pop('OBSIDIAN_MEMORY_SUBDIR', None)  # exercise the default
+        # Point dotenv at a nonexistent file so it doesn't override our env.
+        server.ENV_FILE = Path('/no/such/.env')
+        server.load_config()
+        self.assertEqual(server.CONFIG['api_key'], 'k123')
+        self.assertEqual(server.CONFIG['base_url'], 'https://api.example')
+        self.assertEqual(server.CONFIG['default_model'], 'gpt-test')
+        self.assertEqual(server.CONFIG['obsidian_memory_subdir'], 'USAi')
+        self.assertEqual(server.CONFIG['context7_path'], '/v1/context')
+
+
 if __name__ == '__main__':
     unittest.main()

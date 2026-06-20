@@ -1,8 +1,9 @@
-# CI for USAi Chat — runs the zero-dependency test suite on every push / PR.
+# CI for USAi Chat — runs the test suite + coverage gates on every push / PR.
 #
-# Mirrors ./run-tests.sh: syntax gates + JS (node --test) + Python (unittest).
-# Kept dependency-light on purpose — the only install is python-dotenv (so that
-# `import server` succeeds), matching requirements.txt.
+# Mirrors ./run-tests.sh --coverage: syntax gates + JS (node --test) + Python
+# (unittest), each with a coverage gate. Dependency-light on purpose — the only
+# RUNTIME dep is python-dotenv (matching requirements.txt); `coverage` is a
+# DEV-ONLY tool used to enforce the gate and is never shipped in the app.
 name: tests
 
 on:
@@ -13,24 +14,27 @@ on:
 
 jobs:
   javascript:
-    name: JS unit tests (node --test)
+    name: JS unit tests + coverage (node --test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Node >= 22 so the built-in --experimental-test-coverage is available
+          # (used by the dev-only coverage gate; no third-party deps).
+          node-version: "22"
       - name: Syntax check (app.js)
         run: node --check app.js
       - name: Run JS unit tests
         # Use `find` to enumerate the test files explicitly. This is portable
-        # across Node versions (directory args to `node --test` need Node >= 21;
-        # CI runs Node 20) and avoids relying on bash globstar (`**`), which is
-        # off by default in non-interactive shells.
+        # across Node versions (directory args to `node --test` need Node >= 21)
+        # and avoids relying on bash globstar (`**`), which is off in CI shells.
         run: node --test $(find tests/js -name '*.test.mjs')
+      - name: JS coverage gate (exported helpers)
+        run: node tests/js-coverage.mjs 70
 
   python:
-    name: Python unit tests (unittest)
+    name: Python unit tests + coverage (unittest)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -42,9 +46,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install runtime dependency
-        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+      - name: Install runtime dependency + dev-only coverage tool
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt coverage
       - name: Syntax check (server.py)
         run: python -m py_compile server.py
-      - name: Run Python unit tests
-        run: python -m unittest discover -s tests/python -p 'test_*.py'
+      - name: Run Python tests with coverage gate
+        # .coveragerc sets fail_under; this fails CI if server.py coverage drops.
+        run: |
+          python -m coverage run -m unittest discover -s tests/python -p 'test_*.py'
+          python -m coverage report -m

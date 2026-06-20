@@ -14,3 +14,15 @@ chat_history.json
 
 # macOS cruft
 .DS_Store
+
+# Dev-only test-coverage artifacts (coverage.py). The .coveragerc config IS
+# tracked; its output files are not. Coverage tooling never ships in the app.
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Guard against vault files being written to a literal relative path inside the
+# repo (e.g. when an Obsidian filesystem-write fallback uses the wrong base path).
+# Vault notes belong in the real Obsidian Vault, never tracked here.
+Users/
