@@ -104,7 +104,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 ## Documentation
 
-- [ ] **22. Obsidian guide: how the Continue checks + rules workflow works**
+- [x] **22. Obsidian guide: how the Continue checks + rules workflow works**
   - Write a full, detailed guide (stored in the Obsidian vault under
     `Continue Extension/guides/`) explaining the RAIL agent pipeline
     (*Rule-governed Agentic Iteration Loop*) end-to-end: what
@@ -115,8 +115,16 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     the UI/UX quality axis, how it ties to `AGENTS.md`, the test stack +
     `run-tests.sh`, CI, and the Obsidian memory loop. Include a concrete
     walkthrough of a real change going through the pipeline.
-  - **Blocked on #23** (the Obsidian MCP must be reliable to write into the vault),
-    though the guide could be drafted in-repo and copied over as a fallback.
+  - Done: wrote `Continue Extension/guides/RAIL-Pipeline-Guide.md` covering all of
+    the above — Rules vs. Checks, the four rule trigger types (with which of our
+    rules use each), the five roles + TDD inner loop + UI/UX quality axis, the
+    `/check` gates, the zero-dep test stack + `run-tests.sh` + coverage gates + CI,
+    the Obsidian memory loop, and a concrete worked example (the streaming HTTP/1.1
+    fix walked through all five roles). Marked the earlier `Agent-Pipeline-Workflow.md`
+    **superseded** in place (status tag + callout linking to the new guide). The
+    unblocking note below is moot — direct filesystem writes to the vault work
+    reliably (the preferred path per `AGENTS.md`), so #23/#24 were not a true
+    blocker.
   - Source material: `docs/testing-and-agents-strategy.md`, `AGENTS.md`,
     `.continue/rules/*`, `.continue/checks/*`.
 

@@ -1,5 +1,20 @@
 ## [Unreleased]
 
+### Docs — Complete RAIL pipeline guide (Obsidian) — backlog #22
+
+Wrote the full, detailed RAIL guide that backlog **#22** called for, stored in the
+Obsidian vault at `Continue Extension/guides/RAIL-Pipeline-Guide.md`. It explains the
+pipeline end-to-end for a newcomer: **Rules vs. Checks**, the four **rule trigger
+types** (Always / Auto-attached via `globs`/`regex` / Agent-requested via
+`description` / Manual via `@mention`) with which of our rules use which, the five
+roles + the TDD inner loop + the UI/UX quality axis, how `/check` runs the gates, the
+zero-dependency test stack + `run-tests.sh` + coverage gates + CI, the Obsidian
+memory loop, and a **concrete worked example** (the streaming HTTP/1.1 fix walked
+through all five roles). The earlier `Agent-Pipeline-Workflow.md` (2026-06-17) is
+marked **superseded** in place (status tag + a callout linking to the new guide).
+The repo's `docs/testing-and-agents-strategy.md` remains the source of truth; the
+guide links back to it. No code/behavior change.
+
 ### Docs — Named the agent pipeline "RAIL"
 
 The five-role agent pipeline now has an official name: **RAIL** (*Rule-governed
