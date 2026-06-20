@@ -106,7 +106,8 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 - [ ] **22. Obsidian guide: how the Continue checks + rules workflow works**
   - Write a full, detailed guide (stored in the Obsidian vault under
-    `Continue Extension/guides/`) explaining the agent pipeline end-to-end: what
+    `Continue Extension/guides/`) explaining the RAIL agent pipeline
+    (*Rule-governed Agentic Iteration Loop*) end-to-end: what
     **rules** (`.continue/rules/*`) vs **checks** (`.continue/checks/*`) are, the
     rule trigger types (Always / Auto-attached via `globs` / Agent-requested /
     Manual), how the five-role pipeline (Code Planner → Development SME → Full Test
@@ -269,17 +270,18 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     `docs/testing-and-agents-strategy.md`, `AGENTS.md`, `.continue/rules/CONTINUE.md`,
     `README.md`, `app.js` (exports only).
 
-- [~] **17. Unit testing + five-role agent pipeline**
-  - Establish a zero-new-dependency test suite and a Continue-native agent
-    pipeline that automates planning, implementation, testing, QA review, and
-    continuous improvement as we make changes.
+- [~] **17. Unit testing + RAIL (five-role agent pipeline)**
+  - Establish a zero-new-dependency test suite and **RAIL** (*Rule-governed
+    Agentic Iteration Loop*) — a Continue-native agent pipeline that automates
+    planning, implementation, testing, QA review, and continuous improvement as
+    we make changes.
   - **Full plan:** [`docs/testing-and-agents-strategy.md`](docs/testing-and-agents-strategy.md).
   - **Test stack (no new deps):** Python `unittest` (stdlib) for `server.py`;
     Node 18+ `node --test` for `app.js` pure functions; `node --check` /
     `python3 -m py_compile` as syntax gates. Tests live in `tests/python` and
     `tests/js`.
-  - **Five roles:** Code Planner → Development SME → Full Test Suite → QA Review
-    → Continuous Improvement (closed loop; learnings recorded to Obsidian).
+  - **Five roles (RAIL):** Code Planner → Development SME → Full Test Suite → QA
+    Review → Continuous Improvement (closed loop; learnings recorded to Obsidian).
   - **Implemented as:** rules (`.continue/rules/`), checks (`.continue/checks/`
     run via `/check`), optional agents/modes (`.continue/agents/`), wired through
     `AGENTS.md`.

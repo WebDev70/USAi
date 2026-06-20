@@ -129,8 +129,9 @@ Tests live in `tests/js/*.test.mjs` and `tests/python/test_*.py` (with HTTP
 integration suites `test_server_http.py`, `test_server_branches.py`,
 `test_server_proxy.py`). See
 [`docs/testing-and-agents-strategy.md`](../../docs/testing-and-agents-strategy.md)
-for the full strategy and the five-role agent pipeline (Planner → SME → Tests →
-QA `/check` → Continuous Improvement).
+for the full strategy and **RAIL** (*Rule-governed Agentic Iteration Loop*) — the
+five-role agent pipeline (Planner → SME → Tests → QA `/check` → Continuous
+Improvement).
 
 ---
 
@@ -173,8 +174,8 @@ QA `/check` → Continuous Improvement).
 ### Testing approach
 Zero-dependency unit tests (`node --test` for JS, stdlib `unittest` for Python) via
 `./run-tests.sh`, plus syntax gates and in-browser testing. Watch the **Debug Logs**
-panel and the server terminal for errors. Non-trivial changes follow the five-role
-agent pipeline (see `docs/testing-and-agents-strategy.md`).
+panel and the server terminal for errors. Non-trivial changes follow **RAIL** — the
+five-role agent pipeline (see `docs/testing-and-agents-strategy.md`).
 
 ### Build & deployment
 No build. Deployment = run `server.py` somewhere it can read `.env`. Intended for

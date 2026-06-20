@@ -1,5 +1,27 @@
 ## [Unreleased]
 
+### Docs — Named the agent pipeline "RAIL"
+
+The five-role agent pipeline now has an official name: **RAIL** (*Rule-governed
+Agentic Iteration Loop*). The acronym captures its two defining traits — it is
+**Rule**-governed (each role is an always-on rule in `.continue/rules/` plus
+pass/fail `/check` gates in `.continue/checks/`) and **Agentic** (the LLM, not a
+controller program, self-sequences the roles); "Iteration **Loop**" spans both the
+inner TDD cycle (Red → Green → Refactor) and the outer Continuous-Improvement
+feedback loop, and evokes the *guardrails* the rules/checks provide. Documented the
+name and rationale across the project (no code/behavior change):
+
+- **`docs/testing-and-agents-strategy.md`** — added a "What we call this — RAIL"
+  callout and retitled §3 "RAIL — the five-role agent pipeline."
+- **`AGENTS.md`** — renamed the workflow section to "Agent pipeline — RAIL" and
+  introduced the term where the pipeline is described.
+- **`README.md`** — references RAIL in the "Running tests" pointer to the strategy
+  doc.
+- **`backlog.md`** — items #17 and #22 now name RAIL.
+- **Role rules** (`.continue/rules/code-planner.md`, `development-sme.md`,
+  `testing-standards.md`, `continuous-improvement.md`, `tdd-workflow.md`) — each
+  role header now reads "Step N of RAIL — the Rule-governed Agentic Iteration Loop."
+
 ### Fixed — Streaming responses delayed (whole reply appeared at once)
 
 Streamed replies took a long time (seconds — up to a minute or two for long

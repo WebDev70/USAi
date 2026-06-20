@@ -2,7 +2,7 @@
 alwaysApply: true
 ---
 
-# Role: Development SME (Step 2 of the agent pipeline)
+# Role: Development SME (Step 2 of RAIL — the Rule-governed Agentic Iteration Loop)
 
 Implement the plan from the Code Planner idiomatically for USAi Chat. You are the
 subject-matter expert on this codebase's conventions — write code that looks like it

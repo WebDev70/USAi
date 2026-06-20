@@ -6,7 +6,8 @@ alwaysApply: true
 
 USAi Chat follows **Test-Driven Development**. For any non-trivial change to
 testable logic in `app.js` or `server.py`, you **write the test(s) first**, watch
-them fail, then write the minimum code to pass, then refactor. This rule sits on top
+them fail, then write the minimum code to pass, then refactor. This rule is the
+inner loop of **RAIL** (the Rule-governed Agentic Iteration Loop) — it sits on top
 of the Full Test Suite role (`testing-standards.md`) and the QA checks
 (`.continue/checks/`). Full strategy: `docs/testing-and-agents-strategy.md`.
 

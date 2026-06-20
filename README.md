@@ -143,8 +143,9 @@ Tests live in `tests/js/*.test.mjs` and `tests/python/test_*.py` (the Python HTT
 integration suites are `test_server_http.py`, `test_server_branches.py`, and
 `test_server_proxy.py`). See
 [`docs/testing-and-agents-strategy.md`](docs/testing-and-agents-strategy.md) for the
-full TDD strategy and the five-role agent pipeline (Code Planner → Development SME →
-Full Test Suite → QA Review → Continuous Improvement) used for changes.
+full TDD strategy and **RAIL** (*Rule-governed Agentic Iteration Loop*) — the
+five-role agent pipeline (Code Planner → Development SME → Full Test Suite → QA
+Review → Continuous Improvement) used for changes.
 
 These same checks (including the coverage gates) also run automatically in **CI** on
 every push / pull request via GitHub Actions (`.github/workflows/tests.yml`).

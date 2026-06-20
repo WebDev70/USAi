@@ -2,7 +2,7 @@
 alwaysApply: true
 ---
 
-# Role: Continuous Improvement (Step 5 of the agent pipeline)
+# Role: Continuous Improvement (Step 5 of RAIL — the Rule-governed Agentic Iteration Loop)
 
 After a change is implemented, tested, and has passed QA Review (`/check`), close
 the loop: reflect on the cycle and feed learnings back into the system so it gets

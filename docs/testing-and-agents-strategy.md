@@ -1,10 +1,21 @@
 # Testing & Agent Pipeline Strategy — USAi Chat
 
 This document defines (1) the **TDD-first unit/integration-testing strategy** for
-USAi Chat and (2) a **five-role agent pipeline** that automates planning,
-implementation, testing, QA review, and continuous improvement as we make changes.
-It is the reference for the rules (`.continue/rules/`), checks (`.continue/checks/`),
-and agents (`.continue/agents/`) we add to the repo.
+USAi Chat and (2) **RAIL** — the **five-role agent pipeline** that automates
+planning, implementation, testing, QA review, and continuous improvement as we make
+changes. It is the reference for the rules (`.continue/rules/`), checks
+(`.continue/checks/`), and agents (`.continue/agents/`) we add to the repo.
+
+> ### What we call this — **RAIL** (Rule-governed Agentic Iteration Loop)
+> The pipeline's name is **RAIL**. The acronym captures its two defining traits —
+> it is **Rule**-governed (every role is an always-on rule in `.continue/rules/`
+> plus pass/fail `/check` gates in `.continue/checks/`) and **Agentic** (the LLM,
+> not a controller program, self-sequences through the roles). "Iteration **Loop**"
+> reflects both the inner TDD cycle (Red → Green → Refactor) and the outer
+> self-improvement loop (Continuous Improvement feeds new rules/checks/tests back
+> in). The name also evokes *guardrails* — exactly what the rules and checks are:
+> they keep an autonomous agent on track. Throughout the docs, "the **RAIL**
+> pipeline" and "the five-role agent pipeline" refer to the same thing.
 
 > Status: **ACTIVE.** The TDD workflow + coverage gates are in force. Tracked as
 > backlog items **#17** (pipeline) and **#25** (TDD + coverage rigor).
@@ -123,10 +134,10 @@ tests/
 
 ---
 
-## 3. The five-role agent pipeline
+## 3. RAIL — the five-role agent pipeline
 
-A closed loop that turns a request into reviewed, tested, documented code — and
-feeds learnings back in.
+**RAIL** (Rule-governed Agentic Iteration Loop) is a closed loop that turns a
+request into reviewed, tested, documented code — and feeds learnings back in.
 
 ```
 Code Planner → Development SME → Full Test Suite → QA Review → Continuous Improvement

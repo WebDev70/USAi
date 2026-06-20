@@ -49,11 +49,15 @@ sessions.
 
 ---
 
-## Agent pipeline (how we work)
+## Agent pipeline — RAIL (how we work)
 
-Non-trivial changes flow through a five-role pipeline (full detail:
+Non-trivial changes flow through **RAIL** (*Rule-governed Agentic Iteration Loop*),
+our five-role pipeline (full detail:
 [`docs/testing-and-agents-strategy.md`](docs/testing-and-agents-strategy.md); each
-role is an always-on rule in `.continue/rules/`). We practice **Test-Driven
+role is an always-on rule in `.continue/rules/`). The name captures its two defining
+traits — it is **Rule**-governed (always-on rules + `/check` gates) and **Agentic**
+(the LLM self-sequences the roles); the "Iteration **Loop**" spans the inner TDD
+cycle and the outer continuous-improvement feedback. We practice **Test-Driven
 Development** — write the failing test first, then the code (see
 [`.continue/rules/tdd-workflow.md`](.continue/rules/tdd-workflow.md)):
 

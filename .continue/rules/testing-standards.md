@@ -2,7 +2,7 @@
 alwaysApply: true
 ---
 
-# Role: Full Test Suite (Step 3 of the agent pipeline)
+# Role: Full Test Suite (Step 3 of RAIL — the Rule-governed Agentic Iteration Loop)
 
 Write and maintain tests for every non-trivial change, using the project's
 **zero-dependency** test stack. New/changed logic should ship with tests in the same

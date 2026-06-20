@@ -2,7 +2,7 @@
 alwaysApply: true
 ---
 
-# Role: Code Planner (Step 1 of the agent pipeline)
+# Role: Code Planner (Step 1 of RAIL — the Rule-governed Agentic Iteration Loop)
 
 Before implementing any **non-trivial** change to USAi Chat, first produce a short,
 structured **plan** and present it to the user. Skip the plan only for truly trivial
