@@ -8,9 +8,55 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 - `[~]` In progress
 - `[x]` Done
 
+> **Note on IDs:** Item numbers are **stable identifiers** (referenced in
+> `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
+> that were renumbered, merged, or retired; the highest-assigned ID is **34**.
+
+---
+
+## Project organization (do first)
+
+- [x] **30. Deeper doc split — three-concern documentation refactor** *(M)*
+  - **Done (2026-06-23):**
+    - [x] `docs/testing-and-agents-strategy.md` renamed → `docs/rail-pipeline.md`
+      (harness-agnostic RAIL concept + testing strategy).
+    - [x] `docs/tooling/continue.md` created — Continue-only reference
+      (`.continue/` layout, `/check`, `cli-check.sh`, agents, MCP setup).
+    - [x] `docs/tooling/cline.md` created — Cline-only reference
+      (`.clinerules/` layout, workflows, `/spec`→`/loop` flow).
+    - [x] Cross-references updated across all files: `AGENTS.md`, `README.md`,
+      `docs/ORGANIZATION.md`, `docs/principles.md`, `.continue/rules/CONTINUE.md`,
+      `.continue/rules/testing-standards.md`, `.continue/rules/tdd-workflow.md`,
+      `.continue/rules/continuous-improvement.md`, `.continue/rules/agile-workflow.md`,
+      `.continue/checks/test-coverage.md`, `.clinerules/rail-pipeline.md`,
+      `run-tests.sh`, `scripts/cli-check.sh`.
+    - [x] `docs/ORGANIZATION.md` "What's not here" section removed (it's done);
+      table of files and harness descriptions updated.
+
 ---
 
 ## Security (do first)
+
+- [x] **26. RAIL → top-tier Agile + DevSecOps + IaC pipeline**
+  - Elevate the RAIL agent pipeline so security and infrastructure are
+    **machine-enforced gates**, not prose, and add Agile/Product-Owner rigor.
+  - **Done:**
+    - [x] `docs/principles.md` — reframes "zero runtime deps" as **minimal,
+      audited runtime surface** (RUNTIME vs DEV/CI litmus) + DevSecOps/IaC/Agile.
+    - [x] DevSecOps: `scripts/security-scan.sh` (gitleaks/bandit/pip-audit), CI
+      `security` job, SSRF guard `is_safe_upstream_url()` (B310), new checks
+      `dependency-and-supply-chain-review.md` + rule `devsecops.md`.
+    - [x] IaC: `Dockerfile` + `docker-compose.yml` + `Makefile`,
+      `resolve_bind_address()` (HOST/PORT), `.env.example` drift test, check
+      `iac-review.md` + rule `infrastructure-as-code.md`.
+    - [x] Agile/PO: rules `product-owner.md` + `agile-workflow.md`; checks
+      `definition-of-ready.md`, `acceptance-criteria.md`, `definition-of-done.md`.
+    - [x] Agent modes `.continue/agents/{product-owner,planner,security,improver}.yaml`;
+      rule `observability.md`; `scripts/cli-check.sh` runs the security scan.
+  - Files: `docs/principles.md`, `Dockerfile`, `docker-compose.yml`, `Makefile`,
+    `scripts/security-scan.sh`, `server.py`, `.continue/rules/*`,
+    `.continue/checks/*`, `.continue/agents/*`, `.github/workflows/tests.yml`,
+    `tests/python/*`, `requirements.txt`.
 
 - [x] **1. Fix `/config` secret exposure**
   - The `/config` endpoint returns the full `CONFIG` dict, including `api_key`
@@ -21,7 +67,11 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     `has_context7` booleans; client sends Authorization only when the user types
     a key, otherwise the proxy injects it.
 
-## High value, low effort
+---
+
+## Open items
+
+### High value, low effort
 
 - [x] **2. Markdown rendering**
   - Render assistant messages as Markdown (bold, headings, lists, links) with
@@ -69,40 +119,334 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     images). Guarded against running while a request is in flight. Buttons are
     attached in `appendMessage` paths and on history/session restore.
 
-## Medium effort
+### Medium effort
 
-- [ ] **7. Real embeddings for RAG**
+> ⚠️ **Parking lot — not yet refined to Definition of Ready.** Items #7–#15
+> lack user stories, acceptance criteria, test plans, and size estimates. They
+> must go through a Product Owner grooming pass (per
+> `.continue/checks/definition-of-ready.md`) before being pulled into a sprint.
+
+- [ ] **7. Real embeddings for RAG** *(M)*
   - Replace keyword matching with embeddings + cosine similarity for file search.
   - Files: `app.js`, possibly `server.py` (embeddings proxy/cache).
+  - *depends on: nothing (but #16 embeddings-based memory search is a related
+    sub-task that also depends on this)*
 
-- [ ] **8. More file types (PDF/DOCX)**
+- [ ] **8. More file types (PDF/DOCX)** *(S–M)*
   - Extract text from PDF and DOCX uploads, not just plain text.
   - Files: `app.js` (upload handling), possibly a parser library.
 
-- [ ] **9. Streaming + tool calling together**
+- [ ] **9. Streaming + tool calling together** *(M)*
   - Accumulate `delta.tool_calls` fragments so tool mode can stream.
   - Files: `app.js` (`streamChatApi`, `runWithTools`).
+  - *related to: #11 (both touch the streaming path)*
 
-- [ ] **10. Export / import conversations**
+- [ ] **10. Export / import conversations** *(S)*
   - Download a session as JSON/Markdown; re-import later.
   - Files: `app.js`, possibly `server.py`.
 
-- [ ] **11. Reasoning / thinking display**
+- [ ] **11. Reasoning / thinking display** *(S–M)*
   - Show reasoning-model thinking content in a collapsible block.
   - Files: `app.js`, `styles.css`.
+  - *related to: #9 (both touch the streaming path)*
 
-- [ ] **12. Prompt templates / saved system prompts**
+- [ ] **12. Prompt templates / saved system prompts** *(S)*
   - A small library of reusable system prompts.
   - Files: `app.js`, `index.html`, `styles.css`.
 
-## Larger / later
+### Larger / later
 
-- [ ] **13. Custom user-defined tools**
+> ⚠️ **Parking lot — not yet refined to Definition of Ready** (same note as
+> above applies; #27 is the exception — it is fully groomed).
+
+- [ ] **13. Custom user-defined tools** *(L)*
   - Let users register their own tool definitions.
-- [ ] **14. Model comparison (side-by-side)**
-- [ ] **15. Voice input / TTS output**
 
-## Documentation
+- [ ] **14. Model comparison (side-by-side)** *(L)*
+
+- [ ] **15. Voice input / TTS output** *(L)*
+
+- [ ] **27. Projects (ChatGPT-style workspaces) — group chats + shared instructions, files & memory scope** *(L)*
+  - Mirror chatgpt.com **Projects**: a named workspace that keeps **chats,
+    files, custom instructions, and a memory scope** in one place. Detailed
+    planning + a full critical quality review are captured in the Obsidian note
+    `Continue Extension/memories/2026-06-20-223334-projects-feature-plan-and-review.md`
+    — read that first to pick up where we left off.
+
+  - **User story:** *As a USAi user, I want to organize chats into Projects —
+    each with its own name, custom instructions, shared files, and a memory scope
+    (shared vs. project-only) — so related work stays together and reuses
+    context, with optional memory isolation.*
+
+  - **What ChatGPT's UI does (from reference screenshots):**
+    - **Create project** modal: name (+ optional emoji/icon), helper text
+      ("Projects keep chats, files, and custom instructions in one place").
+    - A **gear** in the create modal reveals a **Memory** mode that is
+      **immutable after creation**:
+      - **Default** — "Project can access memories from outside chats, and vice
+        versa." (reads/writes the global memory pool).
+      - **Project-only** — "Project can only access its own memories. Its
+        memories are hidden from outside chats." (isolated).
+    - **Project settings:** name, **Instructions** textarea, read-only Memory
+      mode, **Delete project** (destructive).
+    - **Context menu:** Share / Rename / Project settings / Project home /
+      **Pin project** / Delete.
+    - **Sidebar sections:** **Pinned**, **Projects** (collapsible, "Show more"),
+      **Chats** (ungrouped).
+
+  - **Acceptance criteria (v1):**
+    1. Create a Project with a name and a **Memory mode** (Default / Project-only)
+       that is **fixed at creation** (server enforces immutability).
+    2. Sidebar shows **Pinned**, **Projects** (collapsible), and **Chats**
+       sections.
+    3. A chat started inside a Project inherits the Project's **instructions** as
+       part of its system prompt.
+    4. **Default** mode → memories use the global vault folder *plus* the project
+       folder (both-ways); **Project-only** → memories use a project-scoped
+       folder hidden from global recall.
+    5. Rename, pin, open settings, and delete a Project. **Delete orphans its
+       chats to "Chats" (does NOT delete them) and PRESERVES any Obsidian memory
+       notes** (never destroy vault content) — decision per the review.
+    6. Old sessions with no `projectId` still load and appear under **Chats**
+       (backward-compatible migration).
+    7. Dependency-free; secrets stay server-side; every new filesystem path
+       (`projectId` in cache/memory paths) is server-generated + slugified +
+       traversal-guarded.
+
+  - **Critical-review findings to honor (see Obsidian note for full detail):**
+    - **Active-chat model is a single global file** (`chat_history.json` +
+      `conversationHistory`/`chatDisplayHistory`); sessions are lazy archives.
+      Add first-class `currentProjectId` state and stamp `projectId` onto the
+      session in **both** archive paths — JS `archiveCurrentSession()` **and**
+      Python `_post_new_chat_session` (the latter archives with no project
+      context today and would silently drop it).
+    - **System prompt is now 3 layers:** `project.instructions` +
+      (per-chat `systemPrompt` ?? `default_system_prompt`). Decided order:
+      project instructions first, concatenated with `\n\n`. Applied in the
+      message-build path and must survive **regenerate / edit-resend / session
+      restore**.
+    - **Memory modes are real merge/exclusion logic, not a path swap:**
+      `get_memory_dir()` is shared by 4 endpoints + `has_obsidian` + auto-recall +
+      the 💾 button. Add `get_memory_dir(project_id, mode)`; **Default** search
+      must read **both** global + project folders; **Project-only** must be
+      excluded from global searches. Immutability enforced server-side.
+    - **Project files vs. per-chat uploads:** `fileChunks`/`uploadedFiles` reset
+      on new-chat/restore/upload. Keep project chunks in a **separate**
+      `projectChunks` array, loaded when a project opens, merged with per-chat
+      chunks in `getRelevantChunks`/`prepareContextMessages`.
+    - **Delete spans 4 stores:** `.projects/<id>.json`, sessions with that
+      `projectId`, `.chunk_cache/projects/<id>/`, and
+      `<vault>/.../projects/<id>/memories/` — memory notes preserved by default.
+    - **Sidebar is a full `innerHTML` rebuild** (`showSessionsList`); the
+      sectioned/collapsible rewrite must use semantic disclosure
+      (`<details>`/`aria-expanded`) per the UI/UX rule + bump `styles.css?v=N`.
+
+  - **Proposed storage model:**
+    - `.projects/<projectId>.json` → `{id, name, icon?, instructions,
+      memoryMode, pinned, createdAt}` (id generated server-side like
+      `project_<timestamp>`).
+    - `projectId` field added to each session JSON in `.chat_sessions/`.
+    - project files → `.chunk_cache/projects/<projectId>/`.
+    - project-only memories → `<vault>/<subdir>/projects/<projectId>/memories/`.
+
+  - **Vertical slices (each runs the full RAIL loop; v1 = Slices 1–3):**
+    - **Slice 1 — Projects as folders + sidebar sections + `currentProjectId`
+      plumbing:** project CRUD + pin; `projectId` stamped on both archive paths;
+      sectioned/collapsible sidebar (Pinned/Projects/Chats); legacy migration.
+    - **Slice 2 — Project instructions:** 3-layer system-prompt concatenation,
+      applied in message-build + regenerate/edit/restore.
+    - **Slice 3 — Memory modes:** Default (dual-read global+project) vs
+      Project-only (isolated + excluded from global), immutable, server-enforced.
+    - **Slice 4 (defer):** Project files (shared knowledge) via `projectChunks`.
+    - **Defer (polish):** Share project, emoji/icon picker, "Project home" view.
+
+  - **Test plan (TDD-first):** projectId stamping on both archive paths; 3-layer
+    prompt concat; Default dual-folder search; Project-only exclusion from global
+    search; traversal guards on new project paths; legacy projectless-session
+    migration; memory-mode immutability rejection on update.
+
+  - Files (anticipated): `server.py` (`/projects` CRUD + project-aware
+    `/memory/*` + `/chunk-cache` + `_post_new_chat_session`), `app.js`
+    (`currentProjectId`, sidebar sections, prompt concat, `projectChunks`),
+    `index.html` (create/settings modal, sidebar sections), `styles.css`
+    (bump `?v=N`), `tests/python/*`, `tests/js/*`, plus docs
+    (CHANGELOG/USER_GUIDE/README/CONTINUE).
+
+### Model routing / tiering
+
+> Use higher-reasoning models only where they pay off, and cheap/fast models for
+> routine work. Two separate efforts — one for the Continue dev workflow, one for
+> the USAi web app. **Prereq for both:** confirm the exact model IDs the gateway
+> accepts for each tier (candidates from `index.html`: high=`claude_opus_4`,
+> medium=`claude_sonnet_4`, low=`claude_3_haiku`).
+>
+> Reality check (from Continue docs / Context7): Continue assigns models to fixed
+> **roles** (`chat`/`edit`/`apply`/`autocomplete`/`embed`/`rerank`), **not** to our
+> custom pipeline agents. There is no built-in automatic per-agent model selection,
+> so the dev-workflow side (#18) is *guided* (tiers + manual dropdown switch); the
+> truly *automatic* router belongs in the app (#19).
+
+> ⚠️ **Needs grooming:** #18 and #19 have solid descriptions and file lists but
+> lack explicit acceptance criteria in the standard AC format. Complete an AC
+> pass before pulling into a sprint.
+
+- [ ] **18. Continue dev-workflow model tiers (guided)** *(S)*
+  - Define three model tiers in a Continue `config.yaml` so the RAIL roles
+    can use the right level of reasoning: **high** (Opus) for Code Planner on
+    complex/architectural work + hard QA review; **medium** (Sonnet) for default
+    Development SME / test writing; **low** (Haiku) for trivial edits, docs, and
+    quick fixes. Switching is **manual** via the model dropdown (Continue has no
+    auto per-agent routing); the role rules should *advise* which tier to pick.
+  - Deliver a **sample** `docs/continue-config.sample.yaml` (don't touch the user's
+    global `~/.continue/config.yaml`, which may hold secrets) + a short "model
+    tiers" section in `docs/testing-and-agents-strategy.md`, and a one-line tier
+    hint in each role rule (`code-planner`, `development-sme`,
+    `continuous-improvement`).
+  - Files: `docs/continue-config.sample.yaml` (new),
+    `docs/testing-and-agents-strategy.md`, `.continue/rules/*`.
+
+- [ ] **19. USAi web-app automatic model router** *(M)*
+  - Add a real per-message **model router** to the app: a `routeModel(text, opts)`
+    helper classifies each message by complexity (length, presence of code,
+    keywords like architect/refactor/debug/prove, tools enabled) and auto-selects a
+    tier — **high** (Opus) for heavy reasoning, **medium** (Sonnet) default, **low**
+    (Haiku) for trivial. Add a Settings control: **Auto** (router on) plus a manual
+    override (Off/High/Medium/Low); persist it in `usai.settings.v1`. Surface the
+    chosen tier in the message note (e.g. `Model: Sonnet (auto)`).
+  - Keep it dependency-free; gate behind the toggle; make `routeModel` a pure
+    function with `node --test` cases (high/medium/low + forced override). Run the
+    full Plan → Implement → Test → `/check` pipeline.
+  - Files: `app.js` (router + tier map + note), `index.html` (Auto/override
+    control), `styles.css`, `tests/js/app.test.mjs`.
+
+---
+
+## Completed / Archive
+
+### Testing & agent automation
+
+- [x] **25. Test-Driven Development workflow + thorough QA (coverage-gated)**
+  - Raise the quality bar to TDD-first with measured, **enforced** coverage —
+    keeping the zero-runtime-dependency rule (coverage tooling is dev-only).
+  - **Done:**
+    - New always-on rule `.continue/rules/tdd-workflow.md` (Red → Green → Refactor,
+      tests-first, layers, gates, definition of done).
+    - **HTTP integration tests** (boot the real `ThreadingHTTPServer`, stdlib
+      `urllib`): `tests/python/test_server_http.py`, `test_server_branches.py`,
+      `test_server_proxy.py` (proxy + `/context7` against a fake stdlib upstream,
+      incl. SSE streaming relay + 500/502/503 paths). More `server.py` unit tests
+      (`_resolve_memory_file`, `add_log` rotation, `load_config`).
+    - More `app.js` pure-helper tests + exports (`safeTrim`, `enforceStrictSchema`,
+      `scoreChunkByKeywords`, `chunkText`, `normalizeAssistantText`); 25 JS tests.
+    - Coverage gates: `.coveragerc` (`fail_under=88`, server.py at **90%**),
+      `tests/js-coverage.mjs` (branch ≥ 70% of exported helpers, at **73%**),
+      `run-tests.sh --coverage`, `.gitignore` for coverage artifacts.
+    - CI upgraded to Node 22 + coverage gates (`.github/workflows/tests.yml`);
+      `test-coverage` check tightened; docs synced (strategy doc, AGENTS.md,
+      CONTINUE.md, README). 56 Python + 25 JS tests pass.
+  - Files: `.continue/rules/tdd-workflow.md`, `.continue/checks/test-coverage.md`,
+    `tests/python/test_server_*.py`, `tests/js/app.test.mjs`, `tests/js-coverage.mjs`,
+    `.coveragerc`, `run-tests.sh`, `.github/workflows/tests.yml`, `.gitignore`,
+    `docs/testing-and-agents-strategy.md`, `AGENTS.md`, `.continue/rules/CONTINUE.md`,
+    `README.md`, `app.js` (exports only).
+
+- [x] **17. Unit testing + RAIL (role-based agent pipeline)**
+  - Establish a zero-new-dependency test suite and **RAIL** (*Rule-governed
+    Agentic Iteration Loop*) — a Continue-native agent pipeline that automates
+    planning, implementation, testing, QA review, and continuous improvement as
+    we make changes.
+  - **Full plan:** [`docs/testing-and-agents-strategy.md`](docs/testing-and-agents-strategy.md).
+  - **Test stack (no new deps):** Python `unittest` (stdlib) for `server.py`;
+    Node 18+ `node --test` for `app.js` pure functions; `node --check` /
+    `python3 -m py_compile` as syntax gates. Tests live in `tests/python` and
+    `tests/js`.
+  - **Roles (RAIL):** Product Owner (bookends) → Code Planner → Development SME →
+    Full Test Suite → QA Review → Continuous Improvement (closed loop; learnings
+    recorded to Obsidian), with DevSecOps / IaC / Observability woven through.
+  - **Implemented as:** rules (`.continue/rules/`), checks (`.continue/checks/`
+    run via `/check`), optional agents/modes (`.continue/agents/`), wired through
+    `AGENTS.md`.
+  - **Rollout (incremental):**
+    - [x] Strategy doc + this backlog item.
+    - [x] Rules: `code-planner`, `development-sme`, `testing-standards`,
+      `continuous-improvement`.
+    - [x] Checks: `test-coverage`, `security-review`, `code-quality-review`,
+      `docs-in-sync` (in `.continue/checks/`, run via `/check`).
+    - [x] `tests/` scaffold + starter tests (`renderMarkdown`, `extractJson`,
+      `formatUsage`, `getExcludedParams`, `buildResponseFormat` in JS;
+      `get_memory_dir` traversal guard + `_slugify` in Python) + a Node-only
+      `module.exports` guard in `app.js` so helpers are importable. `run-tests.sh`
+      runs all 22 tests + syntax gates.
+    - [x] `AGENTS.md` workflow wiring (RAIL roles + run `/check`) +
+      README/CONTINUE.md "Running tests" sections.
+    - [x] Optional: dedicated `planner`/`improver` agent modes. **Done:** added
+      `.continue/agents/{product-owner,planner,security,improver}.yaml` (backlog #26).
+    - [x] CI: GitHub Actions workflow (`.github/workflows/tests.yml`) runs the
+      suite on push/PR (JS via `node --test`; Python `unittest` on 3.9 + 3.11).
+      A pre-commit git hook remains an optional future add (see #28).
+  - *See also: #25 (which expanded coverage gates and superseded the in-progress
+    parts of this item; #17 is now fully closed).*
+  - Files: `docs/testing-and-agents-strategy.md`, `.continue/rules/*`,
+    `.continue/checks/*`, `.continue/agents/*`, `tests/*`, `AGENTS.md`,
+    `README.md`, `.continue/rules/CONTINUE.md`.
+
+### Memory / "second brain"
+
+- [~] **16. Obsidian long-term memory (second brain)**
+  - Use an Obsidian vault as persistent long-term memory so the assistant can
+    recall facts/preferences/decisions across conversations.
+  - *depends on: #7 (for sub-task: embeddings-based memory search)*
+  - **Phase 1 (done):** direct vault file I/O in `server.py` (no MCP/Node dep).
+    - `.env`: `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_MEMORY_SUBDIR` (default `USAi`).
+    - Memories stored as tagged, frontmatter'd Markdown in
+      `<vault>/<subdir>/memories/`, writes confined to that folder (no traversal).
+    - Endpoints: `GET /memory/search`, `GET /memory/list`, `GET /memory/read`,
+      `POST /memory/save`. `/config` exposes `has_obsidian`.
+    - Tools: `search_memory`, `save_memory` in `TOOL_REGISTRY`, gated behind a
+      new **Obsidian Memory** toggle (requires Tool calling on + vault configured).
+  - **Phase 2 (backlog):** optional `obsidian-mcp` bridge for rich tag/note
+    management (rename-tag, move-note, multi-vault) and reuse with Claude Desktop.
+  - **Phase 3:**
+    - [x] Auto-recall: opt-in **Auto-recall memories** toggle injects top-N
+      relevant memories before each message (in `prepareContextMessages`, like
+      the file-RAG path); adds a `Memory: N note(s)` segment to the context note.
+    - [x] Manual **💾 Remember** button on every message (hover) for one-click
+      saves via `saveMemory` → `POST /memory/save` (tagged `manual`). Shown only
+      when a vault is configured; independent of the tool/auto-recall toggles.
+    - [ ] Embeddings-based memory search — *depends on #7*
+  - Files: `server.py`, `app.js`, `index.html`, `styles.css`.
+
+### Front-end design (UI/UX)
+
+- [x] **20. Front-End Design (UI/UX) agent**
+  - A quality-axis role that keeps `index.html`/`styles.css` modern, accessible,
+    and user-friendly, using Context7 (preferred reference: **USWDS**
+    `/uswds/uswds-site`) — adapting principles to our vanilla-CSS token system, with
+    **no new frontend deps/framework/build step**.
+  - Done: auto-attached rule `.continue/rules/ui-ux-design.md` (scoped via `globs`
+    to `index.html`/`styles.css`) + QA check `.continue/checks/ui-ux-review.md`
+    (contrast, `:focus-visible`, semantic/ARIA, reduced-motion, responsive,
+    token-driven, cache-bust). Documented in `docs/testing-and-agents-strategy.md`
+    and wired into `AGENTS.md`.
+  - Files: `.continue/rules/ui-ux-design.md`, `.continue/checks/ui-ux-review.md`,
+    `docs/testing-and-agents-strategy.md`, `AGENTS.md`.
+
+- [x] **21. Accessibility + modern-UI design pass (use the #20 agent)**
+  - Apply the Front-End Design agent to audit and refresh the actual UI: verify
+    WCAG AA contrast in both themes, add `:focus-visible` rings, audit ARIA on
+    icon-only controls (sidebar toggle, attach, send), add a reduced-motion guard,
+    and tastefully adopt modern vanilla CSS (fluid `clamp()` type, `color-mix()`
+    state tints) — all token-driven. Bump `styles.css?v=N`.
+  - Done (USWDS-guided via Context7, `?v=20`): global `:focus-visible` ring
+    (`--focus-ring` tokens, `color-mix`), `prefers-reduced-motion` guard, `.sr-only`
+    utility, accessible names + `aria-hidden` glyphs on send/attach/sidebar-toggle
+    (with synced `aria-expanded`), semantic landmarks/live regions (sidebar label,
+    `role="log"` conversation, `role="list"` history), AA contrast fix for
+    light-theme secondary text (`#6b6b76`→`#595963`), and removed hardcoded
+    `#b4b4b7` inline colors. `color-mix()` state tints / fluid `clamp()` type left
+    as an optional future polish.
+
+### Documentation
 
 - [x] **22. Obsidian guide: how the Continue checks + rules workflow works**
   - Write a full, detailed guide (stored in the Obsidian vault under
@@ -110,17 +454,19 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     (*Rule-governed Agentic Iteration Loop*) end-to-end: what
     **rules** (`.continue/rules/*`) vs **checks** (`.continue/checks/*`) are, the
     rule trigger types (Always / Auto-attached via `globs` / Agent-requested /
-    Manual), how the five-role pipeline (Code Planner → Development SME → Full Test
-    Suite → QA Review → Continuous Improvement) flows, how `/check` runs the gates,
-    the UI/UX quality axis, how it ties to `AGENTS.md`, the test stack +
-    `run-tests.sh`, CI, and the Obsidian memory loop. Include a concrete
+    Manual), how the role-based pipeline (Product Owner → Code Planner → Development
+    SME → Full Test Suite → QA Review → Continuous Improvement) flows, how `/check`
+    runs the gates, the UI/UX quality axis, how it ties to `AGENTS.md`, the test
+    stack + `run-tests.sh`, CI, and the Obsidian memory loop. Include a concrete
     walkthrough of a real change going through the pipeline.
   - Done: wrote `Continue Extension/guides/RAIL-Pipeline-Guide.md` covering all of
     the above — Rules vs. Checks, the four rule trigger types (with which of our
-    rules use each), the five roles + TDD inner loop + UI/UX quality axis, the
+    rules use each), the RAIL roles + TDD inner loop + UI/UX quality axis, the
     `/check` gates, the zero-dep test stack + `run-tests.sh` + coverage gates + CI,
     the Obsidian memory loop, and a concrete worked example (the streaming HTTP/1.1
-    fix walked through all five roles). Marked the earlier `Agent-Pipeline-Workflow.md`
+    fix walked through the roles). Updated 2026-06-20 to match the expanded pipeline
+    (Product Owner bookend + DevSecOps/IaC/Observability cross-cutting concerns).
+    Marked the earlier `Agent-Pipeline-Workflow.md`
     **superseded** in place (status tag + callout linking to the new guide). The
     unblocking note below is moot — direct filesystem writes to the vault work
     reliably (the preferred path per `AGENTS.md`), so #23/#24 were not a true
@@ -128,7 +474,80 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
   - Source material: `docs/testing-and-agents-strategy.md`, `AGENTS.md`,
     `.continue/rules/*`, `.continue/checks/*`.
 
-## Tooling / environment
+### UI/UX polish
+
+- [x] **33. UI layout polish — assistant metadata below response + user bubble column layout** *(S)*
+  - Two small layout improvements to match modern chat UI conventions:
+    1. **Assistant metadata + Regenerate below response** — the "Context7 + Memory: …
+       total tokens" note and the ↻ Regenerate button moved from a side column to
+       below each assistant response (flush-left), eliminating the cramped narrow column.
+    2. **User bubble vertical stack + green accent outline** — user prompt bubbles now
+       stack vertically (bubble on top, ✎ Edit underneath, right-aligned) to mirror the
+       assistant layout; a `var(--color-accent)` border added to distinguish user bubbles
+       from the chat background in both themes.
+  - Done (2026-06-23): CSS only — no JS or HTML changes.
+    - `styles.css` `?v=21 → v22`: `flex-direction: column; align-items: stretch` on
+      `.message-group.assistant`; `.message-note` left-aligned.
+    - `styles.css` `?v=22 → v23`: `.message-group.user` switched from row to
+      `flex-direction: column; align-items: flex-end`; `border: 1px solid
+      var(--color-accent)` on `.message-group.user .message-bubble`.
+    - `index.html` bumped to `?v=23`.
+  - Files: `styles.css`, `index.html`.
+
+- [x] **31. Sidebar collapse toggle — discoverability + persistence** *(S)*
+  - The ☰ sidebar toggle lacked a tooltip and didn't remember its state across
+    reloads (causing a flash of the wrong layout on page load).
+  - **Acceptance criteria (met):**
+    - Dynamic `aria-label` and `title` ("Collapse sidebar" / "Expand sidebar") keep the
+      button self-describing.
+    - Collapsed/expanded state persisted to `localStorage`; restored synchronously on
+      `DOMContentLoaded` so there is no layout flash.
+    - Six unit tests (T-1…T-6) cover helper behaviour, persistence, and init-time restore.
+  - Done (2026-06-23): `applySidebarCollapsed()` helper (DOM-injectable, testable);
+    click handler persists state; `_testInit()` restores on load; `#sidebarToggle`
+    initial `aria-label` updated in `index.html`.
+  - Spec: `docs/specs/sidebar-collapse-toggle.md`.
+  - Files: `app.js`, `index.html`, `tests/js/app.test.mjs`.
+
+### Documentation
+
+- [x] **32. Architecture reference document** *(S)*
+  - Added `docs/ARCHITECTURE.md` — a concise, overview-level architecture and
+    engineering reference for the USAi Chat app (concern #1 only).
+  - Covers: system overview, Mermaid request-flow + tool-calling diagrams, backend
+    routing pattern, endpoint catalog, config loading, on-disk data stores, frontend
+    tool registry, streaming paths, RAG pipeline, Obsidian memory integration, session
+    management, settings persistence, Markdown rendering, security architecture,
+    and infrastructure.
+  - Done (2026-06-23): `docs/ARCHITECTURE.md` created; `docs/ORGANIZATION.md` updated
+    (new row in file table + "Where to put new things" table); spec at
+    `docs/specs/architecture-doc.md`.
+  - Files: `docs/ARCHITECTURE.md` (new), `docs/specs/architecture-doc.md` (new),
+    `docs/ORGANIZATION.md`.
+
+### Tooling / environment
+
+- [x] **34. RAIL quality-gate hardening** *(S)*
+  - Five targeted improvements to tighten automated quality gates without changing any
+    app behaviour:
+    1. **`scripts/cli-check.sh` full 10-check gate** — added the three missing PO-gated
+       check files (`definition-of-ready.md`, `acceptance-criteria.md`,
+       `definition-of-done.md`) so all ten checks pass as rules to `cn review`.
+    2. **`--strict` security scan in QA-gate paths** — `cli-check.sh` and `make check`
+       now call `./scripts/security-scan.sh --strict`; missing scanners no longer
+       silently pass.
+    3. **`.env.example` drift guard extended** — added `HOST=` and `PORT=` to
+       `.env.example`; extended `test_env_example_sync.py` to union env vars from
+       `resolve_bind_address()` as well as `load_config()`.
+    4. **CI / `make check` alignment documented** — `tests.yml` header rewritten;
+       Makefile `scan` vs `scan-strict` vs `check` comments updated.
+    5. **`maxTokens` input ceiling raised** — `index.html` `max` attribute bumped
+       from `96768` → `131072` (128K) to cover large-output models.
+  - Done (2026-06-23). Relates to #26 (which created these gates) but is a separate
+    hardening pass.
+  - Files: `scripts/cli-check.sh`, `scripts/security-scan.sh`, `Makefile`,
+    `.env.example`, `tests/python/test_env_example_sync.py`,
+    `.github/workflows/tests.yml`, `index.html`.
 
 - [x] **23. Fix Obsidian MCP reliability (`Request timed out`, error -32001)**
   - The `obsidian-mcp` stdio server intermittently timed out. Root cause:
@@ -178,163 +597,24 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
   - Files: `.continue/mcpServers/new-mcp-server.yaml`,
     `scripts/kill-stale-obsidian-mcp.sh`, `.continue/rules/CONTINUE.md`, `CHANGELOG.md`.
 
-## Front-end design (UI/UX)
+---
 
-- [x] **20. Front-End Design (UI/UX) agent**
-  - A quality-axis role that keeps `index.html`/`styles.css` modern, accessible,
-    and user-friendly, using Context7 (preferred reference: **USWDS**
-    `/uswds/uswds-site`) — adapting principles to our vanilla-CSS token system, with
-    **no new frontend deps/framework/build step**.
-  - Done: auto-attached rule `.continue/rules/ui-ux-design.md` (scoped via `globs`
-    to `index.html`/`styles.css`) + QA check `.continue/checks/ui-ux-review.md`
-    (contrast, `:focus-visible`, semantic/ARIA, reduced-motion, responsive,
-    token-driven, cache-bust). Documented in `docs/testing-and-agents-strategy.md`
-    and wired into `AGENTS.md`.
-  - Files: `.continue/rules/ui-ux-design.md`, `.continue/checks/ui-ux-review.md`,
-    `docs/testing-and-agents-strategy.md`, `AGENTS.md`.
+## Future / deferred
 
-- [x] **21. Accessibility + modern-UI design pass (use the #20 agent)**
-  - Apply the Front-End Design agent to audit and refresh the actual UI: verify
-    WCAG AA contrast in both themes, add `:focus-visible` rings, audit ARIA on
-    icon-only controls (sidebar toggle, attach, send), add a reduced-motion guard,
-    and tastefully adopt modern vanilla CSS (fluid `clamp()` type, `color-mix()`
-    state tints) — all token-driven. Bump `styles.css?v=N`.
-  - Done (USWDS-guided via Context7, `?v=20`): global `:focus-visible` ring
-    (`--focus-ring` tokens, `color-mix`), `prefers-reduced-motion` guard, `.sr-only`
-    utility, accessible names + `aria-hidden` glyphs on send/attach/sidebar-toggle
-    (with synced `aria-expanded`), semantic landmarks/live regions (sidebar label,
-    `role="log"` conversation, `role="list"` history), AA contrast fix for
-    light-theme secondary text (`#6b6b76`→`#595963`), and removed hardcoded
-    `#b4b4b7` inline colors. `color-mix()` state tints / fluid `clamp()` type left
-    as an optional future polish.
+- [x] **29. Startup API key auth probe warning**
+  - Fire a non-blocking probe at server startup that emits a loud `[WARNING]`
+    log + stderr print when the configured API key is rejected (HTTP 401/403),
+    so a bad/expired key is obvious immediately rather than surfacing later as a
+    cryptic error in the chat UI.
+  - Done: `probe_upstream_auth()` helper (SSRF-guarded, pure, unit-testable);
+    `run_startup_auth_probe()` wired into `run()`; 10 unit tests (T-P1–T-P10);
+    CHANGELOG + `docs/USER_GUIDE.md` (new Troubleshooting entry) updated.
+  - Files: `server.py`, `tests/python/test_server.py`, `CHANGELOG.md`,
+    `docs/USER_GUIDE.md`, `docs/specs/startup-auth-probe.md`.
 
-## Model routing / tiering
-
-> Use higher-reasoning models only where they pay off, and cheap/fast models for
-> routine work. Two separate efforts — one for the Continue dev workflow, one for
-> the USAi web app. **Prereq for both:** confirm the exact model IDs the gateway
-> accepts for each tier (candidates from `index.html`: high=`claude_opus_4`,
-> medium=`claude_sonnet_4`, low=`claude_3_haiku`).
->
-> Reality check (from Continue docs / Context7): Continue assigns models to fixed
-> **roles** (`chat`/`edit`/`apply`/`autocomplete`/`embed`/`rerank`), **not** to our
-> custom pipeline agents. There is no built-in automatic per-agent model selection,
-> so the dev-workflow side (#18) is *guided* (tiers + manual dropdown switch); the
-> truly *automatic* router belongs in the app (#19).
-
-- [ ] **18. Continue dev-workflow model tiers (guided)**
-  - Define three model tiers in a Continue `config.yaml` so the five-role pipeline
-    can use the right level of reasoning: **high** (Opus) for Code Planner on
-    complex/architectural work + hard QA review; **medium** (Sonnet) for default
-    Development SME / test writing; **low** (Haiku) for trivial edits, docs, and
-    quick fixes. Switching is **manual** via the model dropdown (Continue has no
-    auto per-agent routing); the role rules should *advise* which tier to pick.
-  - Deliver a **sample** `docs/continue-config.sample.yaml` (don't touch the user's
-    global `~/.continue/config.yaml`, which may hold secrets) + a short "model
-    tiers" section in `docs/testing-and-agents-strategy.md`, and a one-line tier
-    hint in each role rule (`code-planner`, `development-sme`,
-    `continuous-improvement`).
-  - Files: `docs/continue-config.sample.yaml` (new),
-    `docs/testing-and-agents-strategy.md`, `.continue/rules/*`.
-
-- [ ] **19. USAi web-app automatic model router**
-  - Add a real per-message **model router** to the app: a `routeModel(text, opts)`
-    helper classifies each message by complexity (length, presence of code,
-    keywords like architect/refactor/debug/prove, tools enabled) and auto-selects a
-    tier — **high** (Opus) for heavy reasoning, **medium** (Sonnet) default, **low**
-    (Haiku) for trivial. Add a Settings control: **Auto** (router on) plus a manual
-    override (Off/High/Medium/Low); persist it in `usai.settings.v1`. Surface the
-    chosen tier in the message note (e.g. `Model: Sonnet (auto)`).
-  - Keep it dependency-free; gate behind the toggle; make `routeModel` a pure
-    function with `node --test` cases (high/medium/low + forced override). Run the
-    full Plan → Implement → Test → `/check` pipeline.
-  - Files: `app.js` (router + tier map + note), `index.html` (Auto/override
-    control), `styles.css`, `tests/js/app.test.mjs`.
-
-## Testing & agent automation
-
-- [x] **25. Test-Driven Development workflow + thorough QA (coverage-gated)**
-  - Raise the quality bar to TDD-first with measured, **enforced** coverage —
-    keeping the zero-runtime-dependency rule (coverage tooling is dev-only).
-  - **Done:**
-    - New always-on rule `.continue/rules/tdd-workflow.md` (Red → Green → Refactor,
-      tests-first, layers, gates, definition of done).
-    - **HTTP integration tests** (boot the real `ThreadingHTTPServer`, stdlib
-      `urllib`): `tests/python/test_server_http.py`, `test_server_branches.py`,
-      `test_server_proxy.py` (proxy + `/context7` against a fake stdlib upstream,
-      incl. SSE streaming relay + 500/502/503 paths). More `server.py` unit tests
-      (`_resolve_memory_file`, `add_log` rotation, `load_config`).
-    - More `app.js` pure-helper tests + exports (`safeTrim`, `enforceStrictSchema`,
-      `scoreChunkByKeywords`, `chunkText`, `normalizeAssistantText`); 25 JS tests.
-    - Coverage gates: `.coveragerc` (`fail_under=88`, server.py at **90%**),
-      `tests/js-coverage.mjs` (branch ≥ 70% of exported helpers, at **73%**),
-      `run-tests.sh --coverage`, `.gitignore` for coverage artifacts.
-    - CI upgraded to Node 22 + coverage gates (`.github/workflows/tests.yml`);
-      `test-coverage` check tightened; docs synced (strategy doc, AGENTS.md,
-      CONTINUE.md, README). 56 Python + 25 JS tests pass.
-  - Files: `.continue/rules/tdd-workflow.md`, `.continue/checks/test-coverage.md`,
-    `tests/python/test_server_*.py`, `tests/js/app.test.mjs`, `tests/js-coverage.mjs`,
-    `.coveragerc`, `run-tests.sh`, `.github/workflows/tests.yml`, `.gitignore`,
-    `docs/testing-and-agents-strategy.md`, `AGENTS.md`, `.continue/rules/CONTINUE.md`,
-    `README.md`, `app.js` (exports only).
-
-- [~] **17. Unit testing + RAIL (five-role agent pipeline)**
-  - Establish a zero-new-dependency test suite and **RAIL** (*Rule-governed
-    Agentic Iteration Loop*) — a Continue-native agent pipeline that automates
-    planning, implementation, testing, QA review, and continuous improvement as
-    we make changes.
-  - **Full plan:** [`docs/testing-and-agents-strategy.md`](docs/testing-and-agents-strategy.md).
-  - **Test stack (no new deps):** Python `unittest` (stdlib) for `server.py`;
-    Node 18+ `node --test` for `app.js` pure functions; `node --check` /
-    `python3 -m py_compile` as syntax gates. Tests live in `tests/python` and
-    `tests/js`.
-  - **Five roles (RAIL):** Code Planner → Development SME → Full Test Suite → QA
-    Review → Continuous Improvement (closed loop; learnings recorded to Obsidian).
-  - **Implemented as:** rules (`.continue/rules/`), checks (`.continue/checks/`
-    run via `/check`), optional agents/modes (`.continue/agents/`), wired through
-    `AGENTS.md`.
-  - **Rollout (incremental):**
-    - [x] Strategy doc + this backlog item.
-    - [x] Rules: `code-planner`, `development-sme`, `testing-standards`,
-      `continuous-improvement`.
-    - [x] Checks: `test-coverage`, `security-review`, `code-quality-review`,
-      `docs-in-sync` (in `.continue/checks/`, run via `/check`).
-    - [x] `tests/` scaffold + starter tests (`renderMarkdown`, `extractJson`,
-      `formatUsage`, `getExcludedParams`, `buildResponseFormat` in JS;
-      `get_memory_dir` traversal guard + `_slugify` in Python) + a Node-only
-      `module.exports` guard in `app.js` so helpers are importable. `run-tests.sh`
-      runs all 22 tests + syntax gates.
-    - [x] `AGENTS.md` workflow wiring (5-role pipeline + run `/check`) +
-      README/CONTINUE.md "Running tests" sections.
-    - [ ] Optional: dedicated `planner`/`improver` agent modes.
-    - [x] CI: GitHub Actions workflow (`.github/workflows/tests.yml`) runs the
-      suite on push/PR (JS via `node --test`; Python `unittest` on 3.9 + 3.11).
-      A pre-commit git hook remains an optional future add.
-  - Files: `docs/testing-and-agents-strategy.md`, `.continue/rules/*`,
-    `.continue/checks/*`, `.continue/agents/*`, `tests/*`, `AGENTS.md`,
-    `README.md`, `.continue/rules/CONTINUE.md`.
-
-## Memory / "second brain"
-
-- [~] **16. Obsidian long-term memory (second brain)**
-  - Use an Obsidian vault as persistent long-term memory so the assistant can
-    recall facts/preferences/decisions across conversations.
-  - **Phase 1 (done):** direct vault file I/O in `server.py` (no MCP/Node dep).
-    - `.env`: `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_MEMORY_SUBDIR` (default `USAi`).
-    - Memories stored as tagged, frontmatter'd Markdown in
-      `<vault>/<subdir>/memories/`, writes confined to that folder (no traversal).
-    - Endpoints: `GET /memory/search`, `GET /memory/list`, `GET /memory/read`,
-      `POST /memory/save`. `/config` exposes `has_obsidian`.
-    - Tools: `search_memory`, `save_memory` in `TOOL_REGISTRY`, gated behind a
-      new **Obsidian Memory** toggle (requires Tool calling on + vault configured).
-  - **Phase 2 (backlog):** optional `obsidian-mcp` bridge for rich tag/note
-    management (rename-tag, move-note, multi-vault) and reuse with Claude Desktop.
-  - **Phase 3:**
-    - [x] Auto-recall: opt-in **Auto-recall memories** toggle injects top-N
-      relevant memories before each message (in `prepareContextMessages`, like
-      the file-RAG path); adds a `Memory: N note(s)` segment to the context note.
-    - [x] Manual **💾 Remember** button on every message (hover) for one-click
-      saves via `saveMemory` → `POST /memory/save` (tagged `manual`). Shown only
-      when a vault is configured; independent of the tool/auto-recall toggles.
-    - [ ] Embeddings-based memory search (ties into item #7).
-  - Files: `server.py`, `app.js`, `index.html`, `styles.css`.
+- [ ] **28. Pre-commit git hook for test/syntax gates** *(S)*
+  - Add an optional `pre-commit` hook (`.git/hooks/pre-commit`) that runs
+    `node --check app.js` and `python3 -m py_compile server.py` (and optionally
+    the fast unit tests) before each commit, catching syntax errors locally.
+    Document the manual install step in `README.md` or `AGENTS.md`.
+  - *Deferred from #17 rollout; low priority given CI already covers this.*

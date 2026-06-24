@@ -137,6 +137,40 @@ function setTheme(isDark) {
   logger.info('theme', 'Theme changed', { mode: isDark ? 'dark' : 'light' });
 }
 
+// Apply (or remove) the sidebar-collapsed state and keep the toggle button's
+// accessible label and tooltip in sync with the current state.
+// Accepts optional element references so the function is testable without a
+// real browser DOM — the browser always calls it with no extra args.
+function applySidebarCollapsed(collapsed, container, btn) {
+  const c = container ?? document.querySelector('.app-container');
+  const b = btn ?? document.getElementById('sidebarToggle');
+  c?.classList.toggle('sidebar-collapsed', collapsed);
+  if (!b) return;
+  const label = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  b.setAttribute('aria-expanded', String(!collapsed));
+  b.setAttribute('aria-label', label);
+  b.setAttribute('title', label);
+}
+
+// Testable version of the toggle click body — extracted so tests can inject
+// stub DOM and localStorage objects without rewiring event listeners.
+function _testToggle(container, btn, ls) {
+  const c = container ?? document.querySelector('.app-container');
+  const willCollapse = !c?.classList.contains('sidebar-collapsed');
+  applySidebarCollapsed(willCollapse, container, btn);
+  ls.setItem('sidebarCollapsed', willCollapse ? '1' : '0');
+}
+
+
+// Testable version of the sidebar init body — extracted for the same reason.
+// The optional applyFn param lets tests spy on what state was applied.
+function _testInit(ls, container, btn, applyFn) {
+  const fn = applyFn ?? applySidebarCollapsed;
+  const stored = ls.getItem('sidebarCollapsed');
+  fn(stored === '1', container, btn);
+}
+
+
 const appConfig = {
   base_url: '',
   default_model: '',
@@ -2558,12 +2592,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('fileUpload').click();
   });
 
-  // Sidebar collapse/expand toggle (also acts as a drawer on mobile).
-  document.getElementById('sidebarToggle')?.addEventListener('click', (e) => {
-    const collapsed = document.querySelector('.app-container')
-      ?.classList.toggle('sidebar-collapsed');
-    e.currentTarget.setAttribute('aria-expanded', String(!collapsed));
+  // Sidebar collapse/expand toggle — persists state to localStorage.
+  // Restore saved state first (synchronous, before any paint).
+  _testInit(localStorage, null, null);
+  document.getElementById('sidebarToggle')?.addEventListener('click', () => {
+    _testToggle(null, null, localStorage);
   });
+
 
   // Auto-grow the message textarea up to its max-height.
   const contentEl = document.getElementById('content');
@@ -2651,5 +2686,10 @@ if (typeof module !== 'undefined' && module.exports) {
     scoreChunkByKeywords,
     chunkText,
     normalizeAssistantText,
+    // Sidebar collapse helpers (tested via injected DOM stubs):
+    applySidebarCollapsed,
+    _testToggle,
+    _testInit,
   };
 }
+

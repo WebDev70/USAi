@@ -1,0 +1,30 @@
+name: Security Engineer
+version: 0.0.1
+schema: v1
+# RAIL agent mode — DevSecOps Security Engineer. Use to threat-model a change, run
+# the deterministic scanners, and harden code. See .continue/rules/devsecops.md and
+# docs/principles.md §1–2. Security tooling here is DEV/CI-only — it ships nothing
+# into the app.
+rules:
+  - file://.continue/rules/devsecops.md
+  - file://.continue/rules/infrastructure-as-code.md
+prompts:
+  - name: threatmodel
+    description: Quick threat-model pass over the current change
+    prompt: |
+      Act as a DevSecOps Security Engineer. Threat-model this change:
+        - What NEW input does it trust, and is it size-limited + validated?
+        - Where could a secret leak (logs, /config, the browser, git)?
+        - Could any filesystem path escape its intended folder (.. / absolute)?
+        - Does it widen what's exposed to the browser or the network (binding)?
+        - Did it add a runtime dependency (forbidden) vs. dev/CI tooling (fine)?
+      For each risk, propose the fix AND a regression test. Then remind me to run
+      `./scripts/security-scan.sh` (gitleaks + bandit + pip-audit) and `/check`
+      (security-review, dependency-and-supply-chain-review, iac-review).
+  - name: scan
+    description: Reminder + command to run the deterministic security scan
+    prompt: |
+      Run the DevSecOps gate and report findings:
+        ./scripts/security-scan.sh        # or: make scan
+      Triage each finding (fix, or document an explicit reviewed exception). Do NOT
+      weaken or disable a scanner to make the change pass.

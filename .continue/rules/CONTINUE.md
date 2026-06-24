@@ -13,12 +13,15 @@ codebase. Continue automatically loads this file into context for this project.
 > as you work.
 
 **Quick reference (see `AGENTS.md` for the full rules):**
-- **Vault:** `/Users/ronaldbblake/Documents/Obsidian Vault`.
-- **Where to write depends on the writer:**
+- **Vault:** the path set in `OBSIDIAN_VAULT_PATH` in your `.env` (e.g. `/path/to/your/Obsidian Vault`).
+- **Where to write depends on the writer (three subfolders — see `docs/ORGANIZATION.md`):**
   - The **Continue extension (VS Code)** saves to **`Continue Extension/memories/`**.
+  - The **Cline extension (VS Code)** saves to **`Cline/memories/`**.
   - The **USAi Chat web app** (💾 Remember button + in-app tools) saves to
     **`USAi/memories/`** on its own via the backend (`OBSIDIAN_MEMORY_SUBDIR=USAi`).
-- **Access (Continue):** **prefer direct filesystem I/O** (your file tools on
+- **Recall (Continue):** search **all three** subfolders at the start of a task so
+  prior context from Cline sessions is not missed.
+- **Write (Continue):** **prefer direct filesystem I/O** (your file tools on
   `<vault>/Continue Extension/memories/`) — it never times out and needs no Node
   process. The `obsidian-mcp` tools are optional/secondary (they intermittently
   time out with `-32001`). See `AGENTS.md` for the full priority order.
@@ -128,10 +131,17 @@ node --test $(find tests/js -name '*.test.mjs')               # JS unit tests
 Tests live in `tests/js/*.test.mjs` and `tests/python/test_*.py` (with HTTP
 integration suites `test_server_http.py`, `test_server_branches.py`,
 `test_server_proxy.py`). See
-[`docs/testing-and-agents-strategy.md`](../../docs/testing-and-agents-strategy.md)
+[`docs/rail-pipeline.md`](../../docs/rail-pipeline.md)
 for the full strategy and **RAIL** (*Rule-governed Agentic Iteration Loop*) — the
-five-role agent pipeline (Planner → SME → Tests → QA `/check` → Continuous
-Improvement).
+role-based agent pipeline (Product Owner → Planner → SME → Tests → QA `/check` →
+Continuous Improvement, with DevSecOps / IaC / Observability woven through).
+
+> **Working from the Continue CLI (`cn`)?** The `/check` QA-gate is a **VS Code
+> extension** feature — the CLI has no `/check` command. Reproduce RAIL's QA-Review
+> step with **`./scripts/cli-check.sh`** (runs the coverage-gated suite; add
+> `--review` to also run `cn review` with the `.continue/checks/*.md` files as
+> rules). The **rules** in `.continue/rules/` *are* loaded automatically by `cn`
+> when launched from the project root; only the checks need the script.
 
 ---
 
@@ -151,7 +161,7 @@ Improvement).
 | `.continue/` | Continue config: `rules/` (this file), `agents/`, `mcpServers/`. |
 | `.github/copilot-instructions.md` | Copilot guidance. |
 | `README.md` | Setup/overview. |
-| `USER_GUIDE.md` | End-user feature documentation. |
+| `docs/USER_GUIDE.md` | End-user feature documentation. |
 | `CHANGELOG.md` | Detailed change log (kept current as features land). |
 | `backlog.md` | Prioritized roadmap; items checked off when done. |
 
@@ -175,7 +185,7 @@ Improvement).
 Zero-dependency unit tests (`node --test` for JS, stdlib `unittest` for Python) via
 `./run-tests.sh`, plus syntax gates and in-browser testing. Watch the **Debug Logs**
 panel and the server terminal for errors. Non-trivial changes follow **RAIL** — the
-five-role agent pipeline (see `docs/testing-and-agents-strategy.md`).
+role-based agent pipeline (see `docs/rail-pipeline.md`).
 
 ### Build & deployment
 No build. Deployment = run `server.py` somewhere it can read `.env`. Intended for
@@ -183,7 +193,7 @@ No build. Deployment = run `server.py` somewhere it can read `.env`. Intended fo
 
 ### Contribution guidelines
 - Work through `backlog.md` items roughly in priority order; mark them done.
-- Record notable changes in `CHANGELOG.md` and update `USER_GUIDE.md` for
+- Record notable changes in `CHANGELOG.md` and update `docs/USER_GUIDE.md` for
   user-facing features.
 
 ### Keep docs in sync (enforced rule)
@@ -194,7 +204,7 @@ docs are part of "done." Roughly:
 | Change | Update |
 |--------|--------|
 | Almost any notable code/behavior change | `CHANGELOG.md` (`## [Unreleased]`) |
-| User-facing feature (toggle/button/setting/workflow) | `USER_GUIDE.md` |
+| User-facing feature (toggle/button/setting/workflow) | `docs/USER_GUIDE.md` |
 | Setup, `.env` vars, run commands, architecture | `README.md` |
 | Completing/starting roadmap items | `backlog.md` (`[x]` / `[~]`) |
 | Structure, concepts, conventions, troubleshooting | this file (`CONTINUE.md`) |
@@ -278,7 +288,7 @@ save is logged).
 ## 8. References
 
 - `README.md` — setup & overview
-- `USER_GUIDE.md` — end-user feature documentation
+- `docs/USER_GUIDE.md` — end-user feature documentation
 - `CHANGELOG.md` — detailed change history
 - `backlog.md` — roadmap / planned work
 - Context7 MCP: https://mcp.context7.com/mcp

@@ -1,5 +1,331 @@
 ## [Unreleased]
 
+### Style — User bubble vertical stack + green accent outline (2026-06-23)
+
+User prompt bubbles now stack their contents vertically (bubble on top, ✎ Edit
+button underneath, right-aligned) matching the assistant-turn layout change
+made earlier in this session. A green `var(--color-accent)` border is also added
+to each user bubble so it stands out clearly against the chat background in both
+light and dark themes — no extra colour token needed.
+
+**Files changed:**
+- `styles.css` — `.message-group.user` changed from `justify-content: flex-end`
+  (row) to `flex-direction: column; align-items: flex-end` (column, right-anchored);
+  added `border: 1px solid var(--color-accent)` to `.message-group.user .message-bubble`.
+  CSS cache version bumped v22 → v23.
+- `index.html` — updated `styles.css?v=23`.
+
+---
+
+### Style — Assistant metadata & Regenerate button moved below response (2026-06-23)
+
+The "Context7 + Memory: … total tokens" note and the ↻ Regenerate button now
+appear **underneath** each assistant response (flush-left) instead of in a
+side column to the right. This matches the layout convention of modern chat UIs
+and eliminates the tall, narrow column that was cramping the response text.
+
+**Files changed:**
+- `styles.css` — added `flex-direction: column; align-items: stretch` to
+  `.message-group.assistant` so the response, metadata note, and action buttons
+  stack vertically; added `.message-group.assistant .message-note { text-align: left }`
+  so the note aligns with the response text. CSS cache version bumped v21 → v22.
+- `index.html` — updated `styles.css?v=22`.
+
+---
+
+### Feature — Sidebar collapse toggle: discoverability & persistence (2026-06-23)
+
+The ☰ sidebar toggle button in the chat header now has a dynamic tooltip and
+`aria-label` ("Collapse sidebar" / "Expand sidebar") so users can discover its
+function at a glance, and the collapsed/expanded state is persisted to
+`localStorage` so it is restored on every page reload without a flash.
+
+**Files changed:**
+- `app.js` — added `applySidebarCollapsed()` helper (testable, DOM-injectable);
+  updated the click handler to persist state; restored state on `DOMContentLoaded`
+  via `_testInit()`; exported helpers for unit tests.
+- `index.html` — updated `title`/`aria-label` on `#sidebarToggle` to
+  "Collapse sidebar" (JS keeps it current thereafter).
+- `tests/js/app.test.mjs` — six new unit tests (T-1…T-6) covering helper
+  behaviour, localStorage persistence, and init-time restore.
+
+---
+
+### Chore — Archive orphaned docs (2026-06-23)
+
+
+Moved two spent/orphaned files to `archive/` to keep `docs/` tidy. No app
+code, behavior, or active-docs changed.
+
+**Files moved to `archive/`:**
+- `docs/testing-and-agents-strategy.md.old` — superseded when the file was
+  renamed to `docs/rail-pipeline.md`; preserved here only for reference.
+- `docs/generate-continue-md-prompt.md` — a one-time Continue config
+  generation prompt (formerly `Claude.md`); no longer needed in active docs.
+
+---
+
+### Docs — Architecture & engineering reference document (2026-06-23)
+
+Added `docs/ARCHITECTURE.md` — a concise, overview-level architecture and engineering
+reference for the USAi Chat application (concern #1 only). Covers system overview,
+Mermaid request-flow and tool-calling diagrams, backend routing pattern, endpoint
+catalog, config loading, on-disk data stores, frontend tool registry, streaming
+paths, RAG pipeline, Obsidian memory integration, session management, settings
+persistence, Markdown rendering, security architecture, and infrastructure.
+
+A deep-detail companion note was written to `Cline/memories/` in the Obsidian vault.
+Spec written to `docs/specs/architecture-doc.md`.
+
+**Files changed:**
+- `docs/ARCHITECTURE.md` — new
+- `docs/specs/architecture-doc.md` — new spec
+- `docs/ORGANIZATION.md` — added `ARCHITECTURE.md` row to file table and
+  "Where to put new things" table
+
+---
+
+### Docs — Fix stale USER_GUIDE.md path references across agent docs (2026-06-23)
+
+`USER_GUIDE.md` was moved to `docs/USER_GUIDE.md`, but many agent instruction files
+still referenced the old root path. Updated all forward-looking references to use
+the correct `docs/USER_GUIDE.md` path.
+
+**Files updated** (bare `USER_GUIDE.md` → `docs/USER_GUIDE.md`):
+- `README.md` — "Update USER_GUIDE.md" instruction in docs section
+- `backlog.md` — docs-to-update checklists in spec template and multiple backlog items
+- `AGENTS.md` — Housekeeping section
+- `.clinerules/rail-pipeline.md` — Developer role docs-in-sync bullet + spec template §6
+- `.clinerules/workflows/build.md` — Role 3d docs-in-sync list
+- `.clinerules/workflows/review.md` — 6c documentation gate checklist
+- `.clinerules/workflows/spec.md` — spec template §6 + handoff note
+- `.continue/rules/CONTINUE.md` — project structure table, contribution guidelines, keep-docs table, References section
+- `.continue/rules/keep-docs-in-sync.md` — update target bullet
+- `.continue/checks/docs-in-sync.md` — pass criteria bullet
+- `.continue/checks/acceptance-criteria.md` — user-facing docs criterion
+
+Historical CHANGELOG entries that mention `USER_GUIDE.md` as prose (not instructions)
+were left unchanged — they describe file names as they existed at the time.
+
+---
+
+### Docs — Deeper doc split: three-concern documentation refactor (backlog #30) (2026-06-23)
+
+Completed the doc-split refactor planned in backlog item **#30**. Every concern's
+documentation now lives in its own file; shared docs are genuinely harness-agnostic.
+
+**`docs/testing-and-agents-strategy.md` → renamed `docs/rail-pipeline.md`**
+Rewrote as a **harness-agnostic** RAIL pipeline + TDD strategy reference. All
+Continue-only or Cline-only language removed; the doc now describes the shared RAIL
+concept, test stack, coverage gates, and roles without favouring either harness. The
+old file is preserved as `docs/testing-and-agents-strategy.md.old` for git history.
+
+**`docs/tooling/continue.md` (new)**
+Continue-only reference: `.continue/` directory layout, how Continue implements RAIL
+(rules/checks/agents), running `/check` via VS Code and `cli-check.sh` from the CLI,
+Obsidian memory write path, MCP setup and troubleshooting ritual.
+
+**`docs/tooling/cline.md` (new)**
+Cline-only reference: `.clinerules/` directory layout, how Cline implements RAIL
+(Plan/Act workflows), all five slash-command workflows and their modes, the spec
+document structure, Obsidian memory write path.
+
+**`docs/ORGANIZATION.md` (updated)**
+Replaced the "What's not here / backlog #30" placeholder section with the now-complete
+file table. Continue and Cline harness sections updated to reference their new
+`docs/tooling/` guides. "Where to put new things" table extended with `docs/tooling/`
+entries. Removed the stale forward-looking note.
+
+**Cross-references updated** in all of the following:
+`AGENTS.md`, `README.md`, `docs/principles.md`, `.clinerules/rail-pipeline.md`,
+`.continue/rules/CONTINUE.md`, `.continue/rules/testing-standards.md`,
+`.continue/rules/tdd-workflow.md`, `.continue/rules/continuous-improvement.md`,
+`.continue/rules/agile-workflow.md`, `.continue/checks/test-coverage.md`,
+`run-tests.sh`, `scripts/cli-check.sh`.
+
+**`backlog.md` (updated)**
+Item **#30** marked `[x]` done with full summary of what was done.
+
+---
+
+### Docs — Three-concern project organization clarification (2026-06-23)
+
+The project has three separate concerns that were getting mixed up in documentation:
+(1) the USAi Chat app itself, (2) the VS Code Continue dev harness, and (3) the VS Code
+Cline dev harness. This change makes the separation explicit throughout the codebase.
+
+**`docs/ORGANIZATION.md` (new)**
+Master reference map of the three concerns. Explains what lives where, who writes to
+which Obsidian memory subfolder, and how the RAIL pipeline is shared while each harness
+has its own config directory. Single source of truth for "what goes where."
+
+**`AGENTS.md` (updated)**
+Rewritten to be a genuinely harness-agnostic shared contract. Added explicit table of
+the three memory subfolders (USAi/Continue Extension/Cline) and direct pointers to
+harness-specific docs. Removed Continue-only language from the shared contract.
+
+**`.clinerules/rail-pipeline.md` (updated)**
+Fixed memory directive: Cline now writes to `Cline/memories/` (not
+`Continue Extension/memories/`). Added concern banner marking this as Cline-only.
+
+**`.clinerules/workflows/*.md` (updated: spec, build, review, loop, self-improve)**
+All five Cline workflow files now carry a concern banner at the top stating they are
+Cline-harness-only and pointing to `docs/ORGANIZATION.md`. Fixed memory note paths in
+`review.md` and `loop.md` to use `Cline/memories/` instead of `Continue Extension/memories/`.
+
+**`README.md` (updated)**
+Obsidian memory section now documents all three writers (app / Continue / Cline) in a
+table. RAIL/agent narrative trimmed to a short pointer to `docs/ORGANIZATION.md`.
+
+**`backlog.md` (updated)**
+Added item **#30** — a deeper doc-split refactor (rename `testing-and-agents-strategy.md`,
+create `docs/tooling/continue.md` and `docs/tooling/cline.md`) — as a new top-priority
+"Project organization" section.
+
+---
+
+### Hardened — RAIL quality gates: strict security scan, full check list, drift guard, CI alignment
+
+Five targeted improvements to tighten the automated quality gates without changing
+any app behavior:
+
+**1 — `scripts/cli-check.sh`: full ten-check QA gate**
+Added the three missing Product-Owner-gated check files (`definition-of-ready.md`,
+`acceptance-criteria.md`, `definition-of-done.md`) to `CHECK_FILES[]`. All ten
+checks described in `docs/testing-and-agents-strategy.md` are now passed as rules
+to `cn review --review` and are reachable from the CLI.
+
+**2 — `--strict` security scan in true QA-gate paths**
+`scripts/cli-check.sh` now calls `./scripts/security-scan.sh --strict` instead of
+the lenient default. A missing gitleaks/bandit/pip-audit installation no longer lets
+the gate silently pass. `Makefile`: `check` now depends on the new `scan-strict`
+target (plain `scan` remains lenient for quick local runs); `scan-strict` is also
+listed in the help comment.
+
+**3 — `.env.example` drift guard extended to cover `HOST` / `PORT`**
+`server.py`'s `resolve_bind_address()` reads `HOST` and `PORT` via `os.getenv` but
+neither variable was documented in `.env.example`, so the IaC drift test silently
+missed them. Fixed on both sides:
+- Added `HOST=` and `PORT=` (commented, with an IaC/container note) to `.env.example`.
+- Extended `tests/python/test_env_example_sync.py` to union env vars from both
+  `load_config()` *and* `resolve_bind_address()` (new `_env_vars_from_source(fn)`
+  helper + `_env_vars_read_by_server()`), with explicit sanity assertions for
+  `HOST` and `PORT`. Test passes (2/2).
+
+**4 — CI / `make check` alignment documented**
+`.github/workflows/tests.yml` header rewritten to state clearly that this workflow
+IS the CI contract and mirrors `make check`. Makefile comments updated to describe
+`scan` vs. `scan-strict` vs. `check`.
+
+**5 — `maxTokens` input ceiling raised to 131072**
+`index.html` `<input id="maxTokens">` `max` attribute changed from `96768` →
+`131072` (128K, a clean power-of-two-aligned value that comfortably covers
+large-output models). The field can still be left blank to omit the parameter
+entirely. No behavior change — the actual model still enforces its own real limit
+server-side.
+
+### Docs — Sync RAIL docs to the expanded (6-role + cross-cutting) pipeline
+
+After elevating RAIL to a top-tier Agile + DevSecOps + IaC pipeline, several docs
+still described the original *five-role* shape. Reconciled the wording everywhere so
+the docs match the implemented rules/checks/agents (no code/behavior change):
+
+- **`docs/testing-and-agents-strategy.md`** — rewrote the "What we call this — RAIL"
+  callout to explain the name still fits as the pipeline grows (it names the *shape*,
+  not a head-count), retitled §3 "RAIL — the **role-based** agent pipeline" with the
+  Product-Owner-bookended diagram, split the roles into **sequential roles** (0–5,
+  adding the Product Owner) + a **cross-cutting concerns** table (DevSecOps / IaC /
+  Observability), expanded the QA-Review checks list to all ten checks, refreshed the
+  rollout plan + references, and dropped stale "five-role" phrasing.
+- **`README.md`** — the "Running tests" pointer now names the Product-Owner-bookended
+  RAIL roles + cross-cutting concerns and links `docs/principles.md`.
+- **`backlog.md`** — renamed #17 to "role-based agent pipeline"; updated the RAIL
+  summary line, the `AGENTS.md`-wiring note, and #18's tier description to "RAIL
+  roles" instead of "five-role pipeline."
+- **`CHANGELOG.md`** — fixed the earlier "retitled §3 … five-role" line.
+- **Obsidian guide `Continue Extension/guides/RAIL-Pipeline-Guide.md`** — added a
+  "What changed (2026-06-20 update)" callout, the Product-Owner-bookended diagram +
+  cross-cutting note, a **Step 0 — Product Owner** role section and a **§4a
+  Cross-cutting concerns** subsection, the full ten-check QA table, and refreshed the
+  trigger-types table, quick-reference, and supporting-files list; tags + `updated`
+  date bumped.
+
+### Added — RAIL → top-tier Agile + DevSecOps + IaC pipeline
+
+Elevated the **RAIL** agent pipeline from "rules + 5 checks" to a top-tier pipeline
+where security and infrastructure are **machine-enforced gates**, not just prose. A
+new principles doc reframes the long-standing constraint, and several gates are now
+deterministic (run the same way every time) rather than LLM-judgment only. **No new
+*runtime* dependency** — all new tooling is dev/CI-only and ships nothing in the app.
+
+- **New `docs/principles.md`** — the canonical "why." §1 reframes "zero runtime
+  dependencies" as **"minimal, audited *runtime* surface"** with an explicit
+  RUNTIME-vs-DEV/CI litmus test (dev/CI tooling that ships nothing into the app is
+  allowed and encouraged); §2 DevSecOps (shift-left, machine-enforced); §3
+  Infrastructure as Code; §4 Agile (value-first, vertical slices, Ready/Done).
+
+- **DevSecOps (deterministic security gates).**
+  - **`scripts/security-scan.sh`** — secret scanning (**gitleaks**), SAST
+    (**bandit** on `server.py`), and dependency CVE audit (**pip-audit**). Missing
+    scanners are skipped locally with install hints; CI installs them so the gate
+    is real. A documented, reviewed `--ignore-vuln` covers GHSA-mf9w-mj56-hr94
+    (python-dotenv `set_key`/`unset_key` symlink issue, fixed in 1.2.2) — **not
+    exploitable here** (the app only ever calls `load_dotenv()`), and we keep the
+    3.9 baseline so can't pin >=1.2.2 (which needs 3.10).
+  - **SSRF hardening (`server.py`)** — new pure `is_safe_upstream_url()` confines
+    the `/api/*` proxy and `/context7` to **http(s)** upstreams (refuses
+    `file://`/etc. with 502), resolving bandit B310. Unit + integration tested.
+  - **CI `security` job** (`.github/workflows/tests.yml`) runs gitleaks + bandit +
+    pip-audit on every push/PR.
+  - **New checks** `dependency-and-supply-chain-review.md` and (security woven
+    through) `devsecops.md` rule.
+
+- **Infrastructure as Code.**
+  - **`Dockerfile`** (non-root user, no secret baked in, `/config` HEALTHCHECK) +
+    **`docker-compose.yml`** (`.env` injected via `env_file`) + **`Makefile`**
+    (`make run|test|coverage|scan|check|docker-up`) — one declarative, reproducible
+    bootstrap used locally and in CI.
+  - **`server.py`** now honors `HOST`/`PORT` via new pure `resolve_bind_address()`
+    (safe local default `127.0.0.1:8000`; container sets `HOST=0.0.0.0`).
+  - **Config-as-code drift guard** — new `tests/python/test_env_example_sync.py`
+    fails if `load_config()` reads an env var that `.env.example` doesn't document.
+  - **New check** `iac-review.md` + rule `infrastructure-as-code.md`.
+
+- **Agile + Product Owner.**
+  - **New rules** `product-owner.md` (bookends RAIL: Definition of Ready →
+    acceptance) and `agile-workflow.md` (vertical slices, backlog discipline, a
+    single **Definition of Done**).
+  - **New checks** `definition-of-ready.md`, `acceptance-criteria.md`, and the
+    meta-gate `definition-of-done.md`.
+
+- **Agentic maturity.** Populated the empty `.continue/agents/` with role modes:
+  `product-owner.yaml`, `planner.yaml`, `security.yaml`, `improver.yaml` (each loads
+  its rule(s) + handy prompts). New `observability.md` rule (structured `add_log`,
+  never log secrets, `/config` liveness).
+
+- **Wiring.** `scripts/cli-check.sh` now also runs `./scripts/security-scan.sh` and
+  passes the new checks as `cn review` rules.
+
+- **Tests.** +new unit tests (`is_safe_upstream_url`, `resolve_bind_address`,
+  env-example sync) + 2 SSRF integration tests; suite now **68 Python + 25 JS**,
+  `server.py` coverage **90%**, all gates green.
+
+### Added — `scripts/cli-check.sh`: CLI equivalent of the `/check` QA gate
+
+The extension's `/check` workflow (which runs the `.continue/checks/*.md` review
+files) is **extension-only** — the Continue CLI (`cn`) has no `/check` slash command.
+Added **`scripts/cli-check.sh`** so RAIL's QA-Review step (Step 4) is usable from the
+terminal / headless. It (1) runs the real automated validation those checks enforce
+(`./run-tests.sh --coverage` — syntax gates + JS/Python tests + coverage thresholds),
+and optionally (2) runs `cn review` with the repo's `.continue/checks/*.md` passed in
+as `--rule`s so the AI review applies the same standards. Usage:
+`./scripts/cli-check.sh` (gate only), `--review` (also AI review), `--review-only`.
+The script only attaches check files that exist, falls back to
+`npx @continuedev/cli --config ~/.continue/config.yaml` when `cn` isn't on `PATH`
+(npx install), and exits non-zero on gate failure (CI/pre-push friendly). Documented
+in `docs/testing-and-agents-strategy.md` and `.continue/rules/CONTINUE.md`. No app
+code/behavior change.
+
 ### Docs — Complete RAIL pipeline guide (Obsidian) — backlog #22
 
 Wrote the full, detailed RAIL guide that backlog **#22** called for, stored in the
@@ -27,7 +353,7 @@ feedback loop, and evokes the *guardrails* the rules/checks provide. Documented 
 name and rationale across the project (no code/behavior change):
 
 - **`docs/testing-and-agents-strategy.md`** — added a "What we call this — RAIL"
-  callout and retitled §3 "RAIL — the five-role agent pipeline."
+  callout and retitled §3 "RAIL — the role-based agent pipeline."
 - **`AGENTS.md`** — renamed the workflow section to "Agent pipeline — RAIL" and
   introduced the term where the pipeline is described.
 - **`README.md`** — references RAIL in the "Running tests" pointer to the strategy

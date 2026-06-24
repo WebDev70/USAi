@@ -1,9 +1,14 @@
-# CI for USAi Chat — runs the test suite + coverage gates on every push / PR.
+# CI for USAi Chat — runs the test suite + coverage gates + security scan on every push / PR.
 #
-# Mirrors ./run-tests.sh --coverage: syntax gates + JS (node --test) + Python
-# (unittest), each with a coverage gate. Dependency-light on purpose — the only
-# RUNTIME dep is python-dotenv (matching requirements.txt); `coverage` is a
-# DEV-ONLY tool used to enforce the gate and is never shipped in the app.
+# This workflow IS the CI contract — it mirrors `make check` exactly:
+#   1. JS syntax gate + unit tests + JS coverage gate (node --test)
+#   2. Python syntax gate + unit/integration tests + server.py coverage gate (coverage.py)
+#   3. DevSecOps scan: gitleaks + bandit --strict + pip-audit (scripts/security-scan.sh --strict)
+#
+# Local equivalent: `make check` (see Makefile).
+# Dependency-light on purpose — the only RUNTIME dep is python-dotenv (matching
+# requirements.txt); all other tooling (coverage, bandit, pip-audit, gitleaks) is
+# DEV/CI-ONLY per docs/principles.md §1 and is never shipped in the app.
 name: tests
 
 on:
@@ -55,3 +60,32 @@ jobs:
         run: |
           python -m coverage run -m unittest discover -s tests/python -p 'test_*.py'
           python -m coverage report -m
+
+  security:
+    name: DevSecOps scan (secrets + SAST + dependency CVEs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so gitleaks can scan past commits for leaked secrets.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dev-only scanners (never shipped in the app)
+        # SAST + dependency-CVE tooling. These are DEV/CI ONLY per docs/principles.md
+        # §1 — not added to requirements.txt and not imported by the app.
+        run: python -m pip install --upgrade pip && pip install bandit pip-audit
+      - name: Secret scan (gitleaks)
+        # Deterministic secret detection across the working tree AND git history.
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: SAST (bandit on server.py)
+        # -ll = report medium+ severity; server.py is the only first-party Python.
+        run: bandit -ll -r server.py
+      - name: Dependency CVE audit (pip-audit)
+        # GHSA-mf9w-mj56-hr94 is ignored with justification (see
+        # scripts/security-scan.sh): python-dotenv set_key/unset_key symlink issue
+        # fixed in 1.2.2 and not exploitable here (app only calls load_dotenv).
+        run: pip-audit --ignore-vuln GHSA-mf9w-mj56-hr94 -r requirements.txt

@@ -8,7 +8,6 @@ This repository is a small static frontend and Python config server for a USAi-c
 - `server.py` serves the frontend and exposes the `.env` settings to `/config`.
 - `app.js` contains frontend request logic and should be the primary place to edit chat behavior.
 - `styles.css` contains the UI styling.
-- `my_server.py` is an example Python MCP server, but is not currently connected to the frontend.
 
 ## What to edit
 
@@ -27,7 +26,6 @@ This repository is a small static frontend and Python config server for a USAi-c
 Start the local server and open the app at `http://localhost:8000`:
 
 ```bash
-cd /Users/ronaldbblake/Documents/Dev/usai
 python3 server.py
 ```
 

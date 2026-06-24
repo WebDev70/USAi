@@ -207,3 +207,71 @@ test('renderMarkdown rejects javascript: links', () => {
   const html = app.renderMarkdown('[click](javascript:alert(1))');
   assert.ok(!html.includes('href="javascript:'), 'unsafe scheme not linkified');
 });
+
+// ── Sidebar collapse toggle tests (T-1…T-6) ─────────────────────────────────
+// These tests exercise the applySidebarCollapsed helper and its localStorage
+// persistence contract. A minimal DOM is built per-test so each is isolated.
+
+function makeSidebarDOM() {
+  const container = { classList: { contains: () => false, toggle() {}, remove() {}, add() {} } };
+  const btn = { _attrs: {}, setAttribute(k, v) { this._attrs[k] = v; } };
+  const ls = { _store: {}, getItem(k) { return this._store[k] ?? null; }, setItem(k, v) { this._store[k] = v; } };
+  return { container, btn, ls };
+}
+
+test('T-1: applySidebarCollapsed(true) adds .sidebar-collapsed, sets correct aria+title', () => {
+  const { container, btn, ls } = makeSidebarDOM();
+  let addedClass = null;
+  container.classList.toggle = (cls, force) => { addedClass = force ? cls : null; };
+  app.applySidebarCollapsed(true, container, btn);
+  assert.equal(addedClass, 'sidebar-collapsed', 'should add sidebar-collapsed');
+  assert.equal(btn._attrs['aria-expanded'], 'false');
+  assert.equal(btn._attrs['aria-label'], 'Expand sidebar');
+  assert.equal(btn._attrs['title'], 'Expand sidebar');
+});
+
+test('T-2: applySidebarCollapsed(false) removes .sidebar-collapsed, sets correct aria+title', () => {
+  const { container, btn } = makeSidebarDOM();
+  let removedClass = null;
+  container.classList.toggle = (cls, force) => { if (!force) removedClass = cls; };
+  app.applySidebarCollapsed(false, container, btn);
+  assert.equal(removedClass, 'sidebar-collapsed', 'should remove sidebar-collapsed');
+  assert.equal(btn._attrs['aria-expanded'], 'true');
+  assert.equal(btn._attrs['aria-label'], 'Collapse sidebar');
+  assert.equal(btn._attrs['title'], 'Collapse sidebar');
+});
+
+test('T-3: toggle click saves "1" to localStorage when collapsing', () => {
+  const { container, btn, ls } = makeSidebarDOM();
+  container.classList.contains = () => false; // not yet collapsed → will collapse
+  container.classList.toggle = () => {};
+  app._testToggle(container, btn, ls);
+  assert.equal(ls._store['sidebarCollapsed'], '1', 'should save "1" when collapsing');
+});
+
+test('T-4: toggle click saves "0" to localStorage when expanding', () => {
+  const { container, btn, ls } = makeSidebarDOM();
+  container.classList.contains = () => true; // currently collapsed → will expand
+  container.classList.toggle = () => {};
+  app._testToggle(container, btn, ls);
+  assert.equal(ls._store['sidebarCollapsed'], '0', 'should save "0" when expanding');
+});
+
+test('T-5: init with sidebarCollapsed="1" restores collapsed state', () => {
+  const { container, btn, ls } = makeSidebarDOM();
+  ls._store['sidebarCollapsed'] = '1';
+  let collapsed = null;
+  const spy = (c, cont, b) => { collapsed = c; };
+  app._testInit(ls, container, btn, spy);
+  assert.equal(collapsed, true, 'should restore collapsed=true');
+});
+
+test('T-6: init with no localStorage value starts expanded with correct labels', () => {
+  const { container, btn, ls } = makeSidebarDOM();
+  // ls has no sidebarCollapsed key
+  let collapsed = null;
+  const spy = (c, cont, b) => { collapsed = c; };
+  app._testInit(ls, container, btn, spy);
+  assert.equal(collapsed, false, 'should start expanded');
+});
+

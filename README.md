@@ -30,7 +30,7 @@ Create or update `.env` in the project root with values like:
 
 ```env
 API_KEY=YOUR_API_KEY_HERE
-BASE_URL=https://api.prod.gsai.mcaas.fcs.gsa.gov/
+BASE_URL=https://your-openai-compatible-endpoint/
 DEFAULT_MODEL=claude_3_haiku
 DEFAULT_SYSTEM_PROMPT=
 ```
@@ -65,23 +65,22 @@ When configured, `/config` reports `has_obsidian: true`, the **Obsidian Memory**
 and **Auto-recall memories** toggles light up, and a **💾 Remember** button appears
 on each message. The app saves notes as tagged Markdown in
 `<vault>/<OBSIDIAN_MEMORY_SUBDIR>/memories/` and **only ever reads/writes inside
-that folder** — your other notes are never touched. See `USER_GUIDE.md` for usage.
+that folder** — your other notes are never touched. See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for usage.
 
-### Two memory destinations (by writer)
+### Three separate memory destinations (by writer)
 
-This project is developed in **VS Code with the Continue extension**, and Continue
-*also* uses the same Obsidian vault as its long-term memory. To keep the two
-streams separate, notes are written to **different subfolders depending on who is
-writing**:
+This project is developed with two VS Code AI extensions (Continue and Cline), and
+all three writers share the vault but use **separate subfolders** so notes never
+collide:
 
 | Writer | Saves to | Controlled by |
 |--------|----------|---------------|
-| **USAi Chat app** (this web app — 💾 button + in-app tools) | `USAi/memories/` | `.env` → `OBSIDIAN_MEMORY_SUBDIR=USAi` |
-| **Continue extension** (dev/agent sessions in VS Code) | `Continue Extension/memories/` | `AGENTS.md` directive + the `obsidian-mcp` server |
+| **USAi Chat app** (this web app — 💾 button + in-app tools) | `USAi/memories/` | `.env → OBSIDIAN_MEMORY_SUBDIR=USAi` |
+| **Continue extension** (VS Code dev sessions) | `Continue Extension/memories/` | `AGENTS.md` memory directive |
+| **Cline extension** (VS Code dev sessions) | `Cline/memories/` | `.clinerules/rail-pipeline.md` |
 
-The two never collide: the app's destination comes from `.env`, while Continue's
-comes from the rules in `AGENTS.md`. See `AGENTS.md` for the full agent memory
-directive.
+See `AGENTS.md` for the shared agent memory directive, and `docs/ORGANIZATION.md`
+for the full three-concern map (app / Continue / Cline).
 
 ## Running the frontend
 
@@ -113,6 +112,30 @@ lsof -ti:8000 | xargs kill
 Navigate to `http://localhost:8000` in your web browser (hard-refresh with
 Cmd/Ctrl+Shift+R after frontend changes).
 
+### Or run it with Docker (declarative, reproducible — Infrastructure as Code)
+
+The app ships a `Dockerfile` + `docker-compose.yml` so you don't have to manage a
+venv. Put your config in `.env` (see above) and run:
+
+```bash
+docker compose up --build      # or: make docker-up
+# stop:  docker compose down    # or: make docker-down
+```
+
+Secrets stay in the git-ignored `.env` (injected via `env_file`) and are never
+baked into the image; the container runs as a non-root user and binds `0.0.0.0`
+inside the container (`HOST`/`PORT` are read by `server.py`). A `Makefile` provides
+one-word entry points used both locally and in CI:
+
+```bash
+make help        # list targets
+make run         # start locally (venv Python)
+make test        # zero-dep test suite
+make coverage    # tests + coverage gates
+make scan        # DevSecOps security scan (gitleaks + bandit + pip-audit)
+make check       # full QA gate: coverage + security scan
+```
+
 ## Running tests
 
 The project follows **Test-Driven Development** and ships a **zero-runtime-dependency**
@@ -141,11 +164,13 @@ node --test $(find tests/js -name '*.test.mjs')               # JS unit tests
 
 Tests live in `tests/js/*.test.mjs` and `tests/python/test_*.py` (the Python HTTP
 integration suites are `test_server_http.py`, `test_server_branches.py`, and
-`test_server_proxy.py`). See
-[`docs/testing-and-agents-strategy.md`](docs/testing-and-agents-strategy.md) for the
-full TDD strategy and **RAIL** (*Rule-governed Agentic Iteration Loop*) — the
-five-role agent pipeline (Code Planner → Development SME → Full Test Suite → QA
-Review → Continuous Improvement) used for changes.
+`test_server_proxy.py`). See [`docs/rail-pipeline.md`](docs/rail-pipeline.md)
+for the full TDD strategy. Engineering principles are in [`docs/principles.md`](docs/principles.md).
+
+> **Note on AI development tooling:** This project is built with two VS Code agent
+> harnesses (Continue and Cline), each implementing the same **RAIL** pipeline.
+> They are separate from the app itself. See [`docs/ORGANIZATION.md`](docs/ORGANIZATION.md)
+> for the three-concern map (app / Continue / Cline).
 
 These same checks (including the coverage gates) also run automatically in **CI** on
 every push / pull request via GitHub Actions (`.github/workflows/tests.yml`).
@@ -166,16 +191,27 @@ to the browser.
 
 - Do not commit your API key or `.env` file to the repository.
 - The local Python server acts as a proxy, so your `API_KEY` is not directly exposed to the browser. It is sent from the server to the target API endpoint.
-- This setup is intended for local development. If you deploy this frontend publicly, ensure the server is properly secured and hardened.
+- The `/config` endpoint returns **only non-secret** fields plus `has_*` feature
+  flags — secrets never reach the browser.
+- **`GET /health`** returns server status, uptime, version, and `has_*` feature
+  flags — safe for use in container liveness probes; exposes no secrets.
+- **SSRF guard:** the proxy and Context7 only reach **http(s)** upstreams.
+- **Deterministic security gates** (DevSecOps, dev/CI-only — ship nothing in the
+  app): `./scripts/security-scan.sh` (or `make scan`) runs **gitleaks** (secrets),
+  **bandit** (SAST), and **pip-audit** (dependency CVEs); they also run in CI.
+- The server binds `127.0.0.1` by default (localhost only); `0.0.0.0` is used only
+  inside the Docker container via `HOST`. This setup is intended for local
+  development — secure and harden it before any public deployment.
+
+See [`docs/principles.md`](docs/principles.md) for the engineering principles
+(minimal runtime surface, DevSecOps, Infrastructure as Code, Agile) behind these.
 
 ## Recommended improvements
 
-- The project now includes a basic backend proxy, which is a good first step. This could be further enhanced with more robust error handling and security features.
-- The backend could be expanded to include user authentication, persistent storage, and other features.
+- The backend could be expanded to include user authentication and persistent
+  storage.
 - Implement stronger frontend validation and better response error handling.
-- ~~Add automated tests for the Python server and the UI logic.~~ Started — see
-  **Running tests** above and `docs/testing-and-agents-strategy.md` (backlog #17).
-- Add documentation for environment variables and deployment.
+- Add embeddings-based memory/RAG search (backlog).
 
 ## Notes
 

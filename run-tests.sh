@@ -9,7 +9,7 @@
 #   • Python: coverage.py installed in .venv (not in requirements.txt)
 #   • JS:     Node's built-in --experimental-test-coverage (needs Node >= 22)
 #
-# Mirrors the commands in docs/testing-and-agents-strategy.md so contributors and
+# Mirrors the commands in docs/rail-pipeline.md so contributors and
 # the Continue agent pipeline (`/check`) run the exact same thing.
 set -euo pipefail
 cd "$(dirname "$0")"

@@ -1,0 +1,28 @@
+# USAi Chat — declarative local/dev runtime (Infrastructure as Code).
+#
+# WHY: docs/principles.md §3 — `docker compose up` is the single, reproducible
+# bootstrap for the app, replacing the manual venv + run steps. This is dev/deploy
+# tooling (it ships nothing INTO the app per §1); the container's runtime surface
+# is still only the Python stdlib + python-dotenv.
+#
+#   docker compose up --build        # start (build on first run)
+#   docker compose down              # stop
+#
+# Secrets stay in .env (git-ignored) and are injected at run time via env_file —
+# they are never baked into the image (see Dockerfile).
+services:
+  usai-chat:
+    build: .
+    image: usai-chat:latest
+    container_name: usai-chat
+    ports:
+      - "8000:8000"
+    # Inject configuration/secrets declaratively from the git-ignored .env.
+    env_file:
+      - .env
+    environment:
+      # Bind all interfaces INSIDE the container so the published port is
+      # reachable from the host (server.py reads HOST/PORT — see resolve_bind_address).
+      HOST: "0.0.0.0"
+      PORT: "8000"
+    restart: unless-stopped

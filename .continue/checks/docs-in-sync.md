@@ -11,8 +11,8 @@ the same change:
 
 - **CHANGELOG.md** — an entry under `## [Unreleased]` exists for any notable
   code/behavior change (this is expected for almost every non-trivial change).
-- **USER_GUIDE.md** — updated when a user-facing feature was added/changed (new
-  toggle, button, setting, or workflow).
+- **`docs/USER_GUIDE.md`** — updated when a user-facing feature was added/changed
+  (new toggle, button, setting, or workflow).
 - **README.md** — updated when setup, `.env` variables, run/stop commands, or
   high-level architecture changed.
 - **backlog.md** — relevant items checked off (`[x]`) or marked in progress (`[~]`),

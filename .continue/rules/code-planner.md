@@ -32,9 +32,10 @@ Test Suite, QA Review). Keep it concise — a scannable outline, not an essay.
 
 ## Behavior
 
-- **Recall first.** At the start of a task, search the Obsidian vault (both
-  `Continue Extension/memories/` and `USAi/memories/`) for relevant prior decisions
-  so the plan builds on past work (see `AGENTS.md`).
+- **Recall first.** At the start of a task, search **all three** Obsidian memory
+  locations (`Continue Extension/memories/`, `Cline/memories/`, and `USAi/memories/`)
+  for relevant prior decisions so the plan builds on past work (see `AGENTS.md` and
+  `docs/ORGANIZATION.md`).
 - For larger changes, briefly pause for the user to confirm the plan before coding.
   For small-but-non-trivial ones, state the plan and proceed.
 - Keep the plan and the eventual implementation consistent; if the approach changes

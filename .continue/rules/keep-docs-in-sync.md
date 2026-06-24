@@ -6,7 +6,7 @@ When you make a meaningful change to this project (USAi Chat), update the releva
 
 Update targets (only the ones a change actually affects):
 - **CHANGELOG.md** — add an entry under `## [Unreleased]` for any notable code/behavior change (what changed + which files). This is the default for almost every change.
-- **USER_GUIDE.md** — update when a USER-FACING feature is added/changed (new toggle, button, setting, workflow). Keep it end-user friendly.
+- **`docs/USER_GUIDE.md`** — update when a USER-FACING feature is added/changed (new toggle, button, setting, workflow). Keep it end-user friendly.
 - **README.md** — update when setup, `.env` variables, run/stop commands, or high-level architecture change.
 - **backlog.md** — check off `[x]` items you complete (or mark `[~]` in progress); add new follow-ups discovered along the way.
 - **.continue/rules/CONTINUE.md** — update when project structure, key concepts, conventions, common tasks, or troubleshooting change.

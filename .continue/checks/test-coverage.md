@@ -5,7 +5,7 @@ description: New or changed logic in app.js / server.py ships with corresponding
 
 Review this change for **test coverage** under the project's **TDD** workflow
 (`.continue/rules/tdd-workflow.md`) and zero-dependency test stack
-(`docs/testing-and-agents-strategy.md`).
+(`docs/rail-pipeline.md`).
 
 Pass the check only if all of these hold:
 

@@ -6,7 +6,7 @@ alwaysApply: true
 
 After a change is implemented, tested, and has passed QA Review (`/check`), close
 the loop: reflect on the cycle and feed learnings back into the system so it gets
-better over time. Full strategy: `docs/testing-and-agents-strategy.md`.
+better over time. Full strategy: `docs/rail-pipeline.md`.
 
 ## Do this at the end of each meaningful task
 
@@ -20,9 +20,10 @@ better over time. Full strategy: `docs/testing-and-agents-strategy.md`.
 3. **Propose coverage/quality follow-ups.** Note gaps in tests or docs and suggest
    concrete `backlog.md` items.
 4. **Record a learning note to Obsidian.** Append a concise note to
-   `Continue Extension/memories/` (per `AGENTS.md`) capturing: what shipped, what
-   failed QA, what we automated/propose to automate, and follow-ups — so the next
-   task's Code Planner can recall it.
+   `Continue Extension/memories/` (per `AGENTS.md` and `docs/ORGANIZATION.md`) capturing:
+   what shipped, what failed QA, what we automated/propose to automate, and follow-ups —
+   so the next task's Code Planner can recall it (searches all three memory subfolders:
+   `Continue Extension/memories/`, `Cline/memories/`, `USAi/memories/`).
 
 ## Autonomy boundary
 

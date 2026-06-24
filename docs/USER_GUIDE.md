@@ -305,6 +305,28 @@ This is useful when reporting a problem.
 
 ## 10. Troubleshooting
 
+### `[WARNING]` "API key rejected by upstream" at startup
+
+When the server starts it quietly fires a one-time probe to check that your API key
+is accepted by the upstream. If the key is expired, wrong, or missing, you'll see a
+line like this in the terminal:
+
+```
+[WARNING] startup: API key rejected by upstream (HTTP 401) — chat will fail until a valid key is set in .env
+```
+
+**What to do:**
+1. Open your `.env` file and verify `API_KEY=` is set to a valid, unexpired key.
+2. Make sure `BASE_URL=` points to the correct endpoint for your provider.
+3. Restart the server (`Ctrl+C` then `.venv/bin/python server.py`).
+
+If the key is valid but the probe still warns (e.g. your upstream doesn't expose
+`/api/v1/models`), the warning is a false alarm — the app will work normally. The
+probe only reports `[WARNING]` for HTTP 401/403; other errors (network unreachable,
+unexpected status) are reported as informational and don't block startup.
+
+You can also check the **Debug Logs** panel for the `startup` component log entries.
+
 ### "API error: 400" when sending a message
 A `400` means the API provider rejected the request. Common causes:
 - **Wrong model ID** — make sure the selected model is one your provider supports
@@ -339,6 +361,33 @@ affect functionality and can be ignored.
 - Check the terminal where `server.py` is running for messages.
 - Reload the browser tab.
 - Look in the **Debug Logs** panel for errors.
+
+### How do I tell if the server is up without opening the browser?
+
+```bash
+curl http://localhost:8000/health
+```
+
+A healthy server replies immediately with JSON:
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-06-22T19:00:00.123456",
+  "uptime_seconds": 45.7,
+  "uptime": "0:00:45",
+  "version": "1.0.0",
+  "features": {
+    "has_api_key": true,
+    "has_context7": false,
+    "has_obsidian": true
+  }
+}
+```
+
+`/health` is also the target of the Docker `HEALTHCHECK` probe — container
+orchestrators (Docker Compose health checks, Kubernetes liveness probes) use it to
+decide whether the container is ready. No secrets are ever returned by this endpoint.
 
 ---
 

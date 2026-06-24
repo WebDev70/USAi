@@ -1,1 +1,14 @@
-python-dotenv
+# Runtime dependency. Kept deliberately tiny (see docs/principles.md §1 — minimal,
+# audited runtime surface). Only python-dotenv is needed at runtime; everything
+# else (coverage, bandit, pip-audit, Docker, make) is DEV/CI tooling and is NEVER
+# listed here.
+#
+# Version note + security posture:
+#   GHSA-mf9w-mj56-hr94 (CVE-2026-28684) affects python-dotenv's set_key()/
+#   unset_key() symlink handling, fixed in 1.2.2. This app ONLY ever calls
+#   load_dotenv() (never set_key/unset_key), so the advisory is NOT exploitable
+#   here. We do NOT pin >=1.2.2 because 1.2.2 requires Python >=3.10 and this
+#   project supports the 3.9 baseline (CI tests 3.9 + 3.11). Instead,
+#   scripts/security-scan.sh and CI carry a documented, reviewed ignore for this
+#   specific advisory ID. Revisit when the 3.9 baseline is dropped.
+python-dotenv>=1.0.0

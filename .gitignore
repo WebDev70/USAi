@@ -26,3 +26,4 @@ coverage.xml
 # repo (e.g. when an Obsidian filesystem-write fallback uses the wrong base path).
 # Vault notes belong in the real Obsidian Vault, never tracked here.
 Users/
+Library/

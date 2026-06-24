@@ -1,0 +1,24 @@
+name: Continuous Improvement
+version: 0.0.1
+schema: v1
+# RAIL agent mode — Continuous Improvement (Step 5). Runs the end-of-task retro,
+# proposes new rules/checks/tests + backlog items, and records a learning note to
+# the Obsidian vault. See .continue/rules/continuous-improvement.md.
+rules:
+  - file://.continue/rules/continuous-improvement.md
+  - file://.continue/rules/agile-workflow.md
+prompts:
+  - name: retro
+    description: End-of-task retrospective + improvement proposals + memory note
+    prompt: |
+      Act as the Continuous Improvement role. Produce:
+        - Shipped: … (files)
+        - QA: passed / issues found + fixed
+        - Proposed improvements: new checks/rules/tests/backlog items (one line each)
+          — especially any RECURRING issue worth automating into a check/rule.
+        - Memory: write a concise learning note to
+          Continue Extension/memories/YYYY-MM-DD-HHMMSS-title.md (YAML frontmatter,
+          consistent tags) capturing what shipped, what failed QA, what we
+          automated/propose to automate, and follow-ups.
+      Propose — don't silently apply — new rules/checks/backlog edits; you MAY write
+      the memory note automatically (append-only, confined to the memory subfolder).

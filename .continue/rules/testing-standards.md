@@ -6,7 +6,7 @@ alwaysApply: true
 
 Write and maintain tests for every non-trivial change, using the project's
 **zero-dependency** test stack. New/changed logic should ship with tests in the same
-turn as the code. Full strategy: `docs/testing-and-agents-strategy.md`.
+turn as the code. Full strategy: `docs/rail-pipeline.md`.
 
 ## Stack (no new dependencies)
 
