@@ -232,6 +232,25 @@ How each harness *runs* these checks is harness-specific — see
 [`docs/tooling/continue.md`](tooling/continue.md) (Continue's `/check` + `cli-check.sh`)
 and [`docs/tooling/cline.md`](tooling/cline.md) (Cline's `/review` workflow).
 
+### Harness-parity table
+
+The table below maps each of the 10 Continue check files (`.continue/checks/*.md`)
+to the step in Cline's `/review` workflow that enforces the same criterion. This is
+the single reference for parity status; update it whenever a check is added or renamed.
+
+| `.continue/checks/` file | Cline `/review` gate step |
+|--------------------------|--------------------------|
+| `definition-of-ready.md` | §1 — Product Owner start gate: confirms user story + testable AC before planning |
+| `test-coverage.md` | §3 — run `./run-tests.sh --coverage`; gates Python line ≥ 90%, branch ≥ 80%, JS branch ≥ 70% |
+| `security-review.md` | §4 — run `./scripts/security-scan.sh` (gitleaks + bandit + pip-audit) |
+| `dependency-and-supply-chain-review.md` | §4 — security scan includes `pip-audit`; Architect role (§2) blocks unjustified runtime deps |
+| `iac-review.md` | §2 — Architect role verifies no hardcoded host/port/secret; config-drift guard via `test_env_example_sync.py` |
+| `code-quality-review.md` | §2 — Architect role checks conventions via `doc-consistency-check.sh`; §5 — spec-check.sh verifies scope |
+| `docs-in-sync.md` | §6 — reviewer verifies CHANGELOG + USER_GUIDE + README updated in same turn |
+| `ui-ux-review.md` | §2 — Architect role flags any frontend change without WCAG/token/accessibility review |
+| `acceptance-criteria.md` | §7 — Product Owner end gate: each AC verified by test or observable behaviour |
+| `definition-of-done.md` | §8 — meta-gate: all previous steps green + memory note written |
+
 ### Quality axis — Front-End Design (UI/UX)
 Alongside the sequential *correctness* roles, a **Front-End Design (UI/UX) SME**
 keeps `index.html`/`styles.css` modern and user-friendly. It is scoped to frontend

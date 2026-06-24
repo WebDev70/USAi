@@ -55,11 +55,34 @@ jobs:
         run: python -m pip install --upgrade pip && pip install -r requirements.txt coverage
       - name: Syntax check (server.py)
         run: python -m py_compile server.py
-      - name: Run Python tests with coverage gate
-        # .coveragerc sets fail_under; this fails CI if server.py coverage drops.
+      - name: Run Python tests with branch coverage gate
+        # .coveragerc branch=True enables branch measurement (RAIL Phase 2).
+        # We enforce two independent thresholds that mirror run-tests.sh --coverage:
+        #   • Line coverage:   fail_under=90% (coverage.py --fail-under)
+        #   • Branch coverage: PY_BRANCH_MIN=80% (extracted from coverage JSON)
+        # The ratchet guard is run-tests.sh-only because scripts/ratchet-check.sh
+        # requires bash 4+ which is not guaranteed on all CI images; the two gates
+        # above are sufficient to catch regressions in CI. (#39)
         run: |
-          python -m coverage run -m unittest discover -s tests/python -p 'test_*.py'
+          python -m coverage run --branch -m unittest discover -s tests/python -p 'test_*.py'
           python -m coverage report -m
+          python -m coverage report --fail-under=90
+          python -m coverage json -o /tmp/coverage.json
+          python - <<'EOF'
+          import json, sys
+          d = json.load(open('/tmp/coverage.json'))
+          s = d['files']['server.py']['summary']
+          nb = s['num_branches']
+          cb = s['covered_branches']
+          pct = (cb / nb * 100) if nb > 0 else 100.0
+          branch_int = int(pct)
+          print(f'server.py branch coverage: {pct:.2f}%')
+          if branch_int < 80:
+              print(f'FAIL: branch coverage {pct:.2f}% is below 80% threshold — add tests.')
+              sys.exit(1)
+          else:
+              print(f'PASS: branch coverage >= 80%')
+          EOF
 
   security:
     name: DevSecOps scan (secrets + SAST + dependency CVEs)

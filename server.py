@@ -1,4 +1,5 @@
 from http.server import HTTPServer, ThreadingHTTPServer, SimpleHTTPRequestHandler
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -90,6 +91,66 @@ def _resolve_memory_file(memory_dir, rel_path):
     return candidate
 
 
+# RFC 1918 and other reserved/private network ranges that must never be proxied.
+# These are the CIDR blocks rejected by the SSRF guard.
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network('10.0.0.0/8'),
+    ipaddress.ip_network('172.16.0.0/12'),
+    ipaddress.ip_network('192.168.0.0/16'),
+    ipaddress.ip_network('127.0.0.0/8'),       # IPv4 loopback
+    ipaddress.ip_network('169.254.0.0/16'),    # link-local / AWS IMDS
+    ipaddress.ip_network('::1/128'),           # IPv6 loopback
+    ipaddress.ip_network('fc00::/7'),          # IPv6 unique-local
+    ipaddress.ip_network('fe80::/10'),         # IPv6 link-local
+]
+
+
+def is_safe_upstream_url(url):
+    """Return True only when *url* is an http/https URL pointing at a public
+    (non-private, non-loopback, non-link-local) host.
+
+    This is the SSRF guard referenced by the ``# nosec B310`` suppressions on
+    every ``urlopen()`` call in this file.  It is intentionally strict:
+
+    * Only ``http`` and ``https`` schemes are accepted.
+    * IP-literal hosts are checked against ``_PRIVATE_NETWORKS``.
+    * The hostname ``localhost`` (case-insensitive) is rejected outright —
+      we do *not* do a live DNS lookup because the test environment may not
+      resolve it, and a live lookup would introduce network I/O in a pure
+      helper.  Operators should configure a proper hostname for local
+      deployments if they genuinely need to proxy to one.
+
+    Returns False (rather than raising) on any unexpected input so callers
+    can emit a clean 400/502 without an unhandled exception.
+    """
+    if not url or not isinstance(url, str):
+        return False
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+    # Only allow http and https; reject file://, gopher://, ftp://, etc.
+    if parsed.scheme not in ('http', 'https'):
+        return False
+    host = parsed.hostname  # lower-cased, brackets stripped for IPv6
+    if not host:
+        return False
+    # Reject the literal hostname 'localhost' (any case already lowered by urlparse).
+    if host == 'localhost':
+        return False
+    # Check IP-literal addresses against the private/reserved block list.
+    try:
+        addr = ipaddress.ip_address(host)
+        for network in _PRIVATE_NETWORKS:
+            if addr in network:
+                return False
+    except ValueError:
+        # Not an IP literal — hostname; we trust DNS is not poisoned for
+        # admin-configured values, and we've already rejected 'localhost'.
+        pass
+    return True
+
+
 def add_log(level, component, message, details=None):
     """Add a log entry to server logs."""
     log_entry = {
@@ -125,6 +186,16 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
 
         upstream_url = base_url + self.path
 
+        # SSRF guard — reject any URL that doesn't point at a public http/https host.
+        # This makes the nosec B310 suppression below honest.
+        # _test_allow_loopback is set only by the test suite; never set in production.
+        if not CONFIG.get('_test_allow_loopback') and not is_safe_upstream_url(upstream_url):
+            self.send_response(502)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'upstream URL rejected by SSRF guard'}).encode('utf-8'))
+            return
+
         # Forward Authorization from client; fall back to server-configured key
         auth = self.headers.get('Authorization', '')
         if not auth and config.get('api_key'):
@@ -144,7 +215,7 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
 
         try:
             req = Request(upstream_url, data=request_body, headers=headers, method=method)
-            with urlopen(req) as resp:
+            with urlopen(req) as resp:  # nosec B310 — URL validated by is_safe_upstream_url() above (http/https only)
                 if wants_stream:
                     # Relay the Server-Sent Events stream chunk-by-chunk without buffering.
                     #
@@ -328,6 +399,17 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             return
 
         target_url = urljoin(context7_base.rstrip('/') + '/', context7_path.lstrip('/'))
+
+        # SSRF guard — context7_base_url is admin-configured, but we still validate
+        # it makes the nosec B310 suppression on urlopen() below honest.
+        # _test_allow_loopback is set only by the test suite; never set in production.
+        if not CONFIG.get('_test_allow_loopback') and not is_safe_upstream_url(target_url):
+            self.send_response(502)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'context7 URL rejected by SSRF guard'}).encode('utf-8'))
+            return
+
         headers = {
             'Accept': 'application/json',
             'Authorization': 'Bearer ' + context7_key,
@@ -342,7 +424,7 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
                 headers['Content-Type'] = 'application/json'
                 req = Request(target_url, data=body, headers=headers, method='POST')
 
-            with urlopen(req) as resp:
+            with urlopen(req) as resp:  # nosec B310 — URL built from context7_base_url (admin-configured, http/https only)
                 response_data = resp.read()
                 try:
                     parsed = json.loads(response_data)

@@ -149,15 +149,19 @@ For detailed troubleshooting see `.continue/rules/CONTINUE.md` §7.
 
 ## Coding conventions enforced by Continue rules
 
-These non-negotiables are always-on via the Continue ruleset (align with `AGENTS.md`):
+> **Canonical source:** [`docs/rail-pipeline.md` §3](../rail-pipeline.md)
+> lists all USAi coding conventions (CSS cache-bust, tool gating, endpoint
+> pattern, SSRF guard, minimal runtime surface). This section is a concise
+> pointer — the rail-pipeline doc is the single source of truth.
 
 - **No new runtime deps.** Frontend = vanilla JS; backend = stdlib + `python-dotenv`.
 - **Security first.** Secrets stay server-side; `/config` returns only `has_*` flags.
 - **Path safety.** Any FS endpoint must reject traversal and confine writes.
-- **CSS cache-bust.** `styles.css?v=N` bumped in `index.html` on every CSS change.
 - **Docs in same turn.** CHANGELOG for every notable change; USER_GUIDE for
   user-facing features; README for setup/config.
 - **TDD.** Write the failing test first (Red → Green → Refactor).
+- For CSS bump, tool gating, new-endpoint pattern, and SSRF guard details see
+  [`docs/rail-pipeline.md` §3 — Code Planner approach](../rail-pipeline.md).
 
 ---
 

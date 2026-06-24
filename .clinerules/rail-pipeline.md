@@ -2,12 +2,12 @@
 # (Rule-governed Agentic Iteration Loop for USAi Chat)
 
 > **Concern: Cline dev harness** — this file governs the *Cline* VS Code extension
-> only. It is NOT part of the USAi Chat app, and it is NOT the Continue extension
-> config (`.continue/`). See `docs/ORGANIZATION.md` for the full three-concern map.
-
-This rule is **always active** for Cline in this project. It mirrors the RAIL
-pipeline defined in `docs/rail-pipeline.md` and `AGENTS.md`, adapted
-for Cline's Plan/Act workflow model.
+> only. It is NOT part of the USAi Chat app and NOT the Continue harness.
+> See `docs/ORGANIZATION.md` for the full three-concern map.
+>
+> **Canonical reference:** `docs/rail-pipeline.md` (RAIL concept, testing strategy,
+> coding conventions — harness-agnostic). This file is the *Cline-specific*
+> always-on operating contract.
 
 ---
 
@@ -15,8 +15,6 @@ for Cline's Plan/Act workflow model.
 
 > Never rely on a single prompt. Generate → Evaluate → Fix → Repeat until the
 > output meets requirements.
-
-The loop has this shape for every non-trivial task:
 
 ```
 Goal
@@ -27,56 +25,51 @@ Goal
   ├─ /build  (implement spec exactly, TDD-style)
   └─ /review (compare vs spec, run gates — repeat if failing)
   ↓
-Done (tests green, checks pass, docs updated, memory note written)
+Done (tests green, security scan clean, docs updated, memory note written)
 ```
 
 ---
 
-## The six RAIL roles (apply in every task, in order)
+## The six RAIL roles (apply in order)
 
 Each role has its own Execute → Review → Improve → Approve sub-cycle before
 handing off to the next.
 
 ### 0. Product Owner *(features only — skip for bugfix/chore/refactor)*
-- **Start gate:** confirm a Definition of Ready — user story, testable acceptance
-  criteria, vertical slice, size estimate.
-- **End gate:** acceptance — every criterion met, verified by test or observable
-  behavior.
-- *Check:* `.continue/checks/definition-of-ready.md` + `acceptance-criteria.md`
+- Confirm a **Definition of Ready** before planning: user story, testable
+  acceptance criteria, vertical slice, size estimate.
+- Confirm **acceptance** at the end: every criterion met, verified by test or
+  observable behavior.
 
 ### 1. Code Planner
-- Produce a structured plan (see template below) before editing any file.
-- **Recall first:** search `Cline/memories/`, `Continue Extension/memories/`,
-  and `USAi/memories/` in the Obsidian vault for relevant prior context.
-- Output: `docs/specs/<feature>.md` (written by `/spec` workflow).
-- *Check:* plan covers Goal, Files, Approach, Tests, Docs, Risks.
+- **Recall first:** search `Cline/memories/`, `Continue Extension/memories/`, and
+  `USAi/memories/` in the Obsidian vault for relevant prior context.
+- Produce a structured plan (Goal, Files, Approach, Tests, Docs, Risks) before
+  editing any file. Output: `docs/specs/<feature>.md` (written by `/spec`).
 
 ### 2. Architect
-- Validate the technical approach against the USAi conventions:
-  - No new runtime dependencies (vanilla JS / stdlib Python + python-dotenv).
-  - New endpoints → `_handler` + `routes` registration + input-size validation.
-  - New tools → `TOOL_REGISTRY` + `getEnabledTools()` gate.
-  - Security: `/config` exposes no secrets; path traversal rejected on all FS
-    endpoints; SSRF guard (`is_safe_upstream_url`) on upstream calls.
-  - CSS changes bump `styles.css?v=N` in `index.html`.
-- Flag any design conflict with existing architecture before proceeding.
+- Validate the approach against USAi conventions (see `docs/rail-pipeline.md` §3):
+  no new *runtime* dependencies (vanilla JS / stdlib Python + python-dotenv),
+  SSRF guard, path-traversal rejection, CSS `?v=N` bump, `HOST`/`PORT` via
+  `resolve_bind_address`, tool gating via `getEnabledTools`.
+- Flag any design conflict before proceeding.
 
 ### 3. Developer (SME)
 - Implement *exactly* what the spec covers — flag any scope creep.
-- TDD: write the failing test first (Red), then the minimum code (Green), then
+- TDD: write the failing test first (Red), then minimum code (Green), then
   refactor under green.
 - Comments explain *why*, not just *what* — match existing style.
-- Keep docs in sync **in the same turn** (CHANGELOG always; `docs/USER_GUIDE.md` / README /
-  backlog as applicable).
+- Keep docs in sync **in the same turn**: CHANGELOG always; `docs/USER_GUIDE.md`
+  for user-facing; README for setup/config; backlog items checked off.
 
 ### 4. Tester
 - Write/update tests in `tests/js/*.test.mjs` or `tests/python/test_*.py`.
-- Run the full suite and coverage gates:
+- Run the full suite + coverage gates:
   ```bash
   ./run-tests.sh --coverage
   ```
   Gates: `server.py` ≥ 90% lines; JS branch ≥ 70% on exported helpers.
-- Regression tests for every bug fix.
+- Regression test for every bug fix.
 
 ### 5. Security
 - Run the deterministic security scan:
@@ -85,31 +78,29 @@ handing off to the next.
   ```
 - Verify: no secrets in code/logs, no new runtime deps, no path traversal, no
   SSRF vectors.
-- Do not weaken or disable a scanner to make it pass — fix the finding instead.
+- Never weaken or disable a scanner to make it pass — fix the finding instead.
 
 ### 6. Reviewer (QA)
 - Run the full check suite:
   ```bash
   ./scripts/cli-check.sh --review
   ```
-- Compare implementation against spec line-by-line; list any gaps or bugs.
-- Pass only when: tests green + coverage gates met + security scan clean +
-  acceptance criteria met (features) + docs updated + memory note queued.
-- On any failure: emit a gap list and return to Developer (Role 3).
+- Compare implementation against spec line-by-line; emit a gap list for any
+  missing or broken items.
+- **Pass only when ALL of:** tests green + coverage gates met + security scan
+  clean + acceptance criteria met (features) + docs updated + memory note queued.
+- On any failure: emit the gap list and return to Developer (Role 3).
 
 ---
 
 ## Always-on non-negotiables
 
-- **Secrets:** never commit or echo secrets. API keys live only in `.env`.
-- **Docs in sync:** CHANGELOG in every substantive change; `docs/USER_GUIDE.md` for
-  user-facing features; README for setup/config; backlog items checked off.
-- **Memory:** at the start of any non-trivial task, recall from the Obsidian
-  vault (`Cline/memories/` + `USAi/memories/` + `Continue Extension/memories/`).
-  At the end, record a session note to
-  `Cline/memories/YYYY-MM-DD-HHMMSS-<title>.md`.
-  (Cline writes to `Cline/memories/` only — see `docs/ORGANIZATION.md`.)
-- **CSS cache bust:** any `styles.css` edit → bump `?v=N` in `index.html`.
+| Rule | Detail |
+|------|--------|
+| 🔐 **Secrets** | Never commit or echo secrets. API keys live only in `.env`. |
+| 📝 **Docs in sync** | CHANGELOG every substantive change; `USER_GUIDE.md` for user-facing; README for setup/config; backlog items checked off. |
+| 🧠 **Memory** | Recall at task start from all three vault subfolders. Record session note to `Cline/memories/YYYY-MM-DD-HHMMSS-<title>.md` at task end. |
+| 🎨 **CSS cache bust** | Any `styles.css` edit → bump `?v=N` in `index.html`. |
 
 ---
 
@@ -163,22 +154,20 @@ Conventions that apply (tool gating, path-traversal guards, CSS bump, etc.).
 
 ---
 
-## Self-scoring rewrite loop (single-paragraph prompt)
+## Self-scoring rewrite loop (`/self-improve` sub-task)
 
-Use this snippet for any writing or coding sub-task that needs iterative
-self-improvement without an explicit multi-step loop:
+Use this for any writing or coding sub-task where a single-pass output may not
+be good enough:
 
 > "Complete the task below. When finished, score your output from 1–10 on
-> [correctness / clarity / coverage / style — pick the relevant axes]. If your
-> score is below 9, identify the top 1–3 weaknesses, rewrite the output to
-> address them, and score again. Repeat until you reach 9 or higher or until
-> you have iterated three times, whichever comes first. Show only the final
-> output and your last score."
+> [correctness / clarity / coverage / style — pick relevant axes]. If your score
+> is below 9, identify the top 1–3 weaknesses, rewrite the output to address
+> them, and score again. Repeat until you reach 9 or higher, or until you have
+> iterated three times, whichever comes first. Show only the final output and
+> your last score."
+
+Full workflow: `.clinerules/workflows/self-improve.md`
 
 ---
 
-*Detailed reference: `docs/ORGANIZATION.md` (three-concern map),
-`docs/rail-pipeline.md` (RAIL concept + testing strategy),
-`docs/tooling/cline.md` (Cline-specific), `AGENTS.md`,
-`.continue/checks/` (Continue harness — Cline's workflows live in
-`.clinerules/workflows/`).*
+*References: `docs/ORGANIZATION.md` · `docs/rail-pipeline.md` · `docs/tooling/cline.md` · `AGENTS.md`*

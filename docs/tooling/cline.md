@@ -61,7 +61,7 @@ Cline's equivalent of Continue's `/check` is the **`/review`** workflow, which r
 ```bash
 ./run-tests.sh --coverage          # syntax gates + JS + Python + coverage enforcement
 ./scripts/security-scan.sh         # gitleaks + bandit + pip-audit
-./scripts/cli-check.sh --review    # optional: cn review with all check files as rules
+#./scripts/cli-check.sh --review    # optional: cn review with all check files as rules
 ```
 
 Pass criteria (same as the shared RAIL Definition of Done):
@@ -122,15 +122,21 @@ files changed, and follow-ups.
 
 ---
 
-## Coding conventions (same as AGENTS.md)
+## Coding conventions
+
+> **Canonical source:** [`docs/rail-pipeline.md` §3](../rail-pipeline.md)
+> lists all USAi coding conventions (CSS cache-bust, tool gating, endpoint
+> pattern, SSRF guard, minimal runtime surface). This section is a concise
+> pointer — the rail-pipeline doc is the single source of truth.
 
 - **No new runtime deps.** Frontend = vanilla JS; backend = stdlib + `python-dotenv`.
 - **Security first.** Secrets stay server-side; `/config` returns only `has_*` flags;
   path traversal rejected on all FS endpoints; SSRF guard on all upstream calls.
-- **CSS cache-bust.** `styles.css?v=N` bumped in `index.html` on every CSS change.
 - **Docs in same turn.** CHANGELOG always; USER_GUIDE for user-facing; README for
   setup/config; backlog items checked off.
 - **TDD.** Red → Green → Refactor; regression test before every bug fix.
+- For CSS bump, tool gating, new-endpoint pattern, and SSRF guard details see
+  [`docs/rail-pipeline.md` §3 — Code Planner approach](../rail-pipeline.md).
 
 ---
 

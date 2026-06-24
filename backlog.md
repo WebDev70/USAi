@@ -10,7 +10,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **34**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **39**.
 
 ---
 
@@ -70,6 +70,140 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 ---
 
 ## Open items
+
+### Testing strategy improvements (from QA review 2026-06-24)
+
+- [x] **36. SSRF guard unit tests — `is_safe_upstream_url` has no dedicated test** *(S)*
+  - **Finding (QA review P2):** `is_safe_upstream_url()` is referenced by `nosec B310`
+    suppressions in `server.py` but has no dedicated test. The proxy integration tests
+    exercise the happy path against a stub server, but no test calls the guard with
+    `file://`, `gopher://`, `http://169.254.169.254` (AWS IMDS), `http://127.0.0.1`,
+    or `http://[::1]`.
+  - **Acceptance criteria:**
+    1. A `TestIsSafeUpstreamUrl` class in `tests/python/test_server.py` covers:
+       `http://` and `https://` → safe; `file://`, `gopher://`, `ftp://` → rejected;
+       `http://169.254.169.254`, `http://127.0.0.1`, `http://[::1]` → rejected.
+    2. `./run-tests.sh` passes; coverage gate unchanged or improved.
+  - **Source:** `docs/specs/qa-testing-review.md` (Finding P2)
+  - Files: `tests/python/test_server.py`.
+
+- [x] **37. Wire JS branch-coverage ratchet sentinel** *(S)*
+  - **Done (2026-06-24):** `tests/js-coverage.mjs` writes measured branch % to
+    `/tmp/usai-js-branch-pct`; `run-tests.sh` reads it and passes live value to
+    ratchet. T-10a/T-10b green. (`CHANGELOG.md` — RAIL Phase 7)
+  - **Finding (QA review P3):** `run-tests.sh` substitutes the committed minimum
+    (`$JS_MIN=70`) as the "live" JS branch % when `$JS_BRANCH_PCT` is unset.
+    `tests/js-coverage.mjs` never exports the measured value, so the JS ratchet
+    in `scripts/ratchet-check.sh` always compares 70 against 70 — it never detects
+    a real regression.
+  - **Acceptance criteria:**
+    1. `tests/js-coverage.mjs` writes the measured branch % to a temp sentinel file
+       (e.g., `/tmp/usai-js-branch-pct`).
+    2. `run-tests.sh` reads that file and passes the actual measured value to the
+       ratchet, replacing the current `JS_BRANCH_LIVE="${JS_BRANCH_PCT:-$JS_MIN}"`.
+    3. `./run-tests.sh --coverage` passes; ratchet now correctly fails if the
+       branch % drops below the committed threshold.
+  - **Source:** `docs/specs/qa-testing-review.md` (Finding P3)
+  - Files: `tests/js-coverage.mjs`, `run-tests.sh`.
+
+- [x] **38. Proxy adversarial test cases** *(S)*
+  - **Done (2026-06-24):** `ProxyAdversarialTests` class (T-11a/b/c) added to
+    `tests/python/test_server_proxy.py`. `test_streaming_response_is_relayed`
+    hardened against chunk0 race condition. (`CHANGELOG.md` — RAIL Phase 7)
+  - **Finding (QA review P4):** The proxy test suite covers key injection, auth
+    passthrough, error relay, 502/503, SSE streaming, and incremental delivery.
+    Missing: malformed upstream JSON (non-streaming), header passthrough/stripping
+    correctness, oversized streamed body, timeout vs. connection-refused distinction.
+  - **Acceptance criteria:**
+    1. A `ProxyAdversarialTests` class added to `tests/python/test_server_proxy.py`
+       covers at minimum: malformed upstream JSON → proxy returns a defined status
+       (not 500/crash); and the two connection-failure paths are distinct code paths.
+    2. `./run-tests.sh` passes; branch coverage gate unchanged or improved.
+  - **Source:** `docs/specs/qa-testing-review.md` (Finding P4)
+  - Files: `tests/python/test_server_proxy.py`.
+
+- [x] **39. Align CI Python job with `run-tests.sh --coverage` branch gate** *(S)*
+  - **Done (2026-06-24):** `.github/workflows/tests.yml` Python job now runs
+    `coverage run --branch`, enforces `--fail-under=90` line gate, and extracts
+    branch % from `coverage json` to enforce the 80% branch gate independently.
+    (`CHANGELOG.md` — RAIL Phase 7)
+  - **Finding (QA review P5):** `.github/workflows/tests.yml` runs `coverage run +
+    coverage report` directly — this uses the `.coveragerc` `fail_under=88` safety net
+    but does NOT run the separate branch-coverage threshold (80%) that is only enforced
+    by `run-tests.sh --coverage`. A branch-coverage regression passes CI but fails locally.
+  - **Acceptance criteria:**
+    1. The CI Python job step is updated to call `./run-tests.sh --coverage` (preferred)
+       OR a dedicated CI step is added that extracts branch % from `coverage json`
+       and fails if below 80%.
+    2. All existing CI jobs pass on the main branch.
+  - **Source:** `docs/specs/qa-testing-review.md` (Finding P5)
+  - Files: `.github/workflows/tests.yml`, possibly `run-tests.sh`.
+
+---
+
+### RAIL pipeline hardening (highest priority)
+
+- [ ] **35. RAIL pipeline improvements — close trust-vs-verification gaps** *(M, 5 independent phases)*
+  - RAIL currently relies on agent self-attestation for key quality claims (spec↔build
+    compliance, TDD Red receipt, memory-note existence, doc drift, coverage depth, secret
+    scanning of memory notes). This item adds machine-enforced scripts and tightens existing
+    gates so those claims are actually verified, not just checked off by the agent.
+  - **User story:** *As a developer using RAIL, I want automated scripts to verify that
+    the spec↔build contract, coverage, documentation, and security claims are true —
+    not just self-asserted — so quality gates cannot be silently skipped.*
+  - **Spec:** [`docs/specs/rail-improvements.md`](docs/specs/rail-improvements.md)
+  - **Phases (each ships as its own RAIL loop):**
+    - [x] **Phase 1 — Verification gaps:** `scripts/spec-check.sh` (spec §3/§5 vs. git diff);
+      TDD "Red receipt" instruction in `/build`; memory-note existence check in `/loop`.
+      **Done (2026-06-24):** `scripts/spec-check.sh` (new, bash 3.2 compat, T-1…T-4 green);
+      `tests/python/test_scripts.py` (4 tests TDD Red-first); `/review §6a` updated to use
+      script; `/loop` done-criteria memory-note-exists gate added; `/build §3a` Red-receipt
+      instruction added; `scripts/cli-check.sh` SPEC_FILE gate added.
+    - [x] **Phase 2 — Coverage depth:** Python branch coverage (`--branch`) in
+      `run-tests.sh`; branch threshold ≥ 80%; committed `.coverage-thresholds`
+      ratchet guard so thresholds can only go up.
+      **Done (2026-06-24):** `scripts/ratchet-check.sh` (new, bash 3.2 compat, T-9a/b/c
+      green); `.coverage-thresholds` (new, py_line=90 py_branch=80 js_branch=70);
+      `run-tests.sh` `--branch` + branch % gate (85.85% live, 80% threshold) +
+      ratchet invocation; `.coveragerc` comment clarification; 7 new tests TDD Red-first.
+    - [x] **Phase 3 — Drift/parity:** Canonical convention table in `docs/rail-pipeline.md`
+      only (remove duplicates from `AGENTS.md`, `.clinerules/`, `docs/tooling/cline.md`);
+      `scripts/doc-consistency-check.sh`; harness-parity table (10 checks × Cline step).
+      **Done (2026-06-24):** `scripts/doc-consistency-check.sh` (new, T-6/T-7 TDD Red-first,
+      3 tests green); AGENTS.md, .clinerules/rail-pipeline.md, docs/tooling/cline.md,
+      docs/tooling/continue.md all deduplicated — pointer to canonical source only;
+      `scripts/cli-check.sh` convention-duplication gate added; harness-parity table
+      added to docs/rail-pipeline.md §3; doc-consistency-check.sh exits 0 on real repo.
+    - [x] **Phase 4 — Ergonomics:** Change-type classifier in `/spec` (feature/bugfix/chore/
+      docs/css) to fast-path trivial changes; escalation memory note on `/loop` timeout;
+      `/self-improve` proposals wired to `backlog.md` + Obsidian.
+      **Done (2026-06-24):** `.clinerules/workflows/spec.md` — mandatory Question 0 (change
+      type) + role-skip mapping table + `Type:` field in spec template; `build.md` — step 5
+      reads `Type:` and skips appropriate roles; `loop.md` — escalation block writes an interim
+      memory note before stopping + post-loop proposals updated to dual-sink (`backlog.md` AND
+      Obsidian note); `self-improve.md` — "Proposing improvements" section added requiring
+      dual-sink for every structural improvement. No app code changed.
+    - [x] **Phase 5 — Security depth:** Hash-pin `python-dotenv` in `requirements.txt`;
+      memory-note secret scan in `scripts/security-scan.sh`; redaction reminder in
+      `/loop` memory-note template.
+      **Done (2026-06-24):** `requirements.txt` — pinned `python-dotenv==1.0.1` with
+      sha256 hash (supply-chain integrity); `scripts/security-scan.sh` — 3-scanner
+      renumbered to 4/4, new block (4/4) scans `$OBSIDIAN_VAULT_PATH/Cline/memories/`
+      for secret patterns (`sk-*`, `Bearer`, `api_key=`, `password=`); skips cleanly
+      when vault path unset (CI-safe); `SKIP_GITLEAKS/SKIP_BANDIT/SKIP_PIP_AUDIT`
+      env-var bypass hooks added for test isolation; `loop.md` memory-note template
+      gains **Memory-note safety checklist**; `review.md` gains secret-safety
+      reminder after memory-note section; 4 TDD tests (T-8a–T-8d) in
+      `tests/python/test_scripts.py` — all green. `server.py` — `# nosec B310`
+      inline suppression on both `urlopen()` call sites (URLs are admin-configured
+      `http/https`; guard documented); `security-scan.sh` now exits 0 cleanly.
+  - **Anticipated files:** `scripts/spec-check.sh` (new), `scripts/doc-consistency-check.sh`
+    (new), `.coverage-thresholds` (new), `run-tests.sh`, `.coveragerc`, `scripts/cli-check.sh`,
+    `scripts/security-scan.sh`, `.clinerules/workflows/*.md`, `docs/rail-pipeline.md`,
+    `AGENTS.md`, `.clinerules/rail-pipeline.md`, `docs/tooling/cline.md`, `requirements.txt`,
+    `tests/python/test_scripts.py` (new), `CHANGELOG.md`.
+
+---
 
 ### High value, low effort
 
@@ -596,6 +730,22 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     terminate MCP children on reload; otherwise the kill-all ritual stands.
   - Files: `.continue/mcpServers/new-mcp-server.yaml`,
     `scripts/kill-stale-obsidian-mcp.sh`, `.continue/rules/CONTINUE.md`, `CHANGELOG.md`.
+
+---
+
+## Docs / DX
+
+- [ ] **40. Obsidian "User Summaries" section — human-readable plain-English summaries of key project concepts** *(S)*
+  - The `/self-improve` session (2026-06-24) produced the first User Summary note
+    (`Cline/User Summaries/2026-06-24-RAIL-Pipeline-User-Summary.md`) explaining the RAIL pipeline
+    in plain English. This pattern (a dedicated `Cline/User Summaries/` folder for non-technical,
+    human-readable overviews of project processes) is useful for onboarding and reference.
+  - **Improvement identified:** formalize the convention so future `/self-improve` or `/spec` sessions
+    automatically offer to write a User Summary alongside the technical spec or memory note.
+    Add a User Summary step to `.clinerules/workflows/self-improve.md` and `.clinerules/workflows/spec.md`.
+  - **Why identified:** surfaced during self-scoring of the RAIL pipeline rewrite — the human-readable
+    output had clear standalone value separate from the session log.
+  - Size: S
 
 ---
 

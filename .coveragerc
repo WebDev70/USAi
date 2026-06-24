@@ -3,12 +3,20 @@
 # but EXCLUDE process-bootstrap glue that can't be meaningfully unit-tested
 # (serve_forever, dependency install, the __main__ entrypoint) and unreachable
 # defensive branches. See docs/testing-and-agents-strategy.md.
+#
+# RAIL Phase 2: branch=True enables branch coverage measurement.
+# Per-metric enforcement (line ≥ 90%, branch ≥ 80%) is done in run-tests.sh
+# using `coverage json` output + scripts/ratchet-check.sh so each threshold
+# is independently gated. The fail_under here is a safety net for the combined
+# coverage.py report; the run-tests.sh gates are stricter and more specific.
 [run]
 source = server
 branch = True
 
 [report]
-# Fail the build if covered code drops below this. Ratchet UP over time.
+# Safety-net: fail if the combined (line+branch) coverage.py metric drops below
+# this. Per-metric gates in run-tests.sh enforce the tighter PY_MIN=90 and
+# PY_BRANCH_MIN=80 thresholds independently. Ratchet UP over time.
 fail_under = 88
 show_missing = True
 exclude_lines =

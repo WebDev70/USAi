@@ -13,9 +13,15 @@
 // Requires Node >= 22 for --experimental-test-coverage.
 
 import { execSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { readdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+
+// Sentinel file: run-tests.sh reads this to pass the LIVE branch % to the
+// ratchet guard (replaces the $JS_MIN fallback that was always 70). This fixes
+// the latent bug where the JS ratchet always compared 70 vs 70 and could never
+// detect a real regression (backlog #37).
+const SENTINEL_FILE = '/tmp/usai-js-branch-pct';
 
 const MIN = Number(process.argv[2] ?? 70);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -67,4 +73,16 @@ if (branchPct < MIN) {
   console.error('  Add tests for the exported helpers in app.js (Red → Green → Refactor).');
   process.exit(1);
 }
+
+// Write the LIVE branch % to a sentinel file so run-tests.sh can pass the real
+// measured value to ratchet-check.sh instead of always falling back to $JS_MIN.
+// This fixes the latent bug where the ratchet always compared 70 vs 70 (backlog #37).
+try {
+  writeFileSync(SENTINEL_FILE, String(branchPct));
+} catch (e) {
+  // Non-fatal — warn but don't fail the coverage gate if the sentinel can't be written
+  // (e.g. read-only CI environment that doesn't have /tmp writable in this way).
+  console.warn(`Warning: could not write JS coverage sentinel (${SENTINEL_FILE}): ${e.message}`);
+}
+
 console.log(`\n✓ JS coverage gate passed (branch ${branchPct}% ≥ ${MIN}%).`);

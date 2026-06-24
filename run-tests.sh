@@ -11,6 +11,12 @@
 #
 # Mirrors the commands in docs/rail-pipeline.md so contributors and
 # the Continue agent pipeline (`/check`) run the exact same thing.
+#
+# RAIL Phase 2 — Branch coverage:
+#   Python branch coverage is measured via `coverage run --branch` and enforced
+#   at PY_BRANCH_MIN%. The ratchet guard (scripts/ratchet-check.sh) additionally
+#   compares live values against the committed .coverage-thresholds file so no
+#   threshold can be silently lowered.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -18,7 +24,9 @@ COVERAGE=0
 [ "${1:-}" = "--coverage" ] && COVERAGE=1
 
 # Coverage thresholds (ratchet UP over time; never lower to make a change pass).
+# Also committed in .coverage-thresholds for the machine-enforced ratchet guard.
 PY_MIN=90        # server.py line coverage %
+PY_BRANCH_MIN=80 # server.py branch coverage % (RAIL Phase 2)
 JS_MIN=70        # app.js BRANCH coverage % of the exported/tested helpers
 
 # Prefer the venv's Python (so python-dotenv is available); fall back to python3.
@@ -40,11 +48,54 @@ if [ "$COVERAGE" -eq 1 ]; then
     echo "    $PY -m pip install coverage"
     exit 1
   fi
-  "$PY" -m coverage run --source=server -m unittest discover -s tests/python -p 'test_*.py'
+  # --branch enables branch coverage measurement (RAIL Phase 2).
+  # .coveragerc also sets branch=True; explicit here for clarity.
+  "$PY" -m coverage run --branch --source=server -m unittest discover -s tests/python -p 'test_*.py'
   "$PY" -m coverage report -m
   "$PY" -m coverage report --fail-under="$PY_MIN" >/dev/null \
-    && echo "  ✓ server.py coverage ≥ ${PY_MIN}%" \
-    || { echo "  ✕ server.py coverage below ${PY_MIN}% — add tests."; exit 1; }
+    && echo "  ✓ server.py line coverage ≥ ${PY_MIN}%" \
+    || { echo "  ✕ server.py line coverage below ${PY_MIN}% — add tests."; exit 1; }
+
+  # --- Branch coverage gate (RAIL Phase 2) ---
+  # Extract branch % from coverage JSON report and enforce PY_BRANCH_MIN.
+  COVERAGE_JSON=$(mktemp /tmp/coverage-XXXXXX.json)
+  trap 'rm -f "$COVERAGE_JSON"' EXIT
+  "$PY" -m coverage json -o "$COVERAGE_JSON" >/dev/null
+  PY_BRANCH_PCT=$("$PY" -c "
+import json, sys
+d = json.load(open('$COVERAGE_JSON'))
+s = d['files']['server.py']['summary']
+nb = s['num_branches']
+cb = s['covered_branches']
+pct = (cb / nb * 100) if nb > 0 else 100.0
+print('%.2f' % pct)
+")
+  # Truncate to integer for threshold comparison (floor, same as coverage.py display)
+  PY_BRANCH_INT=$(echo "$PY_BRANCH_PCT" | awk '{printf "%d", int($1)}')
+  if [ "$PY_BRANCH_INT" -ge "$PY_BRANCH_MIN" ]; then
+    echo "  ✓ server.py branch coverage ≥ ${PY_BRANCH_MIN}%  (actual: ${PY_BRANCH_PCT}%)"
+  else
+    echo "  ✕ server.py branch coverage ${PY_BRANCH_PCT}% is below ${PY_BRANCH_MIN}% — add tests."
+    exit 1
+  fi
+
+  # --- Ratchet guard (RAIL Phase 2 / #37 fix) ---
+  # Fail if any threshold dropped below the committed high-water mark.
+  # js-coverage.mjs writes the LIVE branch % to a sentinel file (/tmp/usai-js-branch-pct)
+  # so we can pass the actual measured value to ratchet-check.sh.
+  # Fallback to $JS_MIN only if the sentinel wasn't written (e.g. Node < 22 skip).
+  JS_SENTINEL="/tmp/usai-js-branch-pct"
+  if [ -f "$JS_SENTINEL" ]; then
+    JS_BRANCH_LIVE=$(cat "$JS_SENTINEL")
+  else
+    JS_BRANCH_LIVE="$JS_MIN"
+  fi
+  echo "── Coverage ratchet guard (scripts/ratchet-check.sh) ──────"
+  ./scripts/ratchet-check.sh \
+    --thresholds-file .coverage-thresholds \
+    --python-line "$PY_MIN" \
+    --python-branch "$PY_BRANCH_INT" \
+    --js-branch "$JS_BRANCH_LIVE"
 else
   echo "── JS unit tests (node --test) ────────────────────────────"
   # Enumerate test files with `find` and pass them explicitly. This is portable:

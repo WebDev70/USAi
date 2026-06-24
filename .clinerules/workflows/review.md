@@ -55,15 +55,29 @@ If any item fails: add it to the Gap List (§ below) and stop further gates.
 
 ### 6a. Spec compliance check
 
-Read the spec (§3 Affected files, §4 Technical approach, §5 Test plan) and
-compare line-by-line against the actual implementation:
+Run the machine-enforced spec↔build checker first — its output replaces the
+manual table scan for §3 and §5:
 
-| Spec item | Implemented? | Note |
+```bash
+./scripts/spec-check.sh <path-to-spec>
+# e.g. ./scripts/spec-check.sh docs/specs/rail-improvements.md
+```
+
+**Interpret results:**
+
+| spec-check.sh result | Action |
+|---|---|
+| Exit 0 + `✓ PASS` | §3 and §5 files confirmed — proceed to §4 and TDD checks below |
+| Exit 1 (missing §3 file) | **GAP** — add to Gap List, return to `/build` |
+| Exit 1 (missing §5 test) | **GAP** — add to Gap List, return to `/build` |
+| `WARNING` scope-creep line | Review — add to Gap List only if the extra file was NOT intentional |
+
+After the script passes (exit 0), manually verify the remaining items:
+
+| Spec item | Verified? | Note |
 |---|---|---|
-| Each affected file in §3 | ✅ / ❌ | |
 | Each function/endpoint in §4 | ✅ / ❌ | |
-| Each test in §5 | ✅ / ❌ | |
-| Tests written first (TDD)? | ✅ / ❌ | |
+| Tests written first (TDD — Red receipt in memory note)? | ✅ / ❌ | |
 | No out-of-scope code added? | ✅ / ❌ | |
 
 ### 6b. Test suite gate
@@ -168,3 +182,8 @@ The `/loop` orchestrator will write the final memory note on PASS — on a stand
 ```
 
 Include: what was reviewed, what failed (if anything), what was fixed, final verdict.
+
+> **Secret safety reminder:** Before saving the memory note, verify it contains no
+> API keys, Bearer tokens, or other secrets. Patterns to check: `sk-`, `Bearer `,
+> `api_key=`, `password=`. The `scripts/security-scan.sh` 4/4 block will catch
+> these automatically — ensure that scan passes after the note is written.

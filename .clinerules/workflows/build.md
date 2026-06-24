@@ -29,6 +29,17 @@ Before writing a single line of code:
 3. **Confirm Status is "Ready"** (not Draft). If it's still Draft, pause and ask
    the user to finish `/spec` first.
 4. **Confirm you understand all 8 sections** of the spec before acting.
+5. **Check the `Type:` field** and apply role-skipping accordingly:
+
+   | Type | Roles to skip / adapt |
+   |------|-----------------------|
+   | `feature` | None — all RAIL roles apply. |
+   | `bugfix` | Skip Role 0 (PO). Regression test is required before any fix code. |
+   | `chore` / `refactor` | Skip Role 0 (PO). Tester gate still applies; no new features. |
+   | `docs` | Skip Role 0 (PO). Skip Role 4 (Tester) gate unless code changed. Skip security scan unless code changed. |
+   | `css` | Skip Role 0 (PO). The CSS bump (`styles.css?v=N` in `index.html`) is the primary gate; verify visually. |
+
+   If `Type:` is absent from the spec, treat it as `feature` (safest default) and note the gap.
 
 ---
 
@@ -79,6 +90,13 @@ node --test tests/js/              # JS tests
 ```
 
 Confirm each new test fails before proceeding.
+
+**Red receipt (TDD evidence):** paste the failing-test output into the current
+session memory note in `Cline/memories/` *before* writing any production code.
+The memory note should record the exact error message and test names that are
+failing. This is the proof that tests were written first — it is required by the
+`/review` §6a TDD check. A build without a Red receipt is considered a TDD
+violation and will be flagged as a GAP.
 
 ### 3b. GREEN — minimum code to pass
 

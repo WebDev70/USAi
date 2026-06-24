@@ -33,6 +33,20 @@ feature. Note what was found (or "no prior context found") in the spec's preambl
 
 Ask these questions **one at a time** — wait for each answer before the next:
 
+0. **What type of change is this?** — `feature | bugfix | chore | docs | css`
+
+   The type determines which RAIL roles and gates apply:
+
+   | Type | Role 0 (PO) | Regression test req'd? | CSS bump req'd? | Notes |
+   |------|-------------|------------------------|-----------------|-------|
+   | `feature` | ✅ Required — full Definition of Ready gate | Recommended | Only if CSS changed | All RAIL roles apply |
+   | `bugfix` | ⬜ Skip | ✅ Yes — write a test that reproduces the bug first | Only if CSS changed | Omit PO gate; all other roles apply |
+   | `chore` / `refactor` | ⬜ Skip | ⬜ No (unless behaviour change) | Only if CSS changed | Lightweight — skip PO gate; Tester gate still applies |
+   | `docs` | ⬜ Skip | ⬜ No | Only if CSS changed | Tester/Security gates skipped when no code changed |
+   | `css` | ⬜ Skip | ⬜ No | ✅ Required — bump `styles.css?v=N` in `index.html` | CSS bump is the primary gate; verify visually |
+
+   Record the answer in the spec as a **`Type:`** field immediately after **`Status:`**.
+
 1. **What is the goal?** — What problem are we solving, and for whom?
 2. **What does success look like?** — Name 2–4 concrete, testable acceptance
    criteria. (e.g. "The endpoint returns 200 with JSON", "The test passes",
@@ -43,7 +57,7 @@ Ask these questions **one at a time** — wait for each answer before the next:
 5. **Which files do you expect to touch?** — Best guess is fine; the Architect
    role will refine.
 
-Once you have all five answers, declare: "Definition of Ready — confirmed ✓" and
+Once you have all answers, declare: "Definition of Ready — confirmed ✓" and
 proceed to Step 2.
 
 ---
@@ -75,6 +89,7 @@ Set **Status: Ready** once the Definition of Ready is confirmed.
 # Spec: <Feature Name>
 
 **Status:** Ready
+**Type:** <feature | bugfix | chore | docs | css>
 **Created:** <YYYY-MM-DD>
 **Author:** Cline / <user>
 **Prior context:** <one sentence — what was recalled from Obsidian, or "none">

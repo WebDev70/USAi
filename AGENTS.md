@@ -91,28 +91,29 @@ log via `add_log`, never log secrets.
 - **Never commit or echo secrets.** API keys live only in `.env` (git-ignored).
 - `/config` must return **only non-secret fields** plus `has_*` boolean feature
   flags. The proxy injects the API key server-side — secrets never reach the browser.
-- **Reject path traversal** and confine writes to the intended folder for any
-  filesystem endpoint (`/memory/*`, `/sessions`, `/chunk-cache`).
-- **SSRF guard:** the proxy / Context7 only reach **http(s)** upstreams
-  (`is_safe_upstream_url` in `server.py`).
 - **Run the deterministic scan** for non-trivial changes:
   `./scripts/security-scan.sh` (or `make scan`) — gitleaks + bandit + pip-audit;
   don't weaken/disable a scanner to pass.
 
+For the full security rule set (SSRF guard, path-traversal rejection, secret
+handling) see [`docs/rail-pipeline.md` §3](docs/rail-pipeline.md).
+
 ---
 
 ## Coding conventions
+
+> **Canonical source:** [`docs/rail-pipeline.md` §3](docs/rail-pipeline.md)
+> lists all USAi coding conventions (CSS cache-bust, tool gating, endpoint
+> pattern, SSRF guard, minimal runtime surface). This section is a concise
+> pointer — the rail-pipeline doc is the single source of truth.
 
 - **Minimal, audited *runtime* surface:** frontend is plain HTML/CSS/JS (no
   framework/build/runtime deps); backend is Python **stdlib + `python-dotenv` only**.
   Dev/CI tooling that ships nothing into the app is allowed/encouraged (coverage,
   bandit, pip-audit, gitleaks, Docker, make) — see `docs/principles.md` §1.
 - **Comments explain _why_,** not just _what_ — match the existing descriptive style.
-- **CSS changes:** bump `styles.css?v=N` in `index.html` to bust the cache.
-- **Tool gating:** new tools go in `TOOL_REGISTRY` (`app.js`) and must be gated in
-  `getEnabledTools()` on their config + toggle.
-- **New endpoints:** add a `_handler` on `EnvConfigHTTPRequestHandler` and register
-  it in the `routes` dict of `do_GET`/`do_POST`/`do_DELETE`; validate input size.
+- For CSS bump, tool gating, new-endpoint pattern, and SSRF guard details see
+  [`docs/rail-pipeline.md` §3 — Code Planner approach](docs/rail-pipeline.md).
 
 ---
 

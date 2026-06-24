@@ -62,6 +62,24 @@ if [ "$RUN_TESTS" -eq 1 ]; then
   # to FAIL if any scanner is absent — this is a QA gate, not a quick local scan,
   # so all three scanners must be installed (run `make setup` first).
   ./scripts/security-scan.sh --strict
+
+  # Spec↔build compliance check (RAIL Phase 1).
+  # Run spec-check.sh if a spec file is provided via SPEC_FILE env var.
+  # In CI or manual use: SPEC_FILE=docs/specs/my-feature.md ./scripts/cli-check.sh
+  if [ -n "${SPEC_FILE:-}" ]; then
+    echo
+    echo "══ Spec↔build gate: ./scripts/spec-check.sh ═════════════════════"
+    # Mirrors /review §6a: verifies §3 file list and §5 test plan match the diff.
+    ./scripts/spec-check.sh "$SPEC_FILE"
+    echo "✓ Spec compliance gate passed"
+  fi
+
+  echo
+  echo "══ Convention-duplication gate: ./scripts/doc-consistency-check.sh ═"
+  # RAIL Phase 3: verifies convention phrases live only in docs/rail-pipeline.md
+  # and have been removed from AGENTS.md, .clinerules/, and docs/tooling/*.md.
+  ./scripts/doc-consistency-check.sh
+  echo "✓ Convention-duplication gate passed"
 fi
 
 if [ "$REVIEW" -eq 1 ]; then

@@ -70,7 +70,41 @@ If the build has not passed `/review` after 5 iterations:
    - A summary of what was attempted each iteration.
    - A recommendation: update the spec, adjust the test gates, or ask for human
      help on the blocking issue.
-3. Do not keep looping without user input.
+3. **Write an escalation memory note** to Obsidian immediately — do not wait for
+   the user's response. This captures the state so context is not lost:
+
+   File: `<OBSIDIAN_VAULT_PATH>/Cline/memories/YYYY-MM-DD-HHMMSS-<feature>-escalation.md`
+
+   ```markdown
+   ---
+   title: "RAIL escalation: <feature name>"
+   created: YYYY-MM-DD
+   tags: [usai-chat, rail-loop, escalation, <topic-tags>]
+   source: cline
+   ---
+
+   # RAIL Loop Escalation: <Feature Name>
+
+   **Date:** YYYY-MM-DD
+   **Spec:** [[docs/specs/<feature>]]
+   **Iterations attempted:** 5
+   **Status:** ⚠ Escalated — loop stopped, user input needed
+
+   ## Current gap list (unresolved after 5 iterations)
+   - GAP-N: <description>
+
+   ## Iteration history
+   | Iteration | Gap fixed | New gap introduced |
+   |-----------|-----------|-------------------|
+   | 1 | — | <description> |
+   | 2 | <gap> | <description or none> |
+   | ... | | |
+
+   ## Recommendation
+   <one paragraph: update spec / adjust gate / human help needed — and why>
+   ```
+
+4. Do not keep looping without user input.
 
 ---
 
@@ -82,6 +116,12 @@ If the build has not passed `/review` after 5 iterations:
 - [ ] Spec §8 Review checklist is fully checked off
 - [ ] Spec **Status** updated to **Done**
 - [ ] Docs updated per spec §6
+- [ ] Memory note exists in `Cline/memories/` for today's date:
+      ```bash
+      ls "$OBSIDIAN_VAULT_PATH/Cline/memories/" | grep "$(date +%Y-%m-%d)"
+      ```
+      If this returns no file, the "Memory note written" checkbox must remain
+      **unchecked** and be emitted as a GAP — write the note before declaring done.
 - [ ] Memory note written (see below)
 
 ---
@@ -95,11 +135,21 @@ After a successful loop, before closing:
    - What failed review and why?
    - What took the most iterations?
 
-2. **Propose improvements** (do not auto-apply):
-   - New check or rule that would have caught a gap automatically?
-   - New test that would prevent a regression?
-   - Backlog item that emerged?
-   List these as suggestions for the user to approve.
+2. **Propose improvements** — for each proposal, write it into **both** sinks:
+
+   a. **`backlog.md`** — add a new `- [ ] **N. <title>** *(size)*` entry under the
+      appropriate section. Do this in the same turn; do not leave it as a chat
+      suggestion.
+
+   b. **Obsidian** — write a tagged note to `Cline/memories/`:
+      ```
+      File: <OBSIDIAN_VAULT_PATH>/Cline/memories/YYYY-MM-DD-HHMMSS-<feature>-proposals.md
+      Tags: [usai-chat, rail-loop, proposals, <topic-tags>]
+      ```
+      List each proposal with a brief rationale and a link to the relevant backlog entry.
+
+   Do not auto-apply any proposal — these are recorded for user review and approval.
+   If the user approves a proposal, run `/spec` to promote it to a full spec.
 
 3. **Write the memory note** to Obsidian:
 
@@ -131,6 +181,11 @@ After a successful loop, before closing:
 
    ## Follow-up proposals
    - [ ] <proposed check/rule/test/backlog item>
+
+   ## Memory-note safety checklist
+   - [ ] No API keys, Bearer tokens, or passwords in this note
+   - [ ] No `sk-` prefixed values
+   - [ ] `scripts/security-scan.sh` memory-note scan block passes (4/4)
    ```
 
 ---

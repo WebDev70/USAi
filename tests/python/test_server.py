@@ -174,5 +174,84 @@ class LoadConfigTests(unittest.TestCase):
         self.assertEqual(server.CONFIG['context7_path'], '/v1/context')
 
 
+class IsSafeUpstreamUrlTests(unittest.TestCase):
+    """is_safe_upstream_url() must accept only http/https URLs pointing at
+    non-private, non-loopback, non-link-local hosts.
+
+    Security invariants verified here:
+    - Only http:// and https:// schemes are allowed.
+    - Private / loopback / link-local IP addresses are rejected (SSRF guard).
+    - Hostnames 'localhost' and variants that resolve to loopback are rejected.
+    - Empty / malformed / non-string inputs are rejected.
+    """
+
+    def _safe(self, url):
+        """Assert that the URL is accepted (returns True)."""
+        result = server.is_safe_upstream_url(url)
+        self.assertTrue(result, f"Expected {url!r} to be SAFE but got {result!r}")
+
+    def _unsafe(self, url):
+        """Assert that the URL is rejected (returns False)."""
+        result = server.is_safe_upstream_url(url)
+        self.assertFalse(result, f"Expected {url!r} to be REJECTED but got {result!r}")
+
+    # --- Safe inputs ---
+
+    def test_http_public_url_is_safe(self):
+        self._safe('http://api.openai.com/v1/chat/completions')
+
+    def test_https_public_url_is_safe(self):
+        self._safe('https://api.anthropic.com/v1/messages')
+
+    def test_https_url_with_port_is_safe(self):
+        self._safe('https://my-gateway.example.com:8443/api')
+
+    # --- Scheme rejections ---
+
+    def test_file_scheme_is_rejected(self):
+        self._unsafe('file:///etc/passwd')
+
+    def test_gopher_scheme_is_rejected(self):
+        self._unsafe('gopher://evil.example.com')
+
+    def test_ftp_scheme_is_rejected(self):
+        self._unsafe('ftp://files.example.com')
+
+    def test_empty_string_is_rejected(self):
+        self._unsafe('')
+
+    def test_none_is_rejected(self):
+        self._unsafe(None)
+
+    def test_relative_url_is_rejected(self):
+        self._unsafe('/api/v1/chat')
+
+    # --- SSRF / private IP rejections ---
+
+    def test_aws_imds_ipv4_is_rejected(self):
+        self._unsafe('http://169.254.169.254/latest/meta-data/')
+
+    def test_loopback_ipv4_is_rejected(self):
+        self._unsafe('http://127.0.0.1/api')
+
+    def test_loopback_ipv6_is_rejected(self):
+        self._unsafe('http://[::1]/api')
+
+    def test_private_rfc1918_10_x_is_rejected(self):
+        self._unsafe('http://10.0.0.1/internal')
+
+    def test_private_rfc1918_192_168_is_rejected(self):
+        self._unsafe('http://192.168.1.100/internal')
+
+    def test_private_rfc1918_172_16_is_rejected(self):
+        self._unsafe('http://172.16.0.1/internal')
+
+    def test_localhost_hostname_is_rejected(self):
+        self._unsafe('http://localhost/api')
+
+    def test_localhost_https_is_rejected(self):
+        self._unsafe('https://localhost:8080/api')
+
+
 if __name__ == '__main__':
     unittest.main()

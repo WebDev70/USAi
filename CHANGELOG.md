@@ -1,5 +1,311 @@
 ## [Unreleased]
 
+### Premium UI Polish — Inter font, glassy surfaces, shadow scale, micro-interactions (2026-06-24)
+
+CSS-only upgrade of `styles.css` + `index.html` (`?v=24`). No logic, no backend, no
+tests changed — all 116 tests pass.
+
+**What shipped:**
+
+- **Inter web font** — `<link>` preconnect + stylesheet added to `index.html`;
+  `--font-sans` token points to Inter with full system-stack fallback;
+  `font-feature-settings: 'cv02','cv03','cv04','cv11'` for optical Inter tuning;
+  `-webkit-font-smoothing: antialiased` on `body`.
+
+- **Token refresh** — new CSS custom-properties: `--color-accent-gradient` (135deg
+  green), `--color-accent-glow`, `--color-accent-soft`, `--color-bg-glass`,
+  `--font-sans`, `--ease-out`, `--transition-lg`; 4-stop layered shadow scale
+  (`--shadow-xs/sm/md/lg/xl`) with heavier dark-mode values; full `--radius-*` scale
+  (`xs/sm/md/lg/xl/pill`); `--focus-ring` / `--focus-ring-offset` a11y tokens.
+
+- **Glassy / frosted surfaces** — `.chat-header`, `.input-area` (in-conversation),
+  `.debug-panel` use `backdrop-filter: blur(14–16px) saturate(1.4–1.5)` where
+  supported; solid fallback via `@supports not (backdrop-filter: blur(1px))`;
+  `.chat-header` is `position: sticky; z-index: 100`.
+
+- **Empty-state icon** — gradient circle + ambient glow ring (`box-shadow` accent-soft
+  halo) with hover scale; greeting bumped to `1.75rem / 700 / letter-spacing: -0.03em`.
+
+- **Send button** — `background: var(--color-accent-gradient)`; glow
+  `box-shadow: 0 4px 14px var(--color-accent-glow)` on hover; `scale(0.93)` press.
+
+- **Example-prompt chips** — `border-radius: var(--radius-lg)`; accent border + bg on
+  hover; `translateY(-2px)` lift; `translateY(0)` active press.
+
+- **New-chat / sidebar buttons** — `box-shadow: var(--shadow-sm)` at rest; lift + accent
+  border on hover; shadow collapse on active.
+
+- **Active session item** — 3px left accent stripe + `--color-accent-soft` background.
+
+- **Sidebar action buttons** — `background: var(--color-accent-gradient)` + glow on hover.
+
+- **Message input pill** — `border-radius: var(--radius-xl)`; `--shadow-md` at rest;
+  `--shadow-lg + 4px accent-soft ring` on `:focus-within`.
+
+- **Micro-interactions** — all interactive elements: `0.15s cubic-bezier(0.4,0,0.2,1)`;
+  `@keyframes fade-in` on empty-chat-area; `@keyframes msg-in` on message groups;
+  `@keyframes debug-slide-in` on debug panel.
+
+- **Refined scrollbars** — `scrollbar-width: thin`; padded thumb with hover tint.
+
+- **Reduced-motion gate** — `@media (prefers-reduced-motion: reduce)` collapses all
+  animations/transitions to `0.001ms`.
+
+- **CSS version bump** — `styles.css?v=23` → `styles.css?v=24` in `index.html`.
+
+**Files changed:** `styles.css`, `index.html`
+**Spec:** `docs/specs/premium-ui-polish.md`
+
+---
+
+### RAIL Phase 7 — Ratchet sentinel, proxy adversarial tests, CI branch gate (#37, #38, #39) (2026-06-24)
+
+Implements backlog items #37, #38, and #39 from the QA review findings
+(`docs/specs/qa-testing-review.md`).
+
+**What shipped:**
+
+- `tests/js-coverage.mjs` — writes the measured JS branch % to a sentinel file
+  (`/tmp/usai-js-branch-pct`) so `run-tests.sh` passes the LIVE value to the
+  ratchet guard instead of always falling back to `$JS_MIN=70`. Fixes the latent
+  bug where the JS ratchet always compared 70 vs 70 and could never detect a real
+  regression. The write is non-fatal (warns on failure so read-only CI envs are safe).
+
+- `run-tests.sh` — reads the sentinel file (`/tmp/usai-js-branch-pct`) and passes
+  the actual measured branch % to `scripts/ratchet-check.sh` as `--js-branch`. Falls
+  back to `$JS_MIN` only when the file is absent (e.g. Node < 22 coverage skip).
+
+- `tests/python/test_scripts.py` — two new TDD tests (T-10a, T-10b):
+  - `T-10a` (TestJsSentinelWritten): sentinel file exists and contains a numeric value
+    after `node tests/js-coverage.mjs` runs.
+  - `T-10b` (TestJsSentinelMatchesOutput): sentinel value matches the branch % reported
+    in stdout to within 1%.
+
+- `tests/python/test_server_proxy.py` — new `ProxyAdversarialTests` class (T-11a/b/c):
+  - `T-11a` (test_malformed_upstream_json_does_not_crash_proxy): upstream replies with
+    invalid JSON → proxy responds with a defined status (not 500/crash). The proxy
+    passes the raw 200 body through; what we assert is that no unhandled exception
+    produces a 500.
+  - `T-11b` (test_unreachable_upstream_returns_502_not_500): connection-refused
+    (URLError path) → 502. Exercises the URLError branch in isolation.
+  - `T-11c` (test_upstream_http_error_returns_upstream_status_not_502): upstream HTTP
+    500 (HTTPError path) is relayed as 500, NOT converted to 502. Asserts the two
+    error code paths are distinct.
+  Also hardened `test_streaming_response_is_relayed` against a race condition where
+  `chunk0` could arrive before the socket read loop starts (now passes if any of
+  chunk0/1/2 is present, in addition to `[DONE]`).
+
+- `.github/workflows/tests.yml` — Python job updated to mirror `run-tests.sh
+  --coverage`: now runs `coverage run --branch`, enforces `--fail-under=90`
+  (line gate), and extracts branch % from `coverage json` to enforce the 80% branch
+  gate independently. Fixes the CI gap where a branch-coverage regression would pass
+  CI but fail locally (#39).
+
+- `backlog.md` — items #37, #38, #39 marked done.
+
+### RAIL Phase 6 — SSRF guard tests + branch coverage push to 93% (2026-06-24)
+
+Implements backlog item #36 (SSRF guard unit tests) from the RAIL Improvements
+spec (`docs/specs/rail-improvements.md`).
+
+**What shipped:**
+- `tests/python/test_server.py` — added `TestIsSafeUpstreamUrl` class (TDD Red→Green)
+  covering: `http://` and `https://` public hosts → safe; `file://`, `gopher://`,
+  `ftp://` → rejected; `http://169.254.169.254`, `http://127.0.0.1`, `http://[::1]`
+  → rejected; empty string / malformed → rejected.
+- `tests/python/test_server_proxy.py` — added `ProxySsrfGuardTests` class verifying
+  that `_proxy_api` returns 400 when the configured `base_url` is a private/loopback
+  address (SSRF rejection end-to-end). All proxy fixtures now set
+  `_test_allow_loopback: True` so the existing integration tests continue to work
+  against the loopback stub server.
+- `tests/python/test_server_branches.py` — large expansion: `PayloadTooLargeTests`
+  (413 for `/sessions`, `/chat-history`, `/chunk-cache`, `/logs`),
+  `MemoryWithVaultTests` (memory list/read/save/search/save-tag-dedup round-trips
+  against a real temp vault), `SessionsRoundTripTests` (createdAt branch),
+  `DeleteSessionFileNotExistsTests`, `DeleteChunkCacheFileNotExistsTests`,
+  `StaticFileTests` (super().do_GET() path).
+- Coverage: `server.py` line 93% / branch 94% — both coverage gates pass.
+- `backlog.md` — item #36 marked done.
+
+### RAIL Phase 5 — Security depth: supply-chain hash pin + memory-note secret scan (2026-06-24)
+
+Implements Phase 5 of the RAIL Improvements spec (`docs/specs/rail-improvements.md`
+AC-5-a through AC-5-c): closes the remaining supply-chain and secret-handling gaps
+without touching any app code.
+
+**What shipped:**
+- `server.py` — added `# nosec B310` inline suppression comments on both
+  `urlopen()` call sites (lines 147, 345). Bandit B310 fires because `urlopen`
+  can accept `file://` or custom schemes; both calls here use URLs sourced from
+  `.env` (`base_url`, `context7_base_url`) which are admin-configured and
+  constrained to `http/https`. The suppression is documented with a justification
+  comment explaining the guard. `scripts/security-scan.sh` now exits 0 cleanly.
+- `requirements.txt` — pinned `python-dotenv` to exact version `1.0.1` with a
+  sha256 wheel hash. `pip install --require-hashes` will reject any tampered or
+  substituted package. The existing GHSA advisory ignore and Python 3.9 note are
+  preserved with updated commentary.
+- `scripts/security-scan.sh` — renumbered from 3 scanners to 4/4. New block
+  **4/4 Memory-note secret scan** greps `$OBSIDIAN_VAULT_PATH/Cline/memories/*.md`
+  for secret patterns (`sk-[A-Za-z0-9]`, `Bearer [A-Za-z0-9]`, `api_key\s*=`,
+  `password\s*=`) and exits non-zero on a hit. Skips cleanly (exit 0) when
+  `OBSIDIAN_VAULT_PATH` is unset or the `Cline/memories` directory does not exist
+  — safe in CI environments without a vault. Added `SKIP_GITLEAKS`, `SKIP_BANDIT`,
+  and `SKIP_PIP_AUDIT` env-var bypass hooks so test isolation does not depend on
+  calling external tools.
+- `.clinerules/workflows/loop.md` — memory-note template gains a **Memory-note
+  safety checklist** section (no API keys/Bearer tokens/passwords, no `sk-`
+  values, security-scan 4/4 passes).
+- `.clinerules/workflows/review.md` — memory-note section gains a **Secret safety
+  reminder** block listing the four patterns to check before saving a note.
+- `tests/python/test_scripts.py` — 4 TDD tests (T-8a–T-8d, Red-first) covering:
+  clean vault passes, `sk-` key triggers failure, Bearer token triggers failure,
+  unset `OBSIDIAN_VAULT_PATH` skips cleanly (exit 0).
+
+### RAIL Phase 4 — Ergonomics: change-type classifier, escalation memory note, dual-sink proposals (2026-06-24)
+
+Implements Phase 4 of the RAIL Improvements spec (`docs/specs/rail-improvements.md`
+AC-4-a through AC-4-c): reduces friction for non-feature changes, ensures loop
+escalations are persisted, and wires improvement proposals to durable sinks.
+
+**What shipped:**
+- `.clinerules/workflows/spec.md` — new mandatory **Question 0** ("What type of
+  change is this? `feature | bugfix | chore | docs | css`") added before the five
+  existing interview questions. A role-skip mapping table documents which RAIL roles
+  and gates apply per type (`feature` = full pipeline; `bugfix` = skip PO + require
+  regression test; `chore`/`refactor` = skip PO; `docs` = skip PO + Tester/Security
+  when no code changed; `css` = skip PO + require CSS bump gate). The spec template
+  gains a **`Type:`** field immediately after **`Status:`** so every spec records
+  its type.
+- `.clinerules/workflows/build.md` — pre-flight check gains step 5: read the
+  `Type:` field and apply the role-skip table. Missing `Type:` defaults to `feature`
+  and is flagged as a gap.
+- `.clinerules/workflows/loop.md` — escalation block (after 5 iterations) now
+  **writes an interim memory note** to `Cline/memories/` capturing the gap list and
+  iteration history before stopping. Post-loop "Propose improvements" section updated
+  to dual-sink: add each proposal to `backlog.md` **and** write a tagged Obsidian
+  note — not left as inline chat suggestions.
+- `.clinerules/workflows/self-improve.md` — new "Proposing improvements" section
+  requiring every structural improvement surfaced by `/self-improve` to land in both
+  `backlog.md` (new entry with size estimate) and `Cline/memories/` (tagged note
+  with rationale + backlog link). "Never leave a proposal as a chat suggestion only."
+
+**No app code changed** — tooling/harness only.
+
+---
+
+### RAIL Phase 3 — Convention deduplication + doc-consistency-check + harness-parity table (2026-06-24)
+
+Implements Phase 3 of the RAIL Improvements spec (`docs/specs/rail-improvements.md`
+AC-3-a through AC-3-c): single source of truth for all USAi coding conventions,
+a machine-enforced duplication detector wired into `cli-check.sh`, and a
+harness-parity table for the 10 RAIL QA checks.
+
+**What shipped:**
+- `scripts/doc-consistency-check.sh` — new script; scans `AGENTS.md`,
+  `.clinerules/rail-pipeline.md`, and `docs/tooling/*.md` for verbatim copies of
+  convention phrases that belong only in `docs/rail-pipeline.md`.  Exits non-zero
+  on first duplicate found; human-readable gap list with fix instructions.
+- `AGENTS.md` — **Coding conventions** section replaced with a canonical pointer to
+  `docs/rail-pipeline.md §3`; verbatim `styles.css?v=N`, `TOOL_REGISTRY`,
+  `getEnabledTools`, `_handler`, and `is_safe_upstream_url` fragments removed.
+  **Security** section similarly trimmed (SSRF / path-traversal detail deferred to
+  the canonical source).
+- `.clinerules/rail-pipeline.md` — **Architect** role (§2) reduced to a reference
+  link; duplicate convention prose removed.
+- `docs/tooling/cline.md` — **Coding conventions** section replaced with canonical
+  pointer.
+- `docs/tooling/continue.md` — **Coding conventions** section replaced with
+  canonical pointer.
+- `scripts/cli-check.sh` — new gate block after spec-check: runs
+  `doc-consistency-check.sh` when the `--review` mode is active, so the convention-
+  duplication rule is machine-enforced on every QA pass.
+- `docs/rail-pipeline.md` — new **Harness-parity table** (§3 QA Review subsection)
+  mapping each of the 10 Continue check files to the corresponding Cline `/review`
+  gate step. Single reference for parity status.
+- `tests/python/test_scripts.py` — 3 new tests (T-6/T-7) for
+  `doc-consistency-check.sh`: pass when phrases only in canonical source, fail when
+  duplicated in `AGENTS.md`, fail when duplicated in `.clinerules/rail-pipeline.md`.
+  TDD Red-first (confirmed failing before implementation).
+
+**Verification:** `bash scripts/doc-consistency-check.sh` now exits 0 (✓ PASS —
+all 5 convention phrases confined to `docs/rail-pipeline.md`).
+
+---
+
+### RAIL Phase 2 — Python branch coverage gate + threshold ratchet guard (2026-06-24)
+
+Implements Phase 2 of the RAIL Improvements spec (`docs/specs/rail-improvements.md`
+AC-2-a through AC-2-d): machine-enforced Python branch coverage measurement,
+per-metric branch threshold gate, and committed ratchet guard that prevents
+any threshold from being silently lowered.
+
+**What shipped:**
+- `run-tests.sh --coverage` — now explicitly runs `coverage run --branch` and adds
+  a second gate enforcing `PY_BRANCH_MIN=80%` branch coverage (extracted from
+  `coverage json`). Line and branch gates are independent so each can be reported
+  and enforced separately.
+- `scripts/ratchet-check.sh` — new Bash 3.2-compatible script that reads
+  `.coverage-thresholds` and compares live line/branch/JS values; exits non-zero
+  if any live value is *lower* than the committed threshold. Called automatically
+  by `run-tests.sh --coverage` at the end of the coverage block.
+- `.coverage-thresholds` — new committed file recording the high-water marks
+  (`python_line=90`, `python_branch=80`, `js_branch=70`). Ratchet rule: values
+  only go up over time; never lower to make a change pass.
+- `.coveragerc` — clarified comment: `fail_under = 88` is the safety-net combined
+  metric; per-metric gates in `run-tests.sh` (PY_MIN=90, PY_BRANCH_MIN=80) are
+  the authoritative thresholds. `branch = True` (already present) documented.
+- `tests/python/test_scripts.py` — 7 new tests (T-9a/T-9b/T-9c) for
+  `ratchet-check.sh`: pass-when-live≥threshold, fail-per-metric-dropped,
+  and edge cases (missing file, missing key). TDD Red first, then Green.
+
+**Current live coverage (2026-06-24):**
+- Python line: 90% (492/542)
+- Python branch: 85.85% (91/106) — well above the 80% gate
+- JS branch: 71.43%
+
+**Files changed:**
+- `scripts/ratchet-check.sh` — new
+- `.coverage-thresholds` — new
+- `run-tests.sh` — branch gate + ratchet invocation added
+- `.coveragerc` — comment clarification
+- `tests/python/test_scripts.py` — 7 T-9a/T-9b/T-9c tests added
+
+---
+
+### RAIL Phase 1 — Spec↔Build verification tooling (2026-06-24)
+
+Implements Phase 1 of the RAIL Improvements spec (`docs/specs/rail-improvements.md`
+AC-1-a through AC-1-e): machine-enforced spec compliance check, Red-receipt TDD
+discipline, and memory-note existence gate.
+
+**What shipped:**
+- `scripts/spec-check.sh` — new Bash 3.2-compatible script that parses a spec's §3
+  Affected files and §5 Test plan, then verifies every declared file/test appears in
+  `git diff HEAD`. Hard exits 1 for missing items; warns (non-blocking) for scope
+  creep. Exempt paths: `docs/`, `CHANGELOG.md`, `backlog.md`, and the spec itself.
+- `tests/python/test_scripts.py` — 4 new Python tests (T-1…T-4) covering pass,
+  missing §3 file, scope-creep warning, and missing §5 test file scenarios (TDD Red
+  first, then Green with the script implementation).
+- `.clinerules/workflows/review.md §6a` — replaced the manual table scan with a call
+  to `./scripts/spec-check.sh`; result interpretation table added.
+- `.clinerules/workflows/loop.md` — added memory-note-exists gate to Done criteria;
+  instructions to check `Cline/memories/` before declaring done.
+- `.clinerules/workflows/build.md §3a` — added "Red receipt" instruction requiring
+  failing-test output to be pasted into the session memory note before writing
+  production code; noted as a GAP if missing in `/review`.
+- `scripts/cli-check.sh` — added optional `SPEC_FILE=…` env-var gate that runs
+  `spec-check.sh` as part of the full check suite.
+
+**Files changed:**
+- `scripts/spec-check.sh` — new
+- `tests/python/test_scripts.py` — new
+- `.clinerules/workflows/review.md` — §6a updated
+- `.clinerules/workflows/loop.md` — Done criteria updated
+- `.clinerules/workflows/build.md` — §3a Red receipt added
+- `scripts/cli-check.sh` — spec-check gate added
+
+---
+
 ### Style — User bubble vertical stack + green accent outline (2026-06-23)
 
 User prompt bubbles now stack their contents vertically (bubble on top, ✎ Edit

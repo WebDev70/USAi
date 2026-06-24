@@ -1,82 +1,125 @@
 /* USAi Chat styles */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-:root {
-  --color-bg-dark: #f9f9f9;
-  --color-sidebar-text: #0d0d0d;
-  --color-bg-primary: #ffffff;
-  --color-bg-secondary: #f4f4f4;
-  --color-bg-elevated: #ffffff;
-  --color-bg-hover: rgba(0, 0, 0, 0.04);
-  --color-text-primary: #0d0d0d;
-  --color-text-secondary: #595963;
-  --color-border: #e5e5e5;
-  --color-accent: #10a37f;
-  --color-accent-hover: #0e8e6d;
-  --color-user-bg: #f4f4f4;
-  --color-user-text: #0d0d0d;
-  --color-link: #2563eb;
+/* ── Inter web font (premium typography) ─────────────────────────────────
+   Loaded via index.html <link>. This @import is a no-op fallback only.
+   font-display:swap ensures system stack renders immediately while Inter loads. */
 
-  /* Elevation, radii, motion */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.14);
+:root {
+  /* ── Brand / accent ───────────────────────────────────────────────────── */
+  --color-accent:           #10a37f;
+  --color-accent-hover:     #0e8e6d;
+  --color-accent-soft:      rgba(16, 163, 127, 0.12);
+  --color-accent-glow:      rgba(16, 163, 127, 0.35);
+  --color-accent-gradient:  linear-gradient(135deg, #12b589 0%, #0d8f6c 100%);
+
+  /* ── Surfaces (light) ─────────────────────────────────────────────────── */
+  --color-bg-dark:          #f5f5f7;   /* sidebar / secondary bg */
+  --color-bg-primary:       #ffffff;
+  --color-bg-secondary:     #f0f0f2;
+  --color-bg-elevated:      #ffffff;
+  --color-bg-hover:         rgba(0, 0, 0, 0.045);
+  --color-bg-glass:         rgba(255, 255, 255, 0.82);
+
+  /* ── Text (light) ─────────────────────────────────────────────────────── */
+  --color-sidebar-text:     #111111;
+  --color-text-primary:     #111111;
+  --color-text-secondary:   #56565e;
+  --color-border:           #e2e2e6;
+
+  /* ── Semantic ─────────────────────────────────────────────────────────── */
+  --color-user-bg:          #f0f0f2;
+  --color-user-text:        #111111;
+  --color-link:             #1d6fe5;
+
+  /* ── Elevation (ambient + key light, layered) ─────────────────────────── */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 8px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 12px 28px rgba(0,0,0,0.10), 0 4px 10px rgba(0,0,0,0.06);
+  --shadow-xl: 0 24px 48px rgba(0,0,0,0.12), 0 8px 20px rgba(0,0,0,0.07);
+
+  /* ── Shape ────────────────────────────────────────────────────────────── */
+  --radius-xs: 6px;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
-  --radius-pill: 26px;
-  --transition: 0.18s ease;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  /* ── Motion ───────────────────────────────────────────────────────────── */
+  --ease-out:     cubic-bezier(0.4, 0, 0.2, 1);
+  --transition:   0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-lg: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── Layout ───────────────────────────────────────────────────────────── */
   --sidebar-width: 272px;
 
-  /* Keyboard focus ring (a11y). Derived from the accent so it tracks the theme;
-     color-mix keeps it legible on any surface. Used by the global :focus-visible
-     rule below — visible for keyboard users, suppressed for mouse/touch. */
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--color-accent) 45%, transparent);
+  /* ── Typography ───────────────────────────────────────────────────────── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               'Helvetica Neue', Arial, sans-serif;
+
+  /* ── Focus ring (a11y) ────────────────────────────────────────────────── */
+  --focus-ring:        0 0 0 3px color-mix(in srgb, var(--color-accent) 45%, transparent);
   --focus-ring-offset: 0 0 0 2px var(--color-bg-primary);
 }
 
+/* ── Dark mode tokens ───────────────────────────────────────────────────── */
 body.dark-mode {
-  --color-bg-dark: #181818;
-  --color-sidebar-text: #ececec;
-  --color-bg-primary: #212121;
-  --color-bg-secondary: #2a2a2a;
-  --color-bg-elevated: #2f2f2f;
-  --color-bg-hover: rgba(255, 255, 255, 0.06);
-  --color-text-primary: #ececec;
-  --color-text-secondary: #b4b4b7;
-  --color-border: #3d3d3d;
-  --color-accent: #10a37f;
-  --color-accent-hover: #14b88f;
-  --color-user-bg: #2f2f2f;
-  --color-user-text: #ececec;
-  --color-link: #6ea8ff;
+  --color-bg-dark:         #161618;
+  --color-bg-primary:      #1e1e20;
+  --color-bg-secondary:    #27272b;
+  --color-bg-elevated:     #2e2e33;
+  --color-bg-hover:        rgba(255, 255, 255, 0.055);
+  --color-bg-glass:        rgba(30, 30, 32, 0.85);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.55);
+  --color-sidebar-text:    #f0f0f2;
+  --color-text-primary:    #f0f0f2;
+  --color-text-secondary:  #a8a8b0;
+  --color-border:          #38383e;
+
+  --color-accent:          #12b589;
+  --color-accent-hover:    #15c896;
+  --color-accent-soft:     rgba(18, 181, 137, 0.14);
+  --color-accent-glow:     rgba(18, 181, 137, 0.40);
+  --color-accent-gradient: linear-gradient(135deg, #15c896 0%, #0e9670 100%);
+
+  --color-user-bg:         #2e2e33;
+  --color-user-text:       #f0f0f2;
+  --color-link:            #5ba4f5;
+
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.30);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.36), 0 1px 2px rgba(0,0,0,0.24);
+  --shadow-md: 0 4px 8px rgba(0,0,0,0.40), 0 2px 4px rgba(0,0,0,0.28);
+  --shadow-lg: 0 12px 28px rgba(0,0,0,0.55), 0 4px 10px rgba(0,0,0,0.35);
+  --shadow-xl: 0 24px 48px rgba(0,0,0,0.65), 0 8px 20px rgba(0,0,0,0.40);
 }
 
+/* ── Base reset ─────────────────────────────────────────────────────────── */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-sans);
   background-color: var(--color-bg-primary);
   color: var(--color-text-primary);
-  line-height: 1.5;
+  line-height: 1.55;
   font-size: 16px;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; /* Inter optical tuning */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
   display: flex;
-  transition: background-color 0.3s ease;
+  transition: background-color var(--transition-lg), color var(--transition-lg);
 }
 
-/* Subtle, modern scrollbars throughout */
+/* ── Refined scrollbars ─────────────────────────────────────────────────── */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
 }
-*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
   background-color: var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
@@ -85,26 +128,17 @@ body {
   background-clip: padding-box;
 }
 
-/* ── Accessibility baseline (USWDS-aligned, applied via Context7 guidance) ──
-   1. Every interactive control gets a clear, consistent keyboard focus ring.
-      We use :focus-visible so the ring shows for keyboard/AT users but not on
-      mouse click — addressing the common "outline:none" regressions elsewhere
-      in this file without harming pointer users. (USWDS: buttons/links must have
-      a visible focus state reachable by keyboard.) */
+/* ── Accessibility baseline ─────────────────────────────────────────────── */
 :where(a, button, input, select, textarea, summary, label.sidebar-btn, [tabindex]):focus-visible {
   outline: none;
   box-shadow: var(--focus-ring-offset), var(--focus-ring);
   border-radius: var(--radius-sm);
 }
-/* Belt-and-suspenders for browsers without :focus-visible: keep a real outline
-   rather than nothing, so focus is never invisible. */
 :where(a, button, input, select, textarea, summary):focus {
   outline: 2px solid transparent;
 }
 
-/* 2. Screen-reader-only utility (USWDS `usa-sr-only`): visually hide text while
-      keeping it available to assistive tech — for accessible names on controls
-      whose visible content is an icon/emoji. */
+/* Screen-reader-only utility */
 .sr-only {
   position: absolute !important;
   width: 1px; height: 1px;
@@ -115,8 +149,7 @@ body {
   border: 0;
 }
 
-/* 3. Respect users who prefer reduced motion: neutralize non-essential animation
-      and smooth scrolling. Essential state changes still occur, just instantly. */
+/* Respect reduced-motion preference */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
@@ -126,6 +159,7 @@ body {
   }
 }
 
+/* ── App shell ──────────────────────────────────────────────────────────── */
 .app-container {
   display: flex;
   width: 100%;
@@ -133,6 +167,9 @@ body {
   overflow: hidden;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   SIDEBAR
+   ══════════════════════════════════════════════════════════════════════════ */
 .sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
@@ -141,12 +178,12 @@ body {
   display: flex;
   flex-direction: column;
   color: var(--color-sidebar-text);
-  padding: 14px 12px;
+  padding: 16px 12px;
   overflow-y: auto;
-  transition: width var(--transition), transform var(--transition), padding var(--transition);
+  transition: width var(--transition-lg), transform var(--transition-lg), padding var(--transition-lg);
 }
 
-/* Collapsed sidebar (toggled from header) */
+/* Collapsed state */
 .app-container.sidebar-collapsed .sidebar {
   width: 0;
   padding-left: 0;
@@ -155,11 +192,12 @@ body {
   border-right: none;
 }
 
+/* ── Sidebar header ─────────────────────────────────────────────────────── */
 .sidebar-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .new-chat-btn,
@@ -171,9 +209,12 @@ body {
   color: var(--color-sidebar-text);
   border-radius: var(--radius-md);
   cursor: pointer;
+  font-family: var(--font-sans);
   font-weight: 600;
-  font-size: 0.9rem;
-  transition: background-color var(--transition), border-color var(--transition), box-shadow var(--transition);
+  font-size: 0.875rem;
+  letter-spacing: -0.01em;
+  transition: background-color var(--transition), border-color var(--transition),
+              box-shadow var(--transition), transform var(--transition);
   text-align: left;
 }
 
@@ -188,22 +229,30 @@ body {
 .new-chat-btn:hover,
 .theme-toggle:hover {
   background-color: var(--color-bg-hover);
-  border-color: var(--color-text-secondary);
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
+.new-chat-btn:active,
+.theme-toggle:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-xs);
+}
 
+/* ── Sidebar footer ─────────────────────────────────────────────────────── */
 .sidebar-footer {
   margin-top: auto;
   border-top: 1px solid var(--color-border);
   padding-top: 16px;
 }
 
-/* ── Session history list ── */
+/* ── Session history list ───────────────────────────────────────────────── */
 .sessions-list {
-  flex: 1 1 auto;          /* grow to fill the space above the bottom-pinned settings */
+  flex: 1 1 auto;
   min-height: 40px;
   overflow-y: auto;
-  padding: 0 4px;
+  padding: 0 2px;
   margin-bottom: 8px;
 }
 
@@ -218,12 +267,12 @@ body {
   display: flex;
   flex-direction: column;
   padding: 9px 12px;
-  padding-right: 30px;
+  padding-right: 32px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   position: relative;
   margin-bottom: 2px;
-  transition: background var(--transition);
+  transition: background var(--transition), box-shadow var(--transition);
   color: var(--color-text-secondary);
 }
 
@@ -231,16 +280,21 @@ body {
   background: var(--color-bg-hover);
 }
 
+/* Active session: accent left stripe + subtle elevated bg */
 .session-item.active {
-  background: var(--color-bg-secondary);
+  background: var(--color-accent-soft);
+  border-left: 3px solid var(--color-accent);
+  padding-left: 9px; /* compensate for border */
 }
 
 .session-title {
   font-size: 0.83rem;
+  font-weight: 500;
   color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.01em;
 }
 
 .session-meta {
@@ -262,7 +316,7 @@ body {
   padding: 3px 5px;
   border-radius: 4px;
   opacity: 0;
-  transition: opacity 0.15s, background 0.15s;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
 }
 
 .session-item:hover .session-delete {
@@ -270,15 +324,16 @@ body {
 }
 
 .session-delete:hover {
-  background: #c0392b;
+  background: #dc2626;
   color: white;
 }
 
+/* ── Sidebar settings ───────────────────────────────────────────────────── */
 .sidebar-settings {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: auto;        /* pin the settings group to the bottom, above the footer */
+  margin-top: auto;
   margin-bottom: 16px;
 }
 
@@ -289,11 +344,11 @@ body {
 
 .settings-section > summary {
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: 0.71rem;
   font-weight: 700;
   color: var(--color-text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.075em;
   list-style: none;
   display: flex;
   align-items: center;
@@ -308,8 +363,8 @@ body {
 
 .settings-section > summary::before {
   content: '';
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: rotate(-45deg);
@@ -343,6 +398,7 @@ body {
   color: var(--color-text-primary);
   border-radius: var(--radius-sm);
   padding: 8px 10px;
+  font-family: var(--font-sans);
   font-size: 0.82rem;
   box-sizing: border-box;
   transition: border-color var(--transition), box-shadow var(--transition);
@@ -356,7 +412,7 @@ body {
 .settings-body input:focus {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.15);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 
 .settings-label {
@@ -367,50 +423,96 @@ body {
   color: var(--color-text-secondary);
 }
 
-/* Small explanatory helper text inside a settings section */
 .settings-hint {
   font-size: 0.72rem;
-  line-height: 1.45;
+  line-height: 1.48;
   color: var(--color-text-secondary);
   margin: 2px 0 4px;
-  padding: 7px 9px;
-  background: var(--color-bg-hover);
+  padding: 7px 10px;
+  background: var(--color-accent-soft);
   border-left: 3px solid var(--color-accent);
   border-radius: var(--radius-sm);
+}
+
+/* Hide Option-B sections (API config + model) */
+.settings-hidden {
+  display: none;
 }
 
 .sidebar-btn {
   width: 100%;
   padding: 8px 12px;
-  background-color: var(--color-accent);
+  background: var(--color-accent-gradient);
   color: white;
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  font-family: var(--font-sans);
   font-weight: 600;
   font-size: 0.82rem;
-  transition: background-color var(--transition), opacity var(--transition), transform var(--transition);
+  letter-spacing: -0.01em;
+  transition: opacity var(--transition), transform var(--transition), box-shadow var(--transition);
   text-align: center;
+  box-shadow: var(--shadow-xs);
 }
 
 .sidebar-btn:hover {
-  background-color: var(--color-accent-hover);
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--color-accent-glow);
 }
 
 .sidebar-btn:active {
-  transform: translateY(1px);
+  transform: translateY(0);
+  box-shadow: var(--shadow-xs);
+  opacity: 1;
 }
 
 .sidebar-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
+/* ── Toggle labels (checkboxes) ─────────────────────────────────────────── */
+.toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: color var(--transition);
+}
+
+.toggle-label:hover {
+  color: var(--color-text-primary);
+}
+
+.toggle-label input[type="checkbox"] {
+  accent-color: var(--color-accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+#modelsStatus {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MAIN CONTENT
+   ══════════════════════════════════════════════════════════════════════════ */
 .main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
   background-color: var(--color-bg-primary);
+  min-width: 0;
 }
 
 .chat-view-container {
@@ -418,113 +520,32 @@ body {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  min-height: 0;
 }
 
-.empty-chat-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  padding: 0 24px 14vh;
-  animation: fade-in 0.5s ease both;
-}
-
-.empty-chat-icon {
-  font-size: 2rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  color: #fff;
-  margin-bottom: 1.25rem;
-  width: 64px;
-  height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--color-accent), #0c8a6b);
-  box-shadow: var(--shadow-md);
-}
-
-.empty-chat-greeting {
-  font-size: 1.6rem;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-/* Example prompt chips shown in the empty state */
-.example-prompts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 1.75rem;
-  max-width: 620px;
-}
-
-.example-prompt-chip {
-  padding: 10px 16px;
-  background-color: var(--color-bg-elevated);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  color: var(--color-text-primary);
-  font-size: 0.86rem;
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: background var(--transition), border-color var(--transition), transform var(--transition);
-}
-
-.example-prompt-chip:hover {
-  background-color: var(--color-bg-hover);
-  border-color: var(--color-accent);
-  transform: translateY(-1px);
-}
-
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
-}
-
-/* Hide the active chat area by default */
-.chat-area {
-  display: none;
-}
-
-/* When a conversation starts, hide the empty state and show the chat */
-.main-content.in-conversation .empty-chat-area {
-  display: none;
-}
-
-.main-content.in-conversation .chat-area {
-  display: flex; /* Use flex to make it fill the space */
-  flex-direction: column;
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px;
-}
-
-/* Adjust input area position for the empty state */
-.main-content:not(.in-conversation) .input-area {
-  position: absolute;
-  bottom: 5vh;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: 768px;
-  padding: 0 24px;
-  background: transparent;
-}
-
+/* ── Chat header — frosted glass ────────────────────────────────────────── */
 .chat-header {
-  padding: 12px 18px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--color-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-glass);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  transition: background-color var(--transition-lg);
+}
+
+/* Frosted glass where supported */
+@supports (backdrop-filter: blur(1px)) {
+  .chat-header {
+    background-color: var(--color-bg-glass);
+    backdrop-filter: blur(14px) saturate(1.5);
+    -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  }
 }
 
 .chat-header-left {
@@ -545,72 +566,168 @@ body {
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 1.1rem;
-  transition: background var(--transition), color var(--transition);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
 
 .sidebar-toggle:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-primary);
+  border-color: var(--color-border);
 }
 
 .chat-title {
-  font-size: 1rem;
+  font-size: 0.9375rem;
   font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--color-text-primary);
   flex-shrink: 0;
 }
 
 .debug-toggle-btn {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
+  font-family: var(--font-sans);
+  font-weight: 500;
   padding: 6px 12px;
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
   color: var(--color-text-secondary);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background var(--transition), color var(--transition);
+  letter-spacing: 0.01em;
+  transition: background var(--transition), color var(--transition),
+              border-color var(--transition), box-shadow var(--transition);
 }
 
 .debug-toggle-btn:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-primary);
+  border-color: var(--color-text-secondary);
 }
 
-.toggle-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.85rem;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.toggle-label input[type="checkbox"] {
-  accent-color: var(--color-accent);
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
-}
-
-#modelsStatus {
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-}
-
-.chat-area {
+/* ══════════════════════════════════════════════════════════════════════════
+   EMPTY STATE
+   ══════════════════════════════════════════════════════════════════════════ */
+.empty-chat-area {
   flex: 1;
-  overflow-y: auto;
-  padding: 24px;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 0 24px 14vh;
+  animation: fade-in 0.45s var(--ease-out) both;
 }
 
+/* Premium brand circle with gradient + glow */
+.empty-chat-icon {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin-bottom: 1.5rem;
+  width: 68px;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-accent-gradient);
+  box-shadow: var(--shadow-lg), 0 0 0 6px var(--color-accent-soft);
+  transition: transform var(--transition-lg), box-shadow var(--transition-lg);
+}
+
+.empty-chat-icon:hover {
+  transform: scale(1.04);
+  box-shadow: var(--shadow-xl), 0 0 0 8px var(--color-accent-soft);
+}
+
+.empty-chat-greeting {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--color-text-primary);
+  line-height: 1.25;
+}
+
+/* Example prompt chips */
+.example-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 1.75rem;
+  max-width: 640px;
+}
+
+.example-prompt-chip {
+  padding: 10px 18px;
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background var(--transition), border-color var(--transition),
+              transform var(--transition), box-shadow var(--transition);
+}
+
+.example-prompt-chip:hover {
+  background-color: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md), 0 0 0 3px var(--color-accent-soft);
+}
+
+.example-prompt-chip:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-xs);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CHAT AREA
+   ══════════════════════════════════════════════════════════════════════════ */
+/* Hide the active chat area by default */
+.chat-area {
+  display: none;
+}
+
+.main-content.in-conversation .empty-chat-area {
+  display: none;
+}
+
+.main-content.in-conversation .chat-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 24px 16px;
+}
+
+/* Empty state input centering */
+.main-content:not(.in-conversation) .input-area {
+  position: absolute;
+  bottom: 5vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 768px;
+  padding: 0 24px;
+  background: transparent;
+}
+
+/* ── Messages container ─────────────────────────────────────────────────── */
 .messages-container {
   flex: 1;
   margin-bottom: 24px;
-  max-width: 768px;
+  max-width: 760px;
   width: 100%;
   margin-left: auto;
   margin-right: auto;
@@ -619,13 +736,13 @@ body {
 .message-group {
   display: flex;
   gap: 12px;
-  margin-bottom: 22px;
-  animation: msg-in 0.3s ease both;
+  margin-bottom: 24px;
+  animation: msg-in 0.28s var(--ease-out) both;
 }
 
 @keyframes msg-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
 }
 
 .message-group.user {
@@ -635,14 +752,13 @@ body {
 
 .message-bubble {
   max-width: 90%;
-  padding: 12px 16px;
+  padding: 13px 17px;
   border-radius: var(--radius-md);
-  line-height: 1.6;
+  line-height: 1.62;
   position: relative;
 }
 
-/* ─── Copy buttons ──────────────────────────────────────────────────────── */
-/* Whole-message copy button: top-right of the bubble, shown on hover. */
+/* ── Copy / Remember buttons ────────────────────────────────────────────── */
 .copy-msg-btn {
   position: absolute;
   top: 6px;
@@ -650,20 +766,20 @@ body {
   padding: 2px 8px;
   font-size: 0.7rem;
   line-height: 1.4;
-  color: var(--color-text-secondary, #aaa);
-  background: var(--color-bg-secondary, rgba(0, 0, 0, 0.3));
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.15));
-  border-radius: 5px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
+  transition: opacity 0.12s, color 0.12s;
 }
 .message-bubble:hover .copy-msg-btn {
   opacity: 0.85;
 }
 .copy-msg-btn:hover {
   opacity: 1;
-  color: var(--color-text-primary, #fff);
+  color: var(--color-text-primary);
 }
 .copy-msg-btn.copied {
   color: #22c55e;
@@ -671,7 +787,6 @@ body {
   opacity: 1;
 }
 
-/* Whole-message "Remember" button: sits just left of the copy button. */
 .remember-msg-btn {
   position: absolute;
   top: 6px;
@@ -679,21 +794,21 @@ body {
   padding: 2px 8px;
   font-size: 0.7rem;
   line-height: 1.4;
-  color: var(--color-text-secondary, #aaa);
-  background: var(--color-bg-secondary, rgba(0, 0, 0, 0.3));
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.15));
-  border-radius: 5px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   opacity: 0;
   white-space: nowrap;
-  transition: opacity 0.15s, color 0.15s;
+  transition: opacity 0.12s, color 0.12s;
 }
 .message-bubble:hover .remember-msg-btn {
   opacity: 0.85;
 }
 .remember-msg-btn:hover {
   opacity: 1;
-  color: var(--color-text-primary, #fff);
+  color: var(--color-text-primary);
 }
 .remember-msg-btn:disabled {
   cursor: default;
@@ -705,7 +820,7 @@ body {
   opacity: 1;
 }
 
-/* Per-code-block copy button: top-right of the <pre>. */
+/* Per-code-block copy button */
 .md-pre {
   position: relative;
 }
@@ -716,13 +831,13 @@ body {
   padding: 2px 8px;
   font-size: 0.7rem;
   line-height: 1.4;
-  color: var(--color-text-secondary, #ccc);
+  color: var(--color-text-secondary);
   background: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
+  transition: opacity 0.12s, color 0.12s;
 }
 .md-pre:hover .copy-code-btn {
   opacity: 0.9;
@@ -737,13 +852,13 @@ body {
   opacity: 1;
 }
 
-/* ─── Per-message action buttons (Edit / Regenerate) ────────────────────── */
+/* ── Per-message action buttons (Edit / Regenerate) ────────────────────── */
 .msg-actions {
   display: flex;
   gap: 8px;
   margin-top: 4px;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.12s;
 }
 .message-group:hover .msg-actions {
   opacity: 1;
@@ -754,25 +869,26 @@ body {
 .msg-action-btn {
   padding: 2px 10px;
   font-size: 0.72rem;
+  font-family: var(--font-sans);
   line-height: 1.5;
-  color: var(--color-text-secondary, #aaa);
+  color: var(--color-text-secondary);
   background: transparent;
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.15));
-  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
 }
 .msg-action-btn:hover {
-  color: var(--color-text-primary, #fff);
-  border-color: var(--color-accent, #3b82f6);
-  background: rgba(59, 130, 246, 0.1);
+  color: var(--color-text-primary);
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 .msg-action-btn:focus-visible {
-  outline: 2px solid var(--color-accent, #3b82f6);
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
-/* ─── Inline user-message editor ────────────────────────────────────────── */
+/* ── Inline user-message editor ─────────────────────────────────────────── */
 .msg-edit-wrap {
   display: flex;
   flex-direction: column;
@@ -785,10 +901,10 @@ body {
   resize: vertical;
   padding: 8px 10px;
   font: inherit;
-  color: var(--color-text-primary, #111);
-  background: var(--color-bg-primary, #fff);
-  border: 1px solid var(--color-accent, #3b82f6);
-  border-radius: 8px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
 }
 .msg-edit-controls {
   display: flex;
@@ -799,32 +915,36 @@ body {
 .msg-edit-cancel {
   padding: 4px 14px;
   font-size: 0.8rem;
-  border-radius: 6px;
+  font-family: var(--font-sans);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   border: 1px solid transparent;
+  transition: opacity var(--transition), transform var(--transition);
 }
 .msg-edit-save {
   color: #fff;
-  background: var(--color-accent, #3b82f6);
+  background: var(--color-accent-gradient);
 }
 .msg-edit-save:hover {
   opacity: 0.9;
+  transform: translateY(-1px);
 }
 .msg-edit-cancel {
-  color: var(--color-text-secondary, #aaa);
+  color: var(--color-text-secondary);
   background: transparent;
-  border-color: var(--color-border, rgba(255, 255, 255, 0.15));
+  border-color: var(--color-border);
 }
 .msg-edit-cancel:hover {
-  color: var(--color-text-primary, #fff);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-secondary);
 }
 .msg-edit-save:focus-visible,
 .msg-edit-cancel:focus-visible {
-  outline: 2px solid var(--color-accent, #3b82f6);
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
-/* Assistant turns stack vertically: response → metadata note → action buttons */
+/* ── Message bubble variants ────────────────────────────────────────────── */
 .message-group.assistant {
   flex-direction: column;
   align-items: stretch;
@@ -840,12 +960,12 @@ body {
 .message-group.user .message-bubble {
   background-color: var(--color-user-bg);
   color: var(--color-user-text);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--color-accent);
 }
 
-/* Blinking cursor shown while an assistant message is streaming */
+/* Streaming cursor */
 .message-bubble.streaming .message-text::after,
 .message-bubble.streaming:not(:has(.message-text))::after {
   content: '▋';
@@ -859,7 +979,7 @@ body {
   to { visibility: hidden; }
 }
 
-/* Images embedded in a chat message */
+/* Message images */
 .message-images {
   display: flex;
   flex-wrap: wrap;
@@ -870,7 +990,7 @@ body {
 .message-image {
   max-width: 240px;
   max-height: 240px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   object-fit: cover;
 }
@@ -879,7 +999,7 @@ body {
   display: none;
 }
 
-/* Tool-call activity indicator */
+/* Tool activity indicator */
 .tool-activity {
   max-width: 768px;
   width: 100%;
@@ -897,38 +1017,39 @@ body {
 }
 
 .tool-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: var(--color-bg-secondary);
-    border: 1px solid var(--color-border);
-    font-family: 'Courier New', monospace;
-    font-size: 0.74rem;
-  }
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  font-family: 'Courier New', monospace;
+  font-size: 0.74rem;
+}
 
-/* Structured-output JSON results: render in a monospace block */
+/* Structured-output JSON results */
 .message-group.assistant .message-bubble:has(.message-text) .message-text {
   white-space: inherit;
 }
 
-/* ─── Markdown rendering for assistant messages ─────────────────────────── */
+/* ── Markdown rendering ──────────────────────────────────────────────────── */
 .markdown-body {
   white-space: normal;
-  line-height: 1.55;
+  line-height: 1.62;
   word-wrap: break-word;
 }
 .markdown-body .md-p {
-  margin: 0 0 0.7em 0;
+  margin: 0 0 0.72em 0;
 }
 .markdown-body .md-p:last-child {
   margin-bottom: 0;
 }
 .markdown-body .md-h {
-  margin: 0.8em 0 0.4em 0;
+  margin: 0.9em 0 0.45em 0;
   line-height: 1.3;
   font-weight: 600;
+  letter-spacing: -0.02em;
 }
 .markdown-body h1.md-h { font-size: 1.4em; }
 .markdown-body h2.md-h { font-size: 1.25em; }
@@ -937,67 +1058,77 @@ body {
 .markdown-body h5.md-h,
 .markdown-body h6.md-h { font-size: 1em; }
 .markdown-body .md-list {
-  margin: 0.3em 0 0.7em 0;
+  margin: 0.3em 0 0.72em 0;
   padding-left: 1.5em;
 }
 .markdown-body .md-list li {
-  margin: 0.2em 0;
+  margin: 0.22em 0;
 }
 .markdown-body a {
   color: var(--color-link);
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .markdown-body .md-quote {
   margin: 0.5em 0;
-  padding: 0.2em 0.9em;
-  border-left: 3px solid var(--color-border, #555);
-  color: var(--color-text-secondary, #aaa);
+  padding: 0.25em 0.9em;
+  border-left: 3px solid var(--color-accent);
+  color: var(--color-text-secondary);
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+  background: var(--color-accent-soft);
 }
 .markdown-body .md-hr {
   border: none;
-  border-top: 1px solid var(--color-border, #555);
-  margin: 1em 0;
+  border-top: 1px solid var(--color-border);
+  margin: 1.1em 0;
 }
 .markdown-body .md-code {
   font-family: 'Courier New', monospace;
-  font-size: 0.88em;
-  background: rgba(135, 131, 120, 0.18);
-  padding: 0.12em 0.38em;
-  border-radius: 4px;
+  font-size: 0.875em;
+  background: var(--color-accent-soft);
+  padding: 0.12em 0.4em;
+  border-radius: var(--radius-xs);
 }
 .markdown-body .md-pre {
-  margin: 0.6em 0;
-  padding: 0.8em 1em;
-  background: rgba(0, 0, 0, 0.28);
-  border: 1px solid var(--color-border, #444);
-  border-radius: 8px;
+  margin: 0.65em 0;
+  padding: 0.9em 1.1em;
+  background: rgba(0, 0, 0, 0.26);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   overflow-x: auto;
 }
 .markdown-body .md-pre code {
   font-family: 'Courier New', monospace;
-  font-size: 0.85em;
+  font-size: 0.86em;
   background: none;
   padding: 0;
   white-space: pre;
   color: inherit;
 }
 .markdown-body strong { font-weight: 600; }
-.markdown-body em { font-style: italic; }
+.markdown-body em     { font-style: italic; }
+
 body.dark-mode .markdown-body .md-pre {
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.42);
 }
 
+/* JSON schema textarea */
 #jsonSchema {
   box-sizing: border-box;
   resize: vertical;
-  background: var(--color-bg-secondary, #1e1e1e);
+  background: var(--color-bg-secondary);
   color: inherit;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 6px 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
 }
 
-/* Thumbnails of images staged for the next message */
+/* ══════════════════════════════════════════════════════════════════════════
+   INPUT AREA / COMPOSER
+   ══════════════════════════════════════════════════════════════════════════ */
+/* Pending images */
 .pending-images {
   display: flex;
   flex-wrap: wrap;
@@ -1018,7 +1149,7 @@ body.dark-mode .markdown-body .md-pre {
   width: 56px;
   height: 56px;
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   display: block;
 }
@@ -1040,12 +1171,14 @@ body.dark-mode .markdown-body .md-pre {
   align-items: center;
   justify-content: center;
   padding: 0;
+  transition: opacity var(--transition);
 }
 
 .pending-image-remove:hover {
   opacity: 0.85;
 }
 
+/* Stats & note */
 .message-stats {
   margin-top: 8px;
   font-size: 0.8rem;
@@ -1060,14 +1193,24 @@ body.dark-mode .markdown-body .md-pre {
   text-align: right;
 }
 
-/* In assistant turns the note flows under the response → left-align it */
 .message-group.assistant .message-note {
   text-align: left;
 }
 
+/* ── Input area ─────────────────────────────────────────────────────────── */
 .input-area {
-  padding: 8px 24px 22px 24px;
+  padding: 8px 24px 22px;
   background-color: var(--color-bg-primary);
+  transition: background-color var(--transition-lg);
+}
+
+/* Frosted glass on input area during conversation */
+@supports (backdrop-filter: blur(1px)) {
+  .main-content.in-conversation .input-area {
+    background-color: var(--color-bg-glass);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  }
 }
 
 .input-wrapper {
@@ -1075,21 +1218,22 @@ body.dark-mode .markdown-body .md-pre {
   margin: 0 auto;
 }
 
+/* Premium message-input pill */
 .message-input {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background-color: var(--color-bg-secondary);
+  background-color: var(--color-bg-elevated);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 10px 12px 8px 14px;
+  border-radius: var(--radius-xl);
+  padding: 12px 14px 10px 16px;
   box-shadow: var(--shadow-md);
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 
 .message-input:focus-within {
   border-color: var(--color-accent);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), 0 0 0 4px var(--color-accent-soft);
 }
 
 .message-input textarea {
@@ -1097,13 +1241,13 @@ body.dark-mode .markdown-body .md-pre {
   padding: 2px 0;
   border: none;
   border-radius: 0;
+  font-family: var(--font-sans);
   font-size: 1rem;
-  line-height: 1.5;
+  line-height: 1.55;
   resize: none;
   max-height: 200px;
   background-color: transparent;
   color: var(--color-text-primary);
-  font-family: inherit;
 }
 
 .message-input textarea:focus {
@@ -1115,45 +1259,38 @@ body.dark-mode .markdown-body .md-pre {
   color: var(--color-text-secondary);
 }
 
-/* Toolbar row beneath the textarea (attach + model + reasoning + send) */
+/* Composer toolbar */
 .composer-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-/*
-  Option B: visually hide the API Configuration & Model sidebar sections while
-  keeping their elements in the DOM so existing JS keeps working. Use display:none
-  (not visibility) so they take no space. The model/reasoning controls are now in
-  the composer toolbar; API key/base URL come from the server .env.
-*/
-.settings-hidden {
-  display: none;
-}
-
-/* Inline selects that live in the composer toolbar */
+/* Inline selects */
 .composer-select {
   height: 34px;
   max-width: 180px;
-  padding: 0 10px;
+  padding: 0 11px;
+  font-family: var(--font-sans);
   font-size: 0.8rem;
   color: var(--color-text-primary);
-  background-color: var(--color-bg-elevated);
+  background-color: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: border-color var(--transition), box-shadow var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition),
+              background var(--transition);
 }
 
 .composer-select:hover {
   border-color: var(--color-text-secondary);
+  background-color: var(--color-bg-hover);
 }
 
 .composer-select:focus {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.15);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 
 #composerModel {
@@ -1161,12 +1298,11 @@ body.dark-mode .markdown-body .md-pre {
   min-width: 0;
 }
 
-/* Push the send button to the far right of the toolbar */
 .composer-toolbar .send-button {
   margin-left: auto;
 }
 
-/* Attach (paperclip) button inside the composer */
+/* Attach button */
 .attach-button {
   width: 34px;
   height: 34px;
@@ -1180,63 +1316,81 @@ body.dark-mode .markdown-body .md-pre {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--transition), color var(--transition);
+  transition: background var(--transition), color var(--transition), transform var(--transition);
 }
 
 .attach-button:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-primary);
+  transform: scale(1.08);
 }
 
+.attach-button:active {
+  transform: scale(0.96);
+}
+
+/* Composer hint */
 .composer-hint {
   text-align: center;
   font-size: 0.72rem;
   color: var(--color-text-secondary);
   margin-top: 8px;
+  letter-spacing: 0.01em;
 }
 
+/* ── Send button — premium gradient + glow ──────────────────────────────── */
 .send-button {
   padding: 0;
   width: 36px;
   height: 36px;
-  background-color: var(--color-accent);
+  background: var(--color-accent-gradient);
   color: white;
   border: none;
   border-radius: 50%;
   cursor: pointer;
-  font-weight: 600;
-  transition: background-color var(--transition), opacity var(--transition), transform var(--transition);
+  font-weight: 700;
+  transition: opacity var(--transition), transform var(--transition), box-shadow var(--transition);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
 }
 
 .send-button:hover {
-  background-color: var(--color-accent-hover);
+  opacity: 0.92;
+  transform: scale(1.06);
+  box-shadow: 0 4px 14px var(--color-accent-glow);
 }
 
 .send-button:active {
-  transform: scale(0.94);
-}
-
-.send-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Stop state: the send button becomes a red stop button during generation */
-.send-button.is-stop {
-  background-color: #ef4444;
-  font-size: 0.9rem;
-}
-.send-button.is-stop:hover {
-  background-color: #dc2626;
+  transform: scale(0.93);
+  box-shadow: var(--shadow-xs);
   opacity: 1;
 }
 
-/* ─── Debug Panel ───────────────────────────────────────────────────────── */
+.send-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Stop state */
+.send-button.is-stop {
+  background: #ef4444;
+  font-size: 0.9rem;
+}
+.send-button.is-stop:hover {
+  background: #dc2626;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45);
+  opacity: 1;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DEBUG PANEL — frosted glass
+   ══════════════════════════════════════════════════════════════════════════ */
 .debug-panel {
   position: fixed;
   bottom: 0;
@@ -1247,19 +1401,27 @@ body.dark-mode .markdown-body .md-pre {
   max-height: calc(100vh - 24px);
   background-color: var(--color-bg-elevated);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   z-index: 1000;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-xl);
   margin: 12px;
   overflow: hidden;
-  animation: debug-slide-in 0.22s ease both;
+  animation: debug-slide-in 0.22s var(--ease-out) both;
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .debug-panel {
+    background-color: var(--color-bg-glass);
+    backdrop-filter: blur(16px) saturate(1.5);
+    -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  }
 }
 
 @keyframes debug-slide-in {
-  from { opacity: 0; transform: translateY(16px) scale(0.98); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translateY(18px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
 }
 
 .debug-header {
@@ -1275,9 +1437,9 @@ body.dark-mode .markdown-body .md-pre {
 
 .debug-header h3 {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.77rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--color-text-secondary);
   display: flex;
@@ -1287,11 +1449,11 @@ body.dark-mode .markdown-body .md-pre {
 
 .debug-header h3::before {
   content: '';
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.2);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 
 .debug-controls {
@@ -1305,20 +1467,22 @@ body.dark-mode .markdown-body .md-pre {
 .debug-controls input,
 .debug-controls button {
   padding: 5px 10px;
+  font-family: var(--font-sans);
   font-size: 0.74rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background-color: var(--color-bg-elevated);
   color: var(--color-text-primary);
   cursor: pointer;
-  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition),
+              background var(--transition);
 }
 
 .debug-controls select:focus,
 .debug-controls input:focus {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.15);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 
 .debug-controls input {
@@ -1334,6 +1498,7 @@ body.dark-mode .markdown-body .md-pre {
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
   font-weight: 600;
+  transition: background var(--transition), color var(--transition);
 }
 
 .debug-controls button:hover {
@@ -1348,7 +1513,7 @@ body.dark-mode .markdown-body .md-pre {
   font-family: ui-monospace, 'SF Mono', 'Cascadia Code', 'Courier New', monospace;
   font-size: 0.74rem;
   line-height: 1.5;
-  background-color: var(--color-bg-primary);
+  background-color: transparent;
 }
 
 .debug-logs:empty::before {
@@ -1377,17 +1542,9 @@ body.dark-mode .markdown-body .md-pre {
   transform: translateX(2px);
 }
 
-.log-info {
-  border-left-color: #0ea5e9;
-}
-
-.log-warn {
-  border-left-color: #f59e0b;
-}
-
-.log-error {
-  border-left-color: #ef4444;
-}
+.log-info  { border-left-color: #0ea5e9; }
+.log-warn  { border-left-color: #f59e0b; }
+.log-error { border-left-color: #ef4444; }
 
 .log-time {
   color: var(--color-text-secondary);
@@ -1400,24 +1557,13 @@ body.dark-mode .markdown-body .md-pre {
   font-size: 0.64rem;
   letter-spacing: 0.04em;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   line-height: 1.5;
 }
 
-.log-info .log-level {
-  background: rgba(14, 165, 233, 0.16);
-  color: #0ea5e9;
-}
-
-.log-warn .log-level {
-  background: rgba(245, 158, 11, 0.16);
-  color: #d97706;
-}
-
-.log-error .log-level {
-  background: rgba(239, 68, 68, 0.16);
-  color: #ef4444;
-}
+.log-info  .log-level { background: rgba(14, 165, 233, 0.16); color: #0ea5e9; }
+.log-warn  .log-level { background: rgba(245, 158, 11, 0.16);  color: #d97706; }
+.log-error .log-level { background: rgba(239, 68, 68, 0.16);   color: #ef4444; }
 
 .log-component {
   color: var(--color-accent);
@@ -1443,7 +1589,9 @@ body.dark-mode .markdown-body .md-pre {
   white-space: pre-wrap;
 }
 
-/* Cached Files Panel */
+/* ══════════════════════════════════════════════════════════════════════════
+   CACHED FILES
+   ══════════════════════════════════════════════════════════════════════════ */
 #cachedFilesPanel {
   margin-top: 8px;
 }
@@ -1454,15 +1602,20 @@ body.dark-mode .markdown-body .md-pre {
   justify-content: space-between;
   background-color: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 6px 8px;
   margin-bottom: 4px;
   font-size: 0.8rem;
+  transition: border-color var(--transition);
+}
+
+.cached-file-item:hover {
+  border-color: var(--color-accent);
 }
 
 .cached-file-name {
   flex-grow: 1;
-  white-space: normal; /* Allow wrapping */
+  white-space: normal;
   word-break: break-all;
   cursor: pointer;
   color: var(--color-text-primary);
@@ -1471,10 +1624,12 @@ body.dark-mode .markdown-body .md-pre {
   text-align: left;
   padding: 0;
   font-size: 0.8rem;
+  font-family: var(--font-sans);
 }
 
 .cached-file-name:hover {
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .cached-file-delete-btn {
@@ -1483,7 +1638,7 @@ body.dark-mode .markdown-body .md-pre {
   background: none;
   color: #ef4444;
   border: 1px solid #ef4444;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   width: 20px;
   height: 20px;
   font-size: 0.8rem;
@@ -1493,6 +1648,7 @@ body.dark-mode .markdown-body .md-pre {
   align-items: center;
   justify-content: center;
   font-weight: bold;
+  transition: background var(--transition), color var(--transition);
 }
 
 .cached-file-delete-btn:hover {
@@ -1500,7 +1656,9 @@ body.dark-mode .markdown-body .md-pre {
   color: white;
 }
 
-
+/* ══════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ══════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
   .message-bubble { max-width: 92%; }
   .settings-row { flex-direction: column; }
@@ -1508,7 +1666,6 @@ body.dark-mode .markdown-body .md-pre {
 }
 
 @media (max-width: 640px) {
-  /* On small screens the sidebar becomes an overlay drawer toggled from the header. */
   .sidebar {
     position: fixed;
     top: 0;
@@ -1517,20 +1674,20 @@ body.dark-mode .markdown-body .md-pre {
     z-index: 1100;
     width: 84vw;
     max-width: 320px;
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-xl);
     transform: translateX(0);
   }
 
   .app-container.sidebar-collapsed .sidebar {
     width: 84vw;
     max-width: 320px;
-    padding: 14px 12px;
+    padding: 16px 12px;
     transform: translateX(-100%);
     border-right: 1px solid var(--color-border);
   }
 
   .chat-header { flex-wrap: nowrap; }
   .chat-area { padding: 16px; }
-  .input-area { padding: 8px 14px 16px 14px; }
-  .empty-chat-greeting { font-size: 1.3rem; }
+  .input-area { padding: 8px 14px 16px; }
+  .empty-chat-greeting { font-size: 1.4rem; }
 }

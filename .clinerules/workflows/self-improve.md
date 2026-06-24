@@ -110,3 +110,36 @@ unless the user asks.
 - Use this within `/spec` when drafting acceptance criteria or a tricky risk section.
 - The self-scoring is honest, not inflated — 9/10 means "ready to ship", not
   "I tried my best".
+
+---
+
+## Proposing improvements after `/self-improve`
+
+If `/self-improve` surfaces a structural improvement to the project (a new check,
+rule, test, or process change), record it in **both** sinks — not as an inline chat
+suggestion:
+
+### Sink 1 — `backlog.md`
+
+Add a new `- [ ] **N. <title>** *(size)*` entry under the appropriate backlog
+section. The entry must include:
+- A one-sentence description of the improvement.
+- Why it was identified (context from the self-improvement loop).
+- A size estimate (S / M / L / XL).
+
+Do this in the **same turn** — do not defer to "the user can add it later".
+
+### Sink 2 — Obsidian
+
+Write a tagged note to `Cline/memories/`:
+
+```
+File: <OBSIDIAN_VAULT_PATH>/Cline/memories/YYYY-MM-DD-HHMMSS-<topic>-proposals.md
+Tags: [usai-chat, rail-loop, proposals, self-improve, <topic-tags>]
+```
+
+Include each proposal with a brief rationale and a link to the `backlog.md` entry
+(e.g. "→ backlog #N").
+
+**Never leave a proposal as a chat suggestion only.** If you identify an improvement,
+it belongs in both sinks so it survives the session.

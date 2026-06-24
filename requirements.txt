@@ -11,4 +11,10 @@
 #   project supports the 3.9 baseline (CI tests 3.9 + 3.11). Instead,
 #   scripts/security-scan.sh and CI carry a documented, reviewed ignore for this
 #   specific advisory ID. Revisit when the 3.9 baseline is dropped.
-python-dotenv>=1.0.0
+#
+# Hash pin (supply-chain integrity): exact version + sha256 of the published
+# wheel. pip refuses to install if the bytes don't match. Generated with:
+#   pip download python-dotenv==1.0.1 --no-deps
+#   pip hash python_dotenv-1.0.1-py3-none-any.whl
+python-dotenv==1.0.1 \
+    --hash=sha256:f7b63ef50f1b690dddf550d03497b66d609393b40b564ed0d674909a68ebf16a
