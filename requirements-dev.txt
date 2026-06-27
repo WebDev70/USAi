@@ -1,0 +1,22 @@
+# requirements-dev.txt
+# Dev/CI-only tooling — never installed in the app runtime.
+# Hash-pinned for reproducibility; verified by scripts/dev-deps-check.sh.
+#
+# To regenerate hashes after a version bump:
+#   pip download <pkg>==<ver> --no-deps -d /tmp/wheels && pip hash /tmp/wheels/<whl>
+#
+# Do NOT add application runtime dependencies here — they belong in requirements.txt.
+
+coverage==7.10.7 \
+    --hash=sha256:bc91b314cef27742da486d6839b677b3f2793dfe52b51bbbb7cf736d5c29281c
+
+bandit==1.8.6 \
+    --hash=sha256:3348e934d736fcdb68b6aa4030487097e23a501adf3e7827b63658df464dddd0
+
+pip-audit==2.9.0 \
+    --hash=sha256:348b16e60895749a0839875d7cc27ebd692e1584ebe5d5cb145941c8e25a80bd
+
+# mutmut — opt-in mutation testing (scripts/mutation-audit.sh, make mutation).
+# Not a hard gate; always-exits-0 informational wrapper.
+mutmut==2.5.1 \
+    --hash=sha256:c69b8dea1f63e53e7f1f2e9a0162e8e8bb2d77a21c427ac4bf46e85ef3e7b0b6

@@ -1,0 +1,58 @@
+%YAML 1.1
+---
+# docs/continue-config.sample.yaml
+#
+# Sample Continue config.yaml for the USAi Chat dev workflow.
+# Copy the models block you need into your ~/.continue/config.yaml.
+# DO NOT commit real API keys — use the ${{ secrets.* }} syntax shown here
+# for Continue Hub, or set apiKey directly for a local config.yaml.
+#
+# Three guided tiers map to RAIL pipeline roles.
+# Switching is MANUAL via the Continue model-picker dropdown.
+# Role rules in .continue/rules/ advise which tier to select.
+#
+# Verify model IDs with: GET https://api.gsa.usai.gov/api/v1/models
+# (Last verified: 2026-06-26)
+
+name: USAi Dev Workflow
+version: 1.0.0
+schema: v1
+
+# YAML anchors — de-duplicate shared fields across all three models.
+model_defaults: &model_defaults
+  provider: openai
+  apiBase: https://api.gsa.usai.gov/api/v1
+  # For Continue Hub: use ${{ secrets.USAI_API_KEY }}
+  # For local config.yaml: paste the value from your .env API_KEY field.
+  apiKey: ${{ secrets.USAI_API_KEY }}
+  roles:
+    - chat
+    - edit
+
+models:
+  # ── HIGH tier ─────────────────────────────────────────────────────────────
+  # Use for: Code Planner on complex/architectural plans, hard QA review passes.
+  # Switch to this tier when depth of reasoning matters more than speed or cost.
+  - name: "High (Opus) — Code Planner / hard QA"
+    <<: *model_defaults
+    model: claude_4_8_opus
+    defaultCompletionOptions:
+      temperature: 0.2   # Lower = more deterministic for planning & review
+
+  # ── MEDIUM tier ───────────────────────────────────────────────────────────
+  # Use for: Development SME implementation, test-writing, typical feature work.
+  # This is the DEFAULT tier for most RAIL development steps.
+  - name: "Medium (Sonnet) — Development SME"
+    <<: *model_defaults
+    model: claude_4_6_sonnet
+    defaultCompletionOptions:
+      temperature: 0.3   # Balanced: creative but consistent
+
+  # ── LOW tier ──────────────────────────────────────────────────────────────
+  # Use for: Continuous Improvement retros, docs-only tasks, trivial fixes.
+  # Fast and cheap — reserve Opus/Sonnet for work that warrants them.
+  - name: "Low (Haiku) — Docs / trivial edits"
+    <<: *model_defaults
+    model: claude_4_5_haiku
+    defaultCompletionOptions:
+      temperature: 0.4   # Slightly higher for natural-language writing tasks

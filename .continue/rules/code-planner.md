@@ -40,3 +40,9 @@ Test Suite, QA Review). Keep it concise — a scannable outline, not an essay.
   For small-but-non-trivial ones, state the plan and proceed.
 - Keep the plan and the eventual implementation consistent; if the approach changes
   mid-task, say so.
+
+## Model tier
+
+**High (Opus)** for complex/architectural plans and hard QA review passes.
+**Low (Haiku)** for trivial or docs-only plans where depth of reasoning is not needed.
+See `docs/continue-config.sample.yaml` and `docs/rail-pipeline.md` §3 "Model tiers".

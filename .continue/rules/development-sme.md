@@ -40,6 +40,11 @@ already belonged here.
   (see `testing-standards`), then proceed to QA Review (`/check`).
 - Keep docs in sync **in the same turn** (per `keep-docs-in-sync`).
 
+## Model tier
+
+**Medium (Sonnet)** for implementation and test-writing (default for all Development
+SME work). See `docs/continue-config.sample.yaml` and `docs/rail-pipeline.md` §3 "Model tiers".
+
 ## Validate before declaring done
 
 ```bash

@@ -97,8 +97,21 @@ Cross-check spec §6 (Docs to update):
 - [ ] `CHANGELOG.md` updated under `[Unreleased]`
 - [ ] `docs/USER_GUIDE.md` updated (if user-facing feature)
 - [ ] `README.md` updated (if setup/env/config changed)
-- [ ] `backlog.md` item checked off (if applicable)
 - [ ] `AGENTS.md` / `CONTINUE.md` updated (if conventions changed)
+- [ ] **`backlog.md` lifecycle complete** — verify the backlog entry:
+  - Status is `[x]` (not `[ ]` or `[~]`)
+  - Entry includes a Done date (`Done (YYYY-MM-DD)`), a one-line outcome, and a spec link
+  - Expected format:
+    ```
+    - [x] **N. <title>** *(size)* — Done (YYYY-MM-DD): <one-line outcome>.
+          Spec: docs/specs/<kebab-name>.md
+    ```
+  - If the entry is still `[ ]` or `[~]`, or lacks date/outcome/spec link: emit
+    `GAP-N [docs]: backlog.md item #N not closed — flip to [x] with Done date,
+    outcome, and spec link.`
+- [ ] **Scrum mirror parity** (`Cline/scrum/product-backlog.md`): item appears in the
+  Completed table. If absent: emit `GAP-N [docs]: scrum product-backlog.md not updated
+  — move item to Completed table.`
 
 ### 6d. Acceptance criteria gate
 

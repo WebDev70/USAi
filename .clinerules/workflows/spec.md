@@ -188,10 +188,68 @@ As a <user> I want <goal> so that <value>.
 
 ---
 
+## Step 3b — Backlog status: mark In Progress
+
+Immediately after writing the spec file, update `backlog.md`:
+
+1. **Find the matching backlog item** (search by feature name / number).
+   - If one exists (status `[ ]`): flip it to `[~]` and append a spec link:
+     ```
+     - [~] **N. <title>** *(size)* — spec: docs/specs/<kebab-name>.md
+     ```
+   - If no item exists yet: add a new `[~]` entry in the appropriate backlog section.
+2. **Mirror into the scrum backlog** (`Cline/scrum/product-backlog.md`):
+   - Move the item from the Open table to the In-Progress table (per `scrum-artifacts.md`).
+3. Do this **in the same turn** as writing the spec — do not defer.
+
+> **Why:** The `[ ]` → `[~]` transition is the only visible signal that a spec exists and
+> work is committed. Without it, `backlog.md` stays frozen and can't be used as a work-queue.
+
+---
+
 ## Step 4 — Handoff
 
-After writing the spec, announce:
+After writing the spec and updating the backlog, announce:
 
 > **Spec written:** `docs/specs/<name>.md`
+> **Backlog updated:** item #N set to `[~]` In Progress.
 > **Next step:** Run `/loop` (or `/build` then `/review`) in ACT MODE to implement it.
 > The spec is your source of truth — `/build` must not deviate from it.
+
+### User Summary (optional)
+
+For any `feature` or `docs` type spec that introduces a **new concept or workflow** —
+one that a non-technical stakeholder would benefit from reading in plain English —
+offer to write a User Summary note alongside the spec.
+
+**When to offer:** the spec introduces a new process, pattern, tool, workflow, or
+architectural concept. Skip for bugfixes, chores, pure-CSS, or purely mechanical changes.
+
+**How to offer** (interactive session):
+> "This spec introduces a new [concept/workflow]. Would you like me to write a
+> plain-English User Summary to `Cline/User Summaries/YYYY-MM-DD-<topic>-user-summary.md`?"
+
+Write it if the user confirms, or immediately if the workflow is unattended.
+
+**File convention:**
+```
+Vault path:  <OBSIDIAN_VAULT_PATH>/Cline/User Summaries/
+File name:   YYYY-MM-DD-<topic-slug>-user-summary.md
+```
+
+YAML frontmatter:
+```yaml
+---
+title: "<Concept Name> — Plain-English Summary"
+created: YYYY-MM-DD
+tags: [usai-chat, user-summary, <topic-tags>]
+source: cline
+---
+```
+
+A good User Summary contains: **What is it?** · **Why does it matter?** ·
+**How does it work?** (simple flow/table) · **Where to learn more** (links to spec/docs).
+Keep it ≤ 2 pages. Link related notes with `[[wikilinks]]`.
+
+**This step is non-blocking** — missing a User Summary does not fail `/review` or
+block `/loop` completion. See also: `.clinerules/workflows/self-improve.md` §User Summary.

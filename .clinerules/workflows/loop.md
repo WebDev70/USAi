@@ -116,6 +116,15 @@ If the build has not passed `/review` after 5 iterations:
 - [ ] Spec §8 Review checklist is fully checked off
 - [ ] Spec **Status** updated to **Done**
 - [ ] Docs updated per spec §6
+- [ ] **Backlog item flipped `[~]` → `[x]`** with a Done date, one-line outcome,
+      and spec link:
+      ```
+      - [x] **N. <title>** *(size)* — Done (YYYY-MM-DD): <one-line outcome>.
+            Spec: docs/specs/<kebab-name>.md
+      ```
+      If the item is still `[ ]` or `[~]` at loop end, emit it as a `[docs]` GAP.
+- [ ] **Scrum mirror updated** (`Cline/scrum/product-backlog.md`): item moved from
+      In-Progress to the Completed table (per `scrum-artifacts.md` § "On item completion").
 - [ ] Memory note exists in `Cline/memories/` for today's date:
       ```bash
       ls "$OBSIDIAN_VAULT_PATH/Cline/memories/" | grep "$(date +%Y-%m-%d)"

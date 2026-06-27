@@ -28,8 +28,13 @@ Before writing a single line of code:
    ```
 3. **Confirm Status is "Ready"** (not Draft). If it's still Draft, pause and ask
    the user to finish `/spec` first.
-4. **Confirm you understand all 8 sections** of the spec before acting.
-5. **Check the `Type:` field** and apply role-skipping accordingly:
+4. **Confirm the backlog item is `[~]` In Progress.** Open `backlog.md` and
+   verify the item for this spec is set to `[~]` with a spec link. If it is still
+   `[ ]` Not started (i.e. the spec was written before the Step 3b rule existed),
+   fix it now — flip to `[~]` and append `— spec: <path>` — before touching any
+   code. This ensures the backlog accurately reflects work in flight.
+5. **Confirm you understand all 8 sections** of the spec before acting.
+6. **Check the `Type:` field** and apply role-skipping accordingly:
 
    | Type | Roles to skip / adapt |
    |------|-----------------------|

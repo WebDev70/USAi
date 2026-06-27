@@ -383,6 +383,261 @@ class DeleteChunkCacheFileNotExistsTests(ServerBranchTestBase):
         self.assertTrue(body['ok'])
 
 
+class EmbeddingsMemorySearchTests(unittest.TestCase):
+    """MS-4 … MS-6: /memory/search embed_available field + POST /embeddings guards."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._saved = (dict(server.CONFIG), server.SESSIONS_DIR,
+                      server.CACHE_DIR, server.HISTORY_FILE)
+        cls._tmp = tempfile.TemporaryDirectory()
+        tmp = Path(cls._tmp.name)
+        server.SESSIONS_DIR = tmp / 'sessions'; server.SESSIONS_DIR.mkdir()
+        server.CACHE_DIR = tmp / 'cache'; server.CACHE_DIR.mkdir()
+        server.HISTORY_FILE = tmp / 'chat_history.json'
+        # Create a minimal vault so /memory/search can return 200 (not 400)
+        vault = tmp / 'vault'
+        (vault / 'USAi' / 'memories').mkdir(parents=True)
+        server.CONFIG = {
+            'api_key': '',
+            'base_url': '',
+            'default_model': '',
+            'default_system_prompt': '',
+            'context7_api_key': '',
+            'context7_base_url': '',
+            'context7_path': '/v1/context',
+            'context7_method': 'GET',
+            'obsidian_vault_path': str(vault),
+            'obsidian_memory_subdir': 'USAi',
+            'embed_model': '',
+            'embed_input_type': 'search_document',
+        }
+        cls._httpd = ThreadingHTTPServer(('127.0.0.1', 0),
+                                         server.EnvConfigHTTPRequestHandler)
+        cls.port = cls._httpd.server_address[1]
+        cls._thread = threading.Thread(target=cls._httpd.serve_forever, daemon=True)
+        cls._thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._httpd.shutdown(); cls._httpd.server_close(); cls._tmp.cleanup()
+        (server.CONFIG, server.SESSIONS_DIR,
+         server.CACHE_DIR, server.HISTORY_FILE) = cls._saved
+
+    def url(self, p):
+        return f'http://127.0.0.1:{self.port}{p}'
+
+    def test_memory_search_response_always_includes_embed_available(self):
+        """MS-4: /memory/search response always includes embed_available bool."""
+        # embed_model is '' in setUpClass → embed_available must be False
+        status, body = _request('GET', self.url('/memory/search?q=test&k=1'))
+        self.assertEqual(status, 200)
+        self.assertIn('embed_available', body,
+                      'embed_available must always be present in /memory/search response')
+        self.assertFalse(body['embed_available'],
+                         'embed_available should be False when embed_model is unset')
+
+    def test_post_embeddings_400_when_embed_model_unset(self):
+        """MS-5: POST /embeddings returns 400 when EMBED_MODEL not configured."""
+        import json as _json
+        orig_model = server.CONFIG.get('embed_model', '')
+        try:
+            server.CONFIG['embed_model'] = ''
+            status, body = _request('POST', self.url('/embeddings'),
+                                    {'input': ['test']})
+            self.assertEqual(status, 400)
+            self.assertIn('error', body)
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+
+    def test_post_embeddings_502_when_ssrf_guard_rejects_loopback(self):
+        """MS-6: POST /embeddings rejects loopback BASE_URL via SSRF guard → 502."""
+        orig_model = server.CONFIG.get('embed_model', '')
+        orig_base = server.CONFIG.get('base_url', '')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            server.CONFIG['base_url'] = 'http://127.0.0.1:19999'
+            server.CONFIG.pop('_test_allow_loopback', None)
+            status, body = _request('POST', self.url('/embeddings'),
+                                    {'input': ['test']})
+            self.assertEqual(status, 502)
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+            server.CONFIG['base_url'] = orig_base
+
+    def test_post_embeddings_413_when_payload_too_large(self):
+        """POST /embeddings → 413 when Content-Length > 1 MB (spoofed header)."""
+        orig_model = server.CONFIG.get('embed_model', '')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            # Spoof Content-Length to exceed the 1 MB limit without sending
+            # a real 1 MB body (same technique used by PayloadTooLargeTests).
+            from urllib.request import Request, urlopen
+            from urllib.error import HTTPError as _HTTPError
+            req = Request(
+                self.url('/embeddings'),
+                data=b'x',
+                headers={'Content-Type': 'application/json',
+                         'Content-Length': str(1 * 1024 * 1024 + 1)},
+                method='POST',
+            )
+            try:
+                urlopen(req)
+                self.fail('Expected HTTPError 413')
+            except _HTTPError as err:
+                self.assertEqual(err.code, 413)
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+
+    def test_post_embeddings_400_when_input_empty_list(self):
+        """POST /embeddings → 400 when input is an empty list."""
+        orig_model = server.CONFIG.get('embed_model', '')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            status, body = _request('POST', self.url('/embeddings'), {'input': []})
+            self.assertEqual(status, 400)
+            self.assertIn('error', body)
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+
+    def test_post_embeddings_400_when_input_exceeds_512(self):
+        """POST /embeddings → 400 when input list has > 512 strings."""
+        orig_model = server.CONFIG.get('embed_model', '')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            status, body = _request('POST', self.url('/embeddings'),
+                                    {'input': ['x'] * 513})
+            self.assertEqual(status, 400)
+            self.assertIn('error', body)
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+
+    def test_post_embeddings_503_when_base_url_not_configured(self):
+        """POST /embeddings → 503 when base_url is empty."""
+        orig_model = server.CONFIG.get('embed_model', '')
+        orig_base = server.CONFIG.get('base_url', '')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            server.CONFIG['base_url'] = ''
+            status, body = _request('POST', self.url('/embeddings'),
+                                    {'input': ['hello']})
+            self.assertEqual(status, 503)
+            self.assertIn('error', body)
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+            server.CONFIG['base_url'] = orig_base
+
+    def test_post_embeddings_happy_path_proxies_upstream(self):
+        """POST /embeddings with loopback allowed returns upstream response."""
+        import json as _json
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+
+        # Spin up a tiny fake upstream that returns a valid embeddings response
+        fake_response = _json.dumps({
+            'data': [{'index': 0, 'embedding': [0.1, 0.2, 0.3]}],
+            'model': 'text-embedding-3-small',
+            'usage': {'prompt_tokens': 1, 'total_tokens': 1},
+        }).encode()
+
+        class FakeUpstream(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(fake_response)))
+                self.end_headers()
+                self.wfile.write(fake_response)
+            def log_message(self, *a): pass  # silence
+
+        upstream = HTTPServer(('127.0.0.1', 0), FakeUpstream)
+        up_port = upstream.server_address[1]
+        import threading as _threading
+        up_thread = _threading.Thread(target=upstream.serve_forever, daemon=True)
+        up_thread.start()
+
+        orig_model = server.CONFIG.get('embed_model', '')
+        orig_base = server.CONFIG.get('base_url', '')
+        orig_loopback = server.CONFIG.get('_test_allow_loopback')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            server.CONFIG['base_url'] = f'http://127.0.0.1:{up_port}'
+            server.CONFIG['_test_allow_loopback'] = True
+            status, body = _request('POST', self.url('/embeddings'),
+                                    {'input': ['hello world']})
+            self.assertEqual(status, 200)
+            self.assertIn('data', body)
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+            server.CONFIG['base_url'] = orig_base
+            if orig_loopback is None:
+                server.CONFIG.pop('_test_allow_loopback', None)
+            else:
+                server.CONFIG['_test_allow_loopback'] = orig_loopback
+            upstream.shutdown()
+
+    def test_post_embeddings_502_on_upstream_urlerror(self):
+        """POST /embeddings → 502 when upstream connection is refused (URLError)."""
+        orig_model = server.CONFIG.get('embed_model', '')
+        orig_base = server.CONFIG.get('base_url', '')
+        orig_loopback = server.CONFIG.get('_test_allow_loopback')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            # Port 19998 is almost certainly not listening
+            server.CONFIG['base_url'] = 'http://127.0.0.1:19998'
+            server.CONFIG['_test_allow_loopback'] = True
+            status, body = _request('POST', self.url('/embeddings'),
+                                    {'input': ['hello']})
+            self.assertEqual(status, 502)
+            self.assertIn('error', body)
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+            server.CONFIG['base_url'] = orig_base
+            if orig_loopback is None:
+                server.CONFIG.pop('_test_allow_loopback', None)
+            else:
+                server.CONFIG['_test_allow_loopback'] = orig_loopback
+
+    def test_post_embeddings_upstream_http_error_proxied(self):
+        """POST /embeddings → upstream HTTPError status is forwarded to client."""
+        import json as _json
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+
+        error_body = _json.dumps({'error': 'invalid model'}).encode()
+
+        class FakeUpstreamError(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(error_body)))
+                self.end_headers()
+                self.wfile.write(error_body)
+            def log_message(self, *a): pass
+
+        upstream = HTTPServer(('127.0.0.1', 0), FakeUpstreamError)
+        up_port = upstream.server_address[1]
+        import threading as _threading
+        up_thread = _threading.Thread(target=upstream.serve_forever, daemon=True)
+        up_thread.start()
+
+        orig_model = server.CONFIG.get('embed_model', '')
+        orig_base = server.CONFIG.get('base_url', '')
+        orig_loopback = server.CONFIG.get('_test_allow_loopback')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            server.CONFIG['base_url'] = f'http://127.0.0.1:{up_port}'
+            server.CONFIG['_test_allow_loopback'] = True
+            status, body = _request('POST', self.url('/embeddings'),
+                                    {'input': ['hello world']})
+            self.assertEqual(status, 400)
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+            server.CONFIG['base_url'] = orig_base
+            if orig_loopback is None:
+                server.CONFIG.pop('_test_allow_loopback', None)
+            else:
+                server.CONFIG['_test_allow_loopback'] = orig_loopback
+            upstream.shutdown()
+
+
 class StaticFileTests(ServerBranchTestBase):
     """GET / delegates to SimpleHTTPRequestHandler (line 628: super().do_GET())."""
 

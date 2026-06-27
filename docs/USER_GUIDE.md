@@ -116,7 +116,7 @@ This tells you how many tokens the prompt and response used.
 
 ## 4. Choosing & Configuring a Model
 
-The **model** and **reasoning effort** selectors are in the **composer toolbar** at
+The **model**, **model router**, and **reasoning effort** selectors are in the **composer toolbar** at
 the bottom of the screen (right next to the 📎 paperclip), so you can switch models
 without opening the sidebar.
 
@@ -126,6 +126,28 @@ without opening the sidebar.
 - **Meta:** Llama 3.2 11B, Llama 4 Maverick
 
 (The full list reflects whatever your provider returns when models are loaded.)
+
+### Model Router (Auto-select)
+The **Router: Auto** dropdown automatically picks the right model tier for each
+message so you don't have to switch manually:
+
+| Router setting | Behaviour |
+|----------------|-----------|
+| **Router: Auto** *(default)* | Classifies your message by complexity and selects High, Medium, or Low tier automatically |
+| **Router: High** | Always uses the High-tier model (Opus / powerful reasoning) regardless of message content |
+| **Router: Medium** | Always uses the Medium-tier model (Sonnet / balanced) |
+| **Router: Low** | Always uses the Low-tier model (Haiku / fast & cheap) |
+| **Router: Off** | Ignores the router entirely — the model you picked in the Model dropdown is used as-is |
+
+**How Auto classification works:**
+- 🔴 **High** — messages longer than 800 characters, messages containing code fences or function/class definitions, or messages using keywords like *architect*, *refactor*, *debug*, *prove*, *theorem*, *optimize*, *security*, *implement*, or *design*.
+- 🟡 **Medium** — everything else; also the floor tier when Tool calling is enabled.
+- 🟢 **Low** — short greetings and simple look-up questions (*"hi"*, *"what is …"*, *"how many …"*) when Tool calling is off.
+
+The chosen tier and model name appear in the message note below each assistant reply, e.g. `Model: claude-sonnet-4-5 (auto)` or `Model: claude-opus-4 (manual)`.
+
+> **Tip:** Set the Router to **Off** when you want to use a specific model you loaded via
+> the Model dropdown (e.g. a custom model id) — the Router won't override it.
 
 ### Reasoning effort
 Next to the model selector, choose how hard reasoning-capable models "think" before
@@ -213,9 +235,54 @@ There are **three ways** to use memory:
 When memories are pulled in, the message note shows a **`Memory: N note(s)`** segment
 so you know it happened.
 
+**Semantic re-ranking (optional):** When an embedding model is configured, memory
+search results are automatically re-ranked by vector similarity to your query instead
+of plain keyword order — so the most semantically relevant notes surface first.
+
+To enable, add to your `.env` and restart:
+```bash
+EMBED_MODEL=text-embedding-3-small   # or any OpenAI-compatible embed model
+EMBED_INPUT_TYPE=search_document     # optional; Cohere-style hint (ignored by OpenAI)
+```
+The embedding requests go through the same `BASE_URL` / `API_KEY` proxy used for
+chat. If no embed model is set, memory search falls back to keyword ranking
+automatically — nothing breaks.
+
 > 💡 **Tip:** Use **Auto-recall** for hands-off continuity, **Memory tools** to let
 > the AI manage memory itself, and the **💾 Remember** button to deliberately save a
 > specific message. You can use any combination.
+
+#### Obsidian-MCP Bridge (advanced — Phase 2)
+
+For richer vault management — rename tags across all notes, move notes, list vaults —
+you can optionally configure the `obsidian-mcp` Node.js bridge:
+
+**Prerequisites:**
+1. Install `obsidian-mcp` globally: `npm install -g obsidian-mcp`
+2. Note the path to the script (usually `$(npm root -g)/obsidian-mcp/index.js`).
+
+**Setup:** add to your `.env` and restart:
+```bash
+OBSIDIAN_MCP_PATH=/absolute/path/to/obsidian-mcp/index.js
+# Only needed if 'node' is not on the server's PATH (e.g. nvm/asdf):
+OBSIDIAN_NODE_PATH=/usr/local/bin/node
+```
+
+When configured, `GET /config` returns `has_mcp_bridge: true` and three additional
+tools become available in the model's tool list (when the **Obsidian Memory** toggle
+is on):
+
+| Tool | Description |
+|------|-------------|
+| `obsidian_rename_tag` | Rename a tag across all notes |
+| `obsidian_move_note` | Move or rename a note |
+| `obsidian_list_vaults` | List all available Obsidian vaults |
+
+Each bridge call spawns a short-lived Node subprocess (~200–400 ms) — acceptable for
+interactive tool use. When `OBSIDIAN_MCP_PATH` is unset the app behaves exactly as
+before; no bridge calls are made.
+
+
 
 ### Structured output (JSON)
 Force the AI to return valid JSON.

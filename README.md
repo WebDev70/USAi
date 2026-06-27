@@ -61,6 +61,17 @@ OBSIDIAN_VAULT_PATH=/absolute/path/to/your/Obsidian Vault
 OBSIDIAN_MEMORY_SUBDIR=USAi
 ```
 
+To enable **semantic (embeddings-based) memory re-ranking**, also add:
+
+```env
+EMBED_MODEL=text-embedding-3-small   # any OpenAI-compatible embedding model
+EMBED_INPUT_TYPE=search_document     # optional; Cohere-style hint
+```
+
+When `EMBED_MODEL` is set, `/config` reports `has_embeddings: true` and memory
+search results are automatically re-ranked by cosine similarity. Falls back to
+keyword ranking silently when not set.
+
 When configured, `/config` reports `has_obsidian: true`, the **Obsidian Memory**
 and **Auto-recall memories** toggles light up, and a **💾 Remember** button appears
 on each message. The app saves notes as tagged Markdown in

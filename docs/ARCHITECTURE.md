@@ -100,6 +100,7 @@ routes = {
     '/memory/read':   self._get_memory_read_handler,
     '/logs':          self._get_logs_handler,
     '/chunk-cache':   self._get_chunk_cache_handler,
+    '/mcp/vaults':    self._get_mcp_vaults,          # MCP bridge (#16 Ph2)
 }
 ```
 
@@ -124,6 +125,10 @@ Unmatched paths fall through to `SimpleHTTPRequestHandler` (static file serving)
 | `POST` | `/chunk-cache` | Store file chunks server-side |
 | `DELETE` | `/sessions/{id}` | Delete an archived session |
 | `DELETE` | `/chunk-cache` | Clear chunk cache |
+| `GET` | `/mcp/vaults` | List Obsidian vaults known to the MCP bridge (`has_mcp_bridge` required) |
+| `POST` | `/mcp/tool` | Generic MCP tool passthrough — dispatches to any allowlisted tool |
+| `POST` | `/mcp/rename-tag` | Convenience endpoint: rename a tag across all vault notes |
+| `POST` | `/mcp/move-note` | Convenience endpoint: move/rename a note within the vault |
 
 ### 3c. Config loading
 
@@ -172,6 +177,9 @@ by `getEnabledTools()`:
 | `read_file` | File uploads present | Read content of an uploaded/chunked file |
 | `web_search` | *(not yet wired to a backend)* | Placeholder |
 | `context7_search` | Context7 API key + toggle | Query Context7 documentation |
+| `obsidian_rename_tag` | `has_mcp_bridge` + Obsidian Memory toggle | Rename a tag across all vault notes via MCP bridge |
+| `obsidian_move_note` | `has_mcp_bridge` + Obsidian Memory toggle | Move/rename a note within the vault via MCP bridge |
+| `obsidian_list_vaults` | `has_mcp_bridge` + Obsidian Memory toggle | List Obsidian vaults known to the MCP bridge |
 
 `getEnabledTools()` filters `TOOL_REGISTRY` entries against the current config and
 UI toggle states, returning an array suitable for the OpenAI `tools` parameter.

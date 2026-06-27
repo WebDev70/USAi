@@ -60,7 +60,8 @@ handing off to the next.
   refactor under green.
 - Comments explain *why*, not just *what* — match existing style.
 - Keep docs in sync **in the same turn**: CHANGELOG always; `docs/USER_GUIDE.md`
-  for user-facing; README for setup/config; backlog items checked off.
+  for user-facing; README for setup/config; **backlog lifecycle updated** (see
+  "Backlog lifecycle" below).
 
 ### 4. Tester
 - Write/update tests in `tests/js/*.test.mjs` or `tests/python/test_*.py`.
@@ -98,9 +99,45 @@ handing off to the next.
 | Rule | Detail |
 |------|--------|
 | 🔐 **Secrets** | Never commit or echo secrets. API keys live only in `.env`. |
-| 📝 **Docs in sync** | CHANGELOG every substantive change; `USER_GUIDE.md` for user-facing; README for setup/config; backlog items checked off. |
+| 📝 **Docs in sync** | CHANGELOG every substantive change; `USER_GUIDE.md` for user-facing; README for setup/config; **backlog lifecycle updated** (see "Backlog lifecycle" section below). |
 | 🧠 **Memory** | Recall at task start from all three vault subfolders. Record session note to `Cline/memories/YYYY-MM-DD-HHMMSS-<title>.md` at task end. |
 | 🎨 **CSS cache bust** | Any `styles.css` edit → bump `?v=N` in `index.html`. |
+
+---
+
+## Backlog lifecycle
+
+Every feature moves through three states in `backlog.md`. This is not optional — the
+backlog is the project's work-queue and its accuracy depends on the RAIL pipeline
+keeping it current.
+
+### Status format
+
+```
+- [ ]  **N. <title>** *(size)*                         ← Not started
+- [~]  **N. <title>** *(size)* — spec: docs/specs/<kebab>.md   ← In Progress
+- [x]  **N. <title>** *(size)* — Done (YYYY-MM-DD): <one-line outcome>.
+       Spec: docs/specs/<kebab>.md                     ← Done
+```
+
+### When to transition
+
+| RAIL step | Transition | Who |
+|-----------|-----------|-----|
+| `/spec` Step 3b | `[ ]` → `[~]` + append spec link | Code Planner (Role 1) |
+| `/build` pre-flight | Verify `[~]`; fix to `[~]` if still `[ ]` | Developer (Role 3) |
+| `/loop` Done criteria | `[~]` → `[x]` + Done date + one-line outcome + spec link | Developer (Role 3) |
+| `/review` §6c gate | Verify `[x]` with date/outcome/spec link; emit GAP if missing | Reviewer (Role 6) |
+
+### Scrum mirror
+
+After each `[ ]` → `[~]` transition: move item to In-Progress table in
+`Cline/scrum/product-backlog.md`.
+
+After each `[~]` → `[x]` transition: move item to Completed table in
+`Cline/scrum/product-backlog.md`.
+
+Both mirrors must be kept in sync in the **same turn** as the `backlog.md` update.
 
 ---
 

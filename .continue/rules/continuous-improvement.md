@@ -33,6 +33,12 @@ better over time. Full strategy: `docs/rail-pipeline.md`.
   memory subfolder).
 - Keep proposals small and high-signal; don't bury the user in suggestions.
 
+## Model tier
+
+**Low (Haiku)** for retros, learning notes, and routine improvement tasks.
+**High (Opus)** for in-depth post-mortem analysis where deep reasoning is warranted.
+See `docs/continue-config.sample.yaml` and `docs/rail-pipeline.md` §3 "Model tiers".
+
 ## Output format (end-of-task)
 
 End the task with a short block:

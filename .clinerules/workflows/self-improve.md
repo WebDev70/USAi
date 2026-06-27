@@ -143,3 +143,62 @@ Include each proposal with a brief rationale and a link to the `backlog.md` entr
 
 **Never leave a proposal as a chat suggestion only.** If you identify an improvement,
 it belongs in both sinks so it survives the session.
+
+---
+
+## User Summary (optional)
+
+After any `/self-improve` session that produces a **structural explanation** of a
+process, concept, or workflow — one with clear standalone value for non-technical
+readers — offer to write a plain-English **User Summary** note to the Obsidian vault.
+
+### When to write one
+
+Write a User Summary when the session output includes:
+- A new explanation of a RAIL role, workflow, or concept (e.g. "how `/spec` works")
+- A newly coined convention or pattern (e.g. "how memory notes are structured")
+- Any rewrite that a non-developer stakeholder would benefit from reading
+
+Do **not** write one for pure mechanical fixes (typo corrections, formatting, minor
+refactors) that have no conceptual content.
+
+### File convention
+
+```
+Vault path:  <OBSIDIAN_VAULT_PATH>/Cline/User Summaries/
+File name:   YYYY-MM-DD-<topic-slug>-user-summary.md
+```
+
+YAML frontmatter:
+```yaml
+---
+title: "<Concept Name> — Plain-English Summary"
+created: YYYY-MM-DD
+tags: [usai-chat, user-summary, <topic-tags>]
+source: cline
+---
+```
+
+### How to offer it
+
+In an **interactive session** (user is present), announce after the main output:
+
+> "This session produced a structural explanation. Would you like me to write a
+> plain-English User Summary to `Cline/User Summaries/YYYY-MM-DD-<topic>-user-summary.md`?"
+
+Write it if the user confirms, or immediately if the workflow is unattended.
+
+### What to include
+
+A good User Summary contains:
+- **What is it?** — one-paragraph plain-English answer (no jargon)
+- **Why does it matter?** — the problem it solves or the value it adds
+- **How does it work?** — a simple flow or table; no code unless essential
+- **Where to learn more** — links to the technical docs (spec, rule file, etc.)
+
+Link related notes with `[[wikilinks]]`. Keep it ≤ 2 pages.
+
+### This step is non-blocking
+
+Missing a User Summary does **not** fail `/review` or block `/loop` completion.
+It is a value-add output, not a quality gate.

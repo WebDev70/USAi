@@ -50,6 +50,25 @@ if [ "$COVERAGE" -eq 1 ]; then
   fi
   # --branch enables branch coverage measurement (RAIL Phase 2).
   # .coveragerc also sets branch=True; explicit here for clarity.
+  #
+  # SSL-context isolation note (#43 — backlog ADVISORY-03):
+  #   Two test classes in test_server_proxy.py are sensitive to CONFIG state
+  #   set by other classes in the same discover batch:
+  #     • ProxySsrfGuardTests      — sets base_url to a private IP (no _test_allow_loopback)
+  #     • ProxyIncrementalStreamingTests — uses a SlowStream upstream + raw socket timing
+  #   When these share a discover pass with classes that mutate CONFIG (e.g. those that
+  #   set '_test_allow_loopback': True), tearDownClass execution order can leave CONFIG
+  #   polluted, causing intermittent failures.
+  #
+  #   WORKAROUND (if you hit failures): run the two sensitive classes separately and
+  #   merge their coverage with --append:
+  #     $PY -m coverage run --branch --source=server -m unittest \
+  #       tests.python.test_server_proxy.ProxySsrfGuardTests \
+  #       tests.python.test_server_proxy.ProxyIncrementalStreamingTests
+  #     $PY -m coverage run --branch --source=server --append -m unittest discover \
+  #       -s tests/python -p 'test_*.py'
+  #   The combined discover below passes reliably in most environments; if you see
+  #   intermittent proxy failures, switch to the two-pass form above.
   "$PY" -m coverage run --branch --source=server -m unittest discover -s tests/python -p 'test_*.py'
   "$PY" -m coverage report -m
   "$PY" -m coverage report --fail-under="$PY_MIN" >/dev/null \

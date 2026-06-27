@@ -182,6 +182,25 @@ Product Owner (Definition of Ready)
 | 4 | **QA Review** | Automated pass/fail gates (see below). Each harness runs these differently — see the tooling docs. |
 | 5 | **Continuous Improvement** | Reflect after each cycle; **propose** new checks/rules/tests + backlog items; **record a learning note** to Obsidian. |
 
+### Model tiers (guided)
+
+Continue assigns models to fixed built-in roles (`chat`, `edit`, `apply`, etc.) —
+**not** to our custom RAIL pipeline agents. There is no automatic per-agent routing.
+Switching is **manual** via the Continue model-picker dropdown; use the tier hints in
+each role rule as a guide. A sample `config.yaml` with all three tiers is at
+`docs/continue-config.sample.yaml`.
+
+| Tier | Model ID | Primary RAIL role(s) | When to use |
+|------|----------|----------------------|-------------|
+| **High** | `claude_4_8_opus` | Code Planner (Role 1), hard QA Review (Role 4) | Complex/architectural planning; difficult QA pass needing deep reasoning |
+| **Medium** | `claude_4_6_sonnet` | Development SME (Role 2), Full Test Suite (Role 3) | Default for implementation and test-writing |
+| **Low** | `claude_4_5_haiku` | Continuous Improvement (Role 5), trivial edits | Retros, learning notes, docs-only tasks, one-line fixes |
+
+> Model IDs verified live against the gateway on 2026-06-26. Re-verify with
+> `GET /api/v1/models` if the gateway is updated.
+
+---
+
 ### Cross-cutting concerns (apply *inside* every role, not as a separate step)
 
 | Concern | Enforced by |
