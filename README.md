@@ -186,6 +186,29 @@ for the full TDD strategy. Engineering principles are in [`docs/principles.md`](
 These same checks (including the coverage gates) also run automatically in **CI** on
 every push / pull request via GitHub Actions (`.github/workflows/tests.yml`).
 
+## Git hooks (optional)
+
+Install the pre-commit hook locally with:
+
+```bash
+make hooks
+```
+
+This symlinks `.git/hooks/pre-commit` → `scripts/pre-commit.sh`, which runs:
+1. **Python syntax** (`py_compile`) on every staged `.py` file.
+2. **JS syntax** (`node --check`) on every staged `.js` file.
+3. **Secret scan** (`gitleaks detect --staged`) — skipped gracefully when
+   gitleaks is not installed, or when `SKIP_GITLEAKS=1` is set.
+
+Running `make hooks` twice is idempotent. The hook fires before every local
+commit; CI has independent gates so the hook is optional (not mandatory).
+
+> **Tip:** if gitleaks is not installed locally you can set `SKIP_GITLEAKS=1`
+> in your shell profile to suppress the missing-binary warning without affecting
+> the syntax gates.
+
+
+
 ## Usage
 
 Your **API key and Base URL come from `.env`**, so in most cases you can start

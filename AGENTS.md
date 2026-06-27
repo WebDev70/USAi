@@ -125,6 +125,9 @@ handling) see [`docs/rail-pipeline.md` §3](docs/rail-pipeline.md).
 
 # Stop / free the port
 lsof -ti:8000 | xargs kill
+
+# Install git pre-commit hook (optional — syntax + secret gates before each commit)
+make hooks
 ```
 
 Validate changes with the zero-dependency test suite:

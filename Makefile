@@ -21,7 +21,7 @@ PY := .venv/bin/python
 PORT ?= 8000
 
 .DEFAULT_GOAL := help
-.PHONY: help setup run stop test coverage scan check docker-up docker-down clean
+.PHONY: help setup run stop test coverage scan check docker-up docker-down clean hooks
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -63,3 +63,10 @@ docker-down: ## Stop the docker compose stack
 
 clean: ## Remove dev-only coverage artifacts
 	rm -rf .coverage .coverage.* htmlcov coverage.xml
+
+hooks: ## Install git hooks (symlinks .git/hooks/pre-commit → scripts/pre-commit.sh)
+	@mkdir -p .git/hooks
+	@ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "✓ pre-commit hook installed (.git/hooks/pre-commit → scripts/pre-commit.sh)"
+

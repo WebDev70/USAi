@@ -800,9 +800,5 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
   - Files: `server.py`, `tests/python/test_server.py`, `CHANGELOG.md`,
     `docs/USER_GUIDE.md`, `docs/specs/startup-auth-probe.md`.
 
-- [ ] **28. Pre-commit git hook for test/syntax gates** *(S)*
-  - Add an optional `pre-commit` hook (`.git/hooks/pre-commit`) that runs
-    `node --check app.js` and `python3 -m py_compile server.py` (and optionally
-    the fast unit tests) before each commit, catching syntax errors locally.
-    Document the manual install step in `README.md` or `AGENTS.md`.
-  - *Deferred from #17 rollout; low priority given CI already covers this.*
+- [x] **28. Pre-commit git hook for test/syntax gates** *(S)* — Done (2026-06-27): `make hooks` symlinks `.git/hooks/pre-commit` → `scripts/pre-commit.sh`; 6 regression tests (PC-1…PC-6) green; documented in `README.md` (Git hooks section) and `AGENTS.md`.
+       Spec: docs/specs/pre-commit-hook.md

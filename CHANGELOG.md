@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+### Added (2026-06-27 — Backlog #28 — Pre-commit git hook)
+- **`make hooks` target** — one-command install of the git pre-commit hook:
+  symlinks `.git/hooks/pre-commit` → `scripts/pre-commit.sh`; idempotent;
+  documented in `README.md` (new "Git hooks" section) and `AGENTS.md`.
+- **`tests/python/test_pre_commit.py`** — 6 regression tests (PC-1…PC-6)
+  covering clean/bad Python, clean/bad JS, non-code files only, and
+  `SKIP_GITLEAKS` escape-hatch; all green.
+- **`docs/specs/pre-commit-hook.md`** — RAIL spec for backlog #28.
+- No new runtime deps; no CSS change; no server-side change.
+- Files: `Makefile`, `README.md`, `AGENTS.md`,
+  `tests/python/test_pre_commit.py`, `docs/specs/pre-commit-hook.md`.
+
 ### Fixed (2026-06-27 — Backlog #19 bugfix — Auto Model Router wrong model ids)
 - **Auto Model Router: corrected `TIER_MAP` fallback model ids** — the original
   hardcoded fallbacks (`claude-opus-4`, `claude-sonnet-4-5`, `claude-haiku-4-5`)
