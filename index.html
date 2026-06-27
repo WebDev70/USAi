@@ -214,6 +214,13 @@
               <div class="composer-toolbar">
                 <button class="attach-button" id="composerAttach" type="button" title="Attach files or images" aria-label="Attach files or images"><span aria-hidden="true">📎</span></button>
                 <select id="composerModel" class="composer-select" title="Model" aria-label="Model"></select>
+                <select id="modelTierSelect" class="composer-select" title="Model router: automatically select a model tier based on message complexity" aria-label="Model router">
+                  <option value="off">Router: Off</option>
+                  <option value="auto" selected>Router: Auto</option>
+                  <option value="high">Router: High</option>
+                  <option value="medium">Router: Medium</option>
+                  <option value="low">Router: Low</option>
+                </select>
                 <select id="composerReasoning" class="composer-select" title="Reasoning effort" aria-label="Reasoning effort">
                   <option value="">Reasoning: Off</option>
                   <option value="low">Reasoning: Low</option>

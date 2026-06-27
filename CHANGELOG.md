@@ -1,5 +1,193 @@
 ## [Unreleased]
 
+### Fixed (2026-06-27 — Backlog #19 bugfix — Auto Model Router wrong model ids)
+- **Auto Model Router: corrected `TIER_MAP` fallback model ids** — the original
+  hardcoded fallbacks (`claude-opus-4`, `claude-sonnet-4-5`, `claude-haiku-4-5`)
+  used dashes which the GSA/USAi gateway does not accept, causing an upstream error
+  on every routed message. Corrected to the underscored ids verified live against
+  the gateway on 2026-06-26 alongside backlog #18:
+  `claude_4_8_opus` / `claude_4_6_sonnet` / `claude_4_5_haiku`.
+- **Wired `TIER_HIGH/MEDIUM/LOW_MODEL` env overrides end-to-end** — `server.py`
+  `load_config()` now reads these three optional env vars; `_get_config()` forwards
+  them as non-secret `tier_*_model` fields so deployments with different model
+  aliases can override the client-side `TIER_MAP` without touching source code.
+  `.env.example` documents the new vars with a comment describing the defaults.
+- **Tests strengthened:**
+  - JS RM-9 tightened to assert exact underscored ids (was "any non-empty string").
+  - JS RM-10 added: `appConfig` tier override precedence over hardcoded fallback.
+  - Python `LoadConfigTests.test_reads_env_and_applies_defaults` extended: tier
+    keys default to `''`.
+  - Python `ConfigEndpointTests.test_config_includes_tier_model_fields` added:
+    `GET /config` response includes all three `tier_*_model` keys.
+- **No new runtime deps; no CSS change; no new endpoints.**
+- Files: `app.js`, `server.py`, `.env.example`, `tests/js/app.test.mjs`,
+  `tests/python/test_server.py`, `tests/python/test_server_http.py`.
+
+### Added (2026-06-27 — Backlog #19 — Auto Model Router)
+- **Auto Model Router** — client-side per-message model routing with zero new
+  runtime dependencies.
+  - `app.js`: `routeModel(text, opts)` pure classifier returns `'high' | 'medium' | 'low'`
+    based on message length (>800 chars), code presence (fences / `function` / `class` /
+    `def` / `import`), and keywords (`architect`, `refactor`, `debug`, `prove`,
+    `theorem`, `optimize`, `security`, `implement`, `design`). Tools-enabled flag
+    floors the tier at `'medium'` (AC-5). `opts.override` of
+    `'high' | 'medium' | 'low'` wins unconditionally; `'off'` returns `'medium'`
+    as a neutral pass-through. `TIER_MAP` resolves a tier to a concrete model id,
+    reading optional `appConfig.tier_{high,medium,low}_model` overrides with
+    hardcoded Claude defaults. Integrated in `sendMessage()`: router runs before
+    the API payload is built, param-exclusion logic (`getExcludedParams`) operates
+    on the **resolved** model, and a `Model: <name> (auto|manual)` note part is
+    injected into all three send paths (3a tools / 3b stream / 3c non-stream).
+  - `index.html`: `<select id="modelTierSelect">` (Router: Off / Auto / High /
+    Medium / Low) added to the composer toolbar, between `#composerModel` and
+    `#composerReasoning`. Defaults to `Auto`. No CSS change needed (reuses
+    `.composer-select`).
+  - `app.js` `saveSettings()` / `restoreSettings()`: `modelTier` persisted in
+    `usai.settings.v1`; old settings without the key default to `'auto'`.
+  - `app.js` `appConfig`: three new tier-model fields (`tier_high_model`,
+    `tier_medium_model`, `tier_low_model`) — empty strings that TIER_MAP
+    `||`-fallbacks bypass when unset.
+  - `tests/js/app.test.mjs`: 9 new RM-* tests (RM-1 … RM-9) — low greeting,
+    high long, high code-fence, override high/low, medium plain, tools floor,
+    off passthrough, TIER_MAP fallbacks. All 79 JS tests green.
+  - `routeModel` and `TIER_MAP` exported via the Node-only `module.exports` guard.
+
+
+- **Backlog #44 — LoadConfigTests MCP bridge assertions**: 2 assertions added.
+  Resolves ADVISORY-04. — `tests/python/test_server.py`
+- **Backlog #41 — ARCHITECTURE.md MCP bridge doc update**: 4 endpoint rows + 3 tool
+  rows + routes-dict example updated. Resolves ADVISORY-01. — `docs/ARCHITECTURE.md`
+- **Backlog #43 — Flakey proxy test isolation documented**: Added 15-line comment
+  block in `run-tests.sh` naming `ProxySsrfGuardTests` and `ProxyIncrementalStreamingTests`
+  as SSL-context-sensitive, explaining the CONFIG-pollution root cause, and documenting
+  the two-pass `--append` workaround. Resolves ADVISORY-03.
+  — `run-tests.sh`, `docs/specs/flakey-proxy-test-isolation.md`
+- **Backlog #42 — Auto model router spec (#19)**: Wrote `docs/specs/auto-model-router.md`
+  (Status: Ready) with user story + 8 binary ACs, `routeModel()` design, `TIER_MAP`,
+  settings control spec, and 7 RM-* test cases. Resolves ADVISORY-02 (unblocks #19
+  for Sprint 10). — `docs/specs/auto-model-router.md`
+
+### Added (prior — Backlog #16 Ph2 — Obsidian-MCP Bridge)
+- Optional `obsidian-mcp` Node subprocess
+  Gated entirely on a new `OBSIDIAN_MCP_PATH` env var — no behaviour change when unset.
+  - `server.py`: `call_obsidian_mcp()` helper, `_mcp_enabled()`, `MCP_TOOL_ALLOWLIST`,
+    four handler methods (`_post_mcp_tool`, `_post_mcp_rename_tag`, `_post_mcp_move_note`,
+    `_get_mcp_vaults`), two new routes, two new CONFIG keys (`obsidian_mcp_path`,
+    `obsidian_node_path`), `has_mcp_bridge` added to `/config` response.
+  - `app.js`: `callMcpTool()` async helper, three new `TOOL_REGISTRY` entries
+    (`obsidian_rename_tag`, `obsidian_move_note`, `obsidian_list_vaults`), MCP gate
+    added to `getEnabledTools()` (requires `has_mcp_bridge` + Obsidian Memory toggle).
+  - `.env.example`: `OBSIDIAN_MCP_PATH` and `OBSIDIAN_NODE_PATH` env vars documented.
+  - `tests/python/test_server_mcp.py`: 17 new tests (T-1…T-13 from spec + T-14…T-17
+    success-path coverage); all green.
+  - Security: subprocess args use only admin-configured env vars (no user input),
+    `nosec B603 B607` suppressions with justification; `bandit -ll` clean (no medium+).
+  - Coverage: server.py line 90.6% ✅ (≥90%), branch 88% ✅ (≥80%); JS branch 72.49% ✅.
+
+### Added (prior)
+- **Backlog #7 — Embeddings RAG for uploaded files**: `getRelevantChunks` is now
+  async and embedding-aware. When `EMBED_MODEL` is configured server-side and the
+  semantic-search toggle is on, chunks are re-ranked by cosine similarity to the
+  query embedding instead of plain keyword scoring. Falls back gracefully to
+  keyword order on any failure (embed model missing, toggle off, `/embeddings`
+  error). New `semanticSearchEnabled` module-level flag driven by the
+  `#semanticToggle` checkbox (wired up in a future UI sprint).  
+  Exported `_getRelevantChunksTest` hook enables full unit-test isolation — 5 new
+  JS tests (JS-1…JS-5) cover cosine path, keyword fallback, toggle-off, error
+  fallback, and sort order.
+
+### DX
+- **Backlog #18 — Continue dev-workflow model tiers (guided)**: Three guided model
+  tiers defined for the RAIL pipeline roles — High (`claude_4_8_opus`), Medium
+  (`claude_4_6_sonnet`), Low (`claude_4_5_haiku`) — verified live against the
+  gateway on 2026-06-26. Delivers:
+  - `docs/continue-config.sample.yaml` — sample Continue `config.yaml` with all
+    three tiers, YAML anchors, and explanatory comments.
+  - "Model tiers (guided)" subsection added to `docs/rail-pipeline.md` §3 with a
+    tier→role→model table and manual-switching note.
+  - One-line tier hints appended to `.continue/rules/code-planner.md`,
+    `development-sme.md`, and `continuous-improvement.md`.
+
+
+### Embeddings-based memory search — #16 Ph3 (2026-06-26)
+
+Added client-side semantic re-ranking to memory search so results are ordered by
+vector similarity when an embedding model is configured.
+
+**server.py:**
+- `load_config()` now reads `EMBED_MODEL` and `EMBED_INPUT_TYPE` from `.env`,
+  exposes `has_embeddings` in `GET /config`.
+- `GET /memory/search` response always includes `embed_available: bool`.
+- New `POST /embeddings` endpoint: validates payload (size, input array, model
+  configured, base_url present), passes SSRF guard, proxies to
+  `<base_url>/v1/embeddings`, forwards upstream status on HTTP errors.
+
+**app.js:**
+- `cosineSimilarity(a, b)` — dot-product cosine; returns 0 on null/mismatch.
+- `embedTexts(texts, fetchFn)` — batch-embed via `POST /embeddings`; injectable
+  fetch for isolated testing.
+- `embedMemorySearch(query, k, fetchFn)` — fetches keyword results from
+  `/memory/search`, then re-ranks by cosine similarity when
+  `appConfig.has_embeddings && embed_available`; silently falls back to keyword
+  order on any error.
+- Both `memorySearch` call sites (sidebar search + `memory_search` tool) now use
+  `embedMemorySearch`.
+- `appConfig`, `cosineSimilarity`, `embedTexts`, `embedMemorySearch`, and
+  `_embedMemorySearchTest` shim exported for tests.
+
+**Tests:**
+- JS: MS-1 (re-rank), MS-2 (embedTexts fallback), MS-3 (has_embeddings=false) — all pass.
+- Python: MS-4 (`embed_available` field), MS-5 (400 no model), MS-6 (502 SSRF),
+  plus 7 additional branch tests (413, empty input, >512 input, no base_url,
+  happy-path proxy, URLError, HTTPError forwarding).
+- Coverage: `server.py` 93% lines / 93% branches ✅ (gates: 90% / 80%).
+
+Files: `server.py`, `app.js`, `tests/python/test_server_branches.py`,
+`docs/specs/embeddings-memory-search.md`.
+Backlog item #16 Ph3 ✅.
+
+
+### Prompt Templates — close coverage gap with PT-11/PT-12 (2026-06-26)
+
+Added 2 additional unit tests to close the JS branch coverage gate for item #12:
+
+- **PT-11** (`deleteUserTemplate` — corrupted localStorage catch branch): exercises the
+  `try/catch` fallback when `localStorage` contains invalid JSON — verifies no throw.
+- **PT-12** (`deleteUserTemplate` — non-array JSON normalisation branch): exercises the
+  `if (!Array.isArray(...))` normalisation path in `deleteUserTemplate`.
+
+These 2 tests push JS branch coverage from **68.42% → 70.95%**, clearing the ≥70%
+gate. All 47 JS tests pass; `./run-tests.sh --coverage` green across all gates.
+
+Files: `tests/js/app.test.mjs`.
+Backlog item #12 ✅.
+
+
+### Streaming + tool calling together — `runWithTools` final-answer streaming (#9) (2026-06-26)
+
+Refactored `runWithTools()` in `app.js` to stream the final assistant answer when
+`streamFinalAnswer=true`, and hardened the full tool-loop with injectable `callFn`/
+`streamFn`/`onDelta` for isolated unit testing (no network). 10 new `ST-*` tests
+bring JS branch coverage from 66.5% to **70.56% ✅**.
+
+**What shipped:**
+- `runWithTools()` accepts `{ streamFinalAnswer, callFn, streamFn, onDelta }` opts;
+  `streamFn` is called for the final answer round when `streamFinalAnswer=true`
+  (both after tool-use rounds and when the model returns text directly without tools).
+- `_runWithToolsTest` export added to `module.exports` — injects a no-op `test_tool`
+  stub so the full tool loop is exercised in Node without a live TOOL_REGISTRY match.
+- Abort/error propagation verified across all paths: round 0 callFn error/abort,
+  round > 0 streamFn abort, and MAX_TOOL_ROUNDS safety-net abort/error.
+- `onDelta(delta, full)` forwarding: passed through from `_runWithToolsTest` opts to
+  `streamFn` so incremental token callbacks reach the UI.
+- 13 new unit tests (ST-1 … ST-13) in `tests/js/app.test.mjs` — TDD-first (Red ✓
+  → Green ✓ → Refactor); all 44 JS tests pass.
+- Gates: server.py line 94% ✅, server.py branch 94% ✅, JS branch 70.56% ✅,
+  security scan clean ✅.
+- Spec: `docs/specs/streaming-tool-calling.md`.
+- Backlog item #9 ✅.
+
+
 ### Premium UI Polish — Inter font, glassy surfaces, shadow scale, micro-interactions (2026-06-24)
 
 CSS-only upgrade of `styles.css` + `index.html` (`?v=24`). No logic, no backend, no

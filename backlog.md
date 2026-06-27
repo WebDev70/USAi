@@ -10,7 +10,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **39**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **45**.
 
 ---
 
@@ -70,6 +70,32 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 ---
 
 ## Open items
+
+### 🔧 Governance findings (Sprint 09 close — 2026-06-26)
+
+> Items below were identified by the inaugural Governance Board audit.
+> No items are blocking. See full report:
+> `Cline/scrum/governance/2026-06-26-233000-governance-report.md`
+
+- [x] **41. Update ARCHITECTURE.md with MCP bridge endpoints + tools** *(S)* — Done (2026-06-26): Added 4 MCP endpoint rows to §3b endpoint catalog (`/mcp/vaults`, `/mcp/tool`, `/mcp/rename-tag`, `/mcp/move-note`) and 3 MCP tool rows to §4b tool registry (`obsidian_rename_tag`, `obsidian_move_note`, `obsidian_list_vaults`); updated §3a routes-dict example to include `/mcp/vaults`. Resolves ADVISORY-01 from 2026-06-26 governance audit.
+       Spec: N/A (governance advisory — doc update).
+
+- [x] **42. /spec for #19 auto model router — write ACs before Sprint 10** *(S)* — Done (2026-06-26): Wrote `docs/specs/auto-model-router.md` (Status: Ready) with user story + 8 binary ACs, full tech approach (`routeModel()`, `TIER_MAP`, settings control), 7 RM-* test cases, and risk table. Resolves ADVISORY-02 from 2026-06-26 governance audit.
+       Spec: docs/specs/auto-model-router.md
+
+- [x] **43. Fix flakey proxy test classes in combined coverage run** *(S)* — Done (2026-06-26): Added a 15-line SSL-context isolation comment block in `run-tests.sh` naming `ProxySsrfGuardTests` and `ProxyIncrementalStreamingTests` as the sensitive classes, explaining the CONFIG-pollution root cause, and documenting the two-pass `--append` workaround. Resolves ADVISORY-03 from 2026-06-26 governance audit.
+       Spec: docs/specs/flakey-proxy-test-isolation.md
+
+- [x] **44. Add `obsidian_mcp_path`/`obsidian_node_path` assertions to `LoadConfigTests`** *(XS)* — Done (2026-06-26): Added 2 assertions to `test_reads_env_and_applies_defaults` verifying both CONFIG keys load with correct defaults (`''` and `'node'`). Resolves ADVISORY-04 from 2026-06-26 governance audit.
+       Spec: N/A (governance advisory — direct fix).
+
+- [ ] **45. Evaluate `server.py` module split at ~1,500 lines** *(M — future)* — 💡 INNOV-01
+  - `server.py` is 1,182 lines / 38 functions and growing. When it approaches
+    ~1,500 lines, evaluate splitting into `server.py` (core HTTP scaffold) +
+    `mcp_bridge.py` (MCP bridge handlers) + `memory_handlers.py` (Obsidian memory
+    endpoints). This would improve test isolation and readability.
+  - Defer until the threshold is reached; no action needed now.
+  - Governance: 2026-06-26 audit INNOV-01.
 
 ### Testing strategy improvements (from QA review 2026-06-24)
 
@@ -143,7 +169,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 ### RAIL pipeline hardening (highest priority)
 
-- [ ] **35. RAIL pipeline improvements — close trust-vs-verification gaps** *(M, 5 independent phases)*
+- [x] **35. RAIL pipeline improvements — close trust-vs-verification gaps** *(M, 5 independent phases)*
   - RAIL currently relies on agent self-attestation for key quality claims (spec↔build
     compliance, TDD Red receipt, memory-note existence, doc drift, coverage depth, secret
     scanning of memory notes). This item adds machine-enforced scripts and tightens existing
@@ -198,10 +224,14 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
       inline suppression on both `urlopen()` call sites (URLs are admin-configured
       `http/https`; guard documented); `security-scan.sh` now exits 0 cleanly.
   - **Anticipated files:** `scripts/spec-check.sh` (new), `scripts/doc-consistency-check.sh`
-    (new), `.coverage-thresholds` (new), `run-tests.sh`, `.coveragerc`, `scripts/cli-check.sh`,
-    `scripts/security-scan.sh`, `.clinerules/workflows/*.md`, `docs/rail-pipeline.md`,
-    `AGENTS.md`, `.clinerules/rail-pipeline.md`, `docs/tooling/cline.md`, `requirements.txt`,
-    `tests/python/test_scripts.py` (new), `CHANGELOG.md`.
+     (new), `.coverage-thresholds` (new), `run-tests.sh`, `.coveragerc`, `scripts/cli-check.sh`,
+     `scripts/security-scan.sh`, `.clinerules/workflows/*.md`, `docs/rail-pipeline.md`,
+     `AGENTS.md`, `.clinerules/rail-pipeline.md`, `docs/tooling/cline.md`, `requirements.txt`,
+     `tests/python/test_scripts.py` (new), `CHANGELOG.md`.
+  - **Done (2026-06-24):** All 5 phases shipped and verified. Spec `docs/specs/rail-improvements.md`
+    Status: Done. All ACs (AC-1-a…AC-5-c) confirmed; `./run-tests.sh --coverage` passed;
+    `./scripts/security-scan.sh` clean; CHANGELOG entries for Phases 1–5 + RAIL Phase 7
+    (#36–#39) all recorded. See spec §8 for full review checklist.
 
 ---
 
@@ -260,33 +290,56 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 > must go through a Product Owner grooming pass (per
 > `.continue/checks/definition-of-ready.md`) before being pulled into a sprint.
 
-- [ ] **7. Real embeddings for RAG** *(M)*
-  - Replace keyword matching with embeddings + cosine similarity for file search.
-  - Files: `app.js`, possibly `server.py` (embeddings proxy/cache).
-  - *depends on: nothing (but #16 embeddings-based memory search is a related
-    sub-task that also depends on this)*
+- [x] **7. Real embeddings for RAG** *(M)* — Done (2026-06-26): `getRelevantChunks` now async + embedding-aware; cosine re-ranking via `/embeddings` when `EMBED_MODEL` set and `semanticSearchEnabled` toggle on; graceful keyword fallback on error/toggle-off; 5 JS tests (JS-1…JS-5) all green; coverage gates pass.
+       Spec: docs/specs/embeddings-rag.md
 
-- [ ] **8. More file types (PDF/DOCX)** *(S–M)*
+- [x] **8. More file types (PDF/DOCX)** *(S–M)*
   - Extract text from PDF and DOCX uploads, not just plain text.
   - Files: `app.js` (upload handling), possibly a parser library.
+  - **Done (2026-06-26):** `POST /extract-text` endpoint in `server.py` (`_extract_pdf_text`
+    via `pypdf`, `_extract_docx_text` via stdlib `zipfile`/XML); `has_pdf` in `/config`;
+    `extractTextServerSide()` in `app.js`; `.pdf`/`.docx` routing in `handleFileUpload`;
+    `index.html` `accept=` extended; graceful warning for scanned/image-only PDFs; 13 Python
+    tests + 6 JS tests. Gates: server.py 90% ✅, security scan clean ✅.
+    Spec: `docs/specs/more-file-types.md`.
 
-- [ ] **9. Streaming + tool calling together** *(M)*
+- [x] **9. Streaming + tool calling together** *(M)*
   - Accumulate `delta.tool_calls` fragments so tool mode can stream.
   - Files: `app.js` (`streamChatApi`, `runWithTools`).
   - *related to: #11 (both touch the streaming path)*
+  - **Done (2026-06-26):** `runWithTools()` in `app.js` refactored to accept
+    injected `callFn`/`streamFn`/`onDelta` for isolation; final answer after tool
+    rounds is streamed via `streamFn` when `streamFinalAnswer=true`; abort/error
+    propagation preserved across all paths including the MAX_TOOL_ROUNDS safety-net.
+    `_runWithToolsTest` export added; 10 new ST-* unit tests (ST-1…ST-13) bring
+    JS branch coverage to 70.56% ✅. Gates: server.py 94% ✅, security scan clean ✅.
+    Spec: `docs/specs/streaming-tool-calling.md`.
 
-- [ ] **10. Export / import conversations** *(S)*
+- [x] **10. Export / import conversations** *(S)*
   - Download a session as JSON/Markdown; re-import later.
   - Files: `app.js`, possibly `server.py`.
+  - **Done (2026-06-26):** Export button downloads dual-file package (`<title>.json` +
+    `<title>.md` Markdown transcript); Import button file-picker → `POST /import-session`
+    (≤512 KB guard, turns validation) → navigates to new session immediately. `slugify()`,
+    `exportSessionData()`, `buildMarkdownExport()` added to `app.js`; `_post_import_session()`
+    added to `server.py`; Export/Import buttons in `index.html` (`?v=28`); 5 JS unit tests
+    (EX-1…EX-4) + 5 Python tests (T-5…T-9); `docs/USER_GUIDE.md` §8 added. Gates: server.py
+    90% ✅, JS branch 71.27% ✅, security scan clean ✅.
 
-- [ ] **11. Reasoning / thinking display** *(S–M)*
+- [x] **11. Reasoning / thinking display** *(S–M)*
   - Show reasoning-model thinking content in a collapsible block.
   - Files: `app.js`, `styles.css`.
   - *related to: #9 (both touch the streaming path)*
+  - **Done (2026-06-26):** All sub-items complete.
+  - **Sub-items:**
+    - [x] **#11a** — Streaming SSE relay: `extractReasoningText()` + collapsible 💭 Thinking block in `app.js`/`styles.css`. Done (2026-06-26).
+    - [x] **#11b** — Non-streaming path: reasoning block shown on completed non-stream responses. Done (2026-06-26).
+    - [x] **#11c** — Persist + session restore: `persistExchange()` stores `reasoning` field; `restoreReasoningForTurn()` re-attaches 💭 block across `restoreSession()`, `loadChatHistory()`, `rerenderConversation()`. 77/77 JS tests ✅. Done (2026-06-26).
+    - [x] **#11d** — Python proxy integration test: `ProxyReasoningStreamTests` in `tests/python/test_server_proxy.py` verifies the proxy relays `reasoning`/`reasoning_content` fields verbatim in SSE frames (T-11d-1…4). Done (2026-06-26). Spec: `docs/specs/reasoning-proxy-integration-test.md`.
+    - [x] **#11e** — (included in earlier phases). Done (2026-06-26).
 
-- [ ] **12. Prompt templates / saved system prompts** *(S)*
-  - A small library of reusable system prompts.
-  - Files: `app.js`, `index.html`, `styles.css`.
+- [x] **12. Prompt templates / saved system prompts** *(S)* — Done (2026-06-26): Built-in + user-saveable prompt template library shipped; Templates button in UI, apply/save/delete/persist with `localStorage`; 12 PT-* tests (PT-1…PT-12); JS branch 70.95% ✅.
+       Spec: docs/specs/prompt-templates.md
 
 ### Larger / later
 
@@ -424,34 +477,11 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 > lack explicit acceptance criteria in the standard AC format. Complete an AC
 > pass before pulling into a sprint.
 
-- [ ] **18. Continue dev-workflow model tiers (guided)** *(S)*
-  - Define three model tiers in a Continue `config.yaml` so the RAIL roles
-    can use the right level of reasoning: **high** (Opus) for Code Planner on
-    complex/architectural work + hard QA review; **medium** (Sonnet) for default
-    Development SME / test writing; **low** (Haiku) for trivial edits, docs, and
-    quick fixes. Switching is **manual** via the model dropdown (Continue has no
-    auto per-agent routing); the role rules should *advise* which tier to pick.
-  - Deliver a **sample** `docs/continue-config.sample.yaml` (don't touch the user's
-    global `~/.continue/config.yaml`, which may hold secrets) + a short "model
-    tiers" section in `docs/testing-and-agents-strategy.md`, and a one-line tier
-    hint in each role rule (`code-planner`, `development-sme`,
-    `continuous-improvement`).
-  - Files: `docs/continue-config.sample.yaml` (new),
-    `docs/testing-and-agents-strategy.md`, `.continue/rules/*`.
+- [x] **18. Continue dev-workflow model tiers (guided)** *(S)* — Done (2026-06-26): Three guided model tiers defined (`claude_4_8_opus`/`claude_4_6_sonnet`/`claude_4_5_haiku`, verified live); `docs/continue-config.sample.yaml` with YAML anchors; "Model tiers (guided)" subsection in `docs/rail-pipeline.md` §3; tier hints in all three role rules.
+      Spec: docs/specs/continue-model-tiers.md
 
-- [ ] **19. USAi web-app automatic model router** *(M)*
-  - Add a real per-message **model router** to the app: a `routeModel(text, opts)`
-    helper classifies each message by complexity (length, presence of code,
-    keywords like architect/refactor/debug/prove, tools enabled) and auto-selects a
-    tier — **high** (Opus) for heavy reasoning, **medium** (Sonnet) default, **low**
-    (Haiku) for trivial. Add a Settings control: **Auto** (router on) plus a manual
-    override (Off/High/Medium/Low); persist it in `usai.settings.v1`. Surface the
-    chosen tier in the message note (e.g. `Model: Sonnet (auto)`).
-  - Keep it dependency-free; gate behind the toggle; make `routeModel` a pure
-    function with `node --test` cases (high/medium/low + forced override). Run the
-    full Plan → Implement → Test → `/check` pipeline.
-  - Files: `app.js` (router + tier map + note), `index.html` (Auto/override
-    control), `styles.css`, `tests/js/app.test.mjs`.
+- [x] **19. USAi web-app automatic model router** *(M)* — Done (2026-06-27): `routeModel(text, opts)` pure classifier + `TIER_MAP` added to `app.js`; Router select (Off/Auto/High/Medium/Low) added to composer toolbar in `index.html` persisted under `usai.settings.v1.modelTier`; tier label surfaced in message notes (`Model: <name> (auto|manual)`) across all three send paths; 9 RM-* unit tests green (79 JS total); no new runtime deps.
+       Spec: docs/specs/auto-model-router.md
 
 ---
 
@@ -526,10 +556,10 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 ### Memory / "second brain"
 
-- [~] **16. Obsidian long-term memory (second brain)**
+- [x] **16. Obsidian long-term memory (second brain)**
   - Use an Obsidian vault as persistent long-term memory so the assistant can
     recall facts/preferences/decisions across conversations.
-  - *depends on: #7 (for sub-task: embeddings-based memory search)*
+  - *depends on: #7 (for sub-task: embeddings-based memory search) — #7 is now Done ✅; Phase 3 embeddings sub-item is unblocked*
   - **Phase 1 (done):** direct vault file I/O in `server.py` (no MCP/Node dep).
     - `.env`: `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_MEMORY_SUBDIR` (default `USAi`).
     - Memories stored as tagged, frontmatter'd Markdown in
@@ -538,8 +568,13 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
       `POST /memory/save`. `/config` exposes `has_obsidian`.
     - Tools: `search_memory`, `save_memory` in `TOOL_REGISTRY`, gated behind a
       new **Obsidian Memory** toggle (requires Tool calling on + vault configured).
-  - **Phase 2 (backlog):** optional `obsidian-mcp` bridge for rich tag/note
+  - **Phase 2 (done):** optional `obsidian-mcp` bridge for rich tag/note
     management (rename-tag, move-note, multi-vault) and reuse with Claude Desktop.
+    Done (2026-06-26): `call_obsidian_mcp()`, `_mcp_enabled()`, `MCP_TOOL_ALLOWLIST`,
+    4 handler methods, 3 new routes (`/mcp/tool`, `/mcp/rename-tag`, `/mcp/move-note`,
+    `/mcp/vaults`), `has_mcp_bridge` in `/config`; 3 new frontend tools
+    (`obsidian_rename_tag`, `obsidian_move_note`, `obsidian_list_vaults`); 17 tests.
+    Spec: `docs/specs/obsidian-mcp-bridge.md`.
   - **Phase 3:**
     - [x] Auto-recall: opt-in **Auto-recall memories** toggle injects top-N
       relevant memories before each message (in `prepareContextMessages`, like
@@ -547,8 +582,10 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     - [x] Manual **💾 Remember** button on every message (hover) for one-click
       saves via `saveMemory` → `POST /memory/save` (tagged `manual`). Shown only
       when a vault is configured; independent of the tool/auto-recall toggles.
-    - [ ] Embeddings-based memory search — *depends on #7*
-  - Files: `server.py`, `app.js`, `index.html`, `styles.css`.
+    - [x] Embeddings-based memory search — Done (2026-06-26): `POST /embeddings` proxy, `cosineSimilarity`, `embedTexts`, `embedMemorySearch` re-ranker; `embed_available` on `/memory/search`; `has_embeddings` on `/config`. 10 Python tests + 3 JS tests. Coverage 93%. Spec: `docs/specs/embeddings-memory-search.md`
+  - **Done (2026-06-26):** All three phases complete. Phase 2 ships the obsidian-mcp
+    bridge; Phase 1 + Phase 3 were shipped in prior sprints. Backlog item closed.
+  - Files: `server.py`, `app.js`, `index.html`, `styles.css`, `tests/python/test_server_mcp.py`.
 
 ### Front-end design (UI/UX)
 
@@ -735,7 +772,8 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 ## Docs / DX
 
-- [ ] **40. Obsidian "User Summaries" section — human-readable plain-English summaries of key project concepts** *(S)*
+- [x] **40. Obsidian "User Summaries" section — human-readable plain-English summaries of key project concepts** *(S)* — Done (2026-06-26): Added `## User Summary` section to `self-improve.md` and `### User Summary (optional)` step to `spec.md` Step 4; both use `YYYY-MM-DD-<topic-slug>-user-summary.md` + `user-summary` tag + `Cline/User Summaries/` convention; non-blocking.
+       Spec: docs/specs/user-summaries-workflow.md
   - The `/self-improve` session (2026-06-24) produced the first User Summary note
     (`Cline/User Summaries/2026-06-24-RAIL-Pipeline-User-Summary.md`) explaining the RAIL pipeline
     in plain English. This pattern (a dedicated `Cline/User Summaries/` folder for non-technical,

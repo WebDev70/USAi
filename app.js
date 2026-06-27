@@ -182,7 +182,72 @@ const appConfig = {
   has_api_key: false,
   has_context7: false,
   has_obsidian: false,
-  };
+  // True when an embeddings model is configured server-side (EMBED_MODEL env var).
+  has_embeddings: false,
+  // Optional server-side tier overrides (set via .env if desired).
+  // Falls back to hardcoded Claude defaults when absent.
+  tier_high_model: '',
+  tier_medium_model: '',
+  tier_low_model: '',
+};
+
+// ─── Auto Model Router (#19) ──────────────────────────────────────────────────
+// Pure content-based classifier: returns 'high' | 'medium' | 'low' tier for a
+// given user message. The tier is then resolved to a concrete model id via
+// TIER_MAP. Keeping this function pure (no DOM/side-effects) makes it fully
+// unit-testable under Node without a browser environment.
+//
+// opts.override: 'auto' (default) | 'high' | 'medium' | 'low' | 'off'
+//   - 'auto' / absent → content-based classification
+//   - 'high'|'medium'|'low' → caller override wins regardless of content
+//   - 'off' → router disabled; return 'medium' as a neutral passthrough
+// opts.toolsEnabled: bool — when true the tier is floored at 'medium' so that
+//   tool-calling rounds always use at least a mid-weight model (AC-5).
+function routeModel(text, opts = {}) {
+  const { override = 'auto', toolsEnabled = false } = opts;
+
+  // Explicit tier override always wins (including manual High/Medium/Low from
+  // the UI select). 'off' means the router is disabled — return 'medium' as a
+  // neutral pass-through so the caller can use the manually-selected model.
+  if (override === 'off') return 'medium';
+  if (override !== 'auto') return override;
+
+  // Content-based classification (override === 'auto')
+  const t = (text || '').toLowerCase();
+
+  // Keywords that strongly suggest a complex, heavy-reasoning task.
+  const HIGH_KW = /\b(architect|refactor|debug|prove|theorem|optimize|security|implement|design)\b/;
+
+  const isLong = (text || '').length > 800;
+  // Code fence, function/class declaration, Python def, or import statement.
+  const hasCode = /```|function |class |def |import /.test(text || '');
+
+  if (isLong || hasCode || HIGH_KW.test(t)) return 'high';
+
+  // Keywords that indicate a trivial query suitable for the fast/cheap tier.
+  const LOW_KW = /^(hi|hello|thanks|what is|who is|when is|where is|how many)\b/;
+
+  // Floor at 'medium' when tools are enabled — tool-calling rounds need a
+  // capable model to parse/emit the structured function-call JSON correctly.
+  if (!toolsEnabled && (text || '').length < 120 && LOW_KW.test(t)) return 'low';
+
+  return 'medium';
+}
+
+// Map a tier string to the concrete model id to use. Reads optional server-side
+// config overrides from appConfig (populated via /config → .env); falls back to
+// known-good Claude model ids if the server hasn't set them. Stored as thunks so
+// appConfig reads happen at call time (after loadConfig() has populated it).
+const TIER_MAP = {
+  // Fallback ids use the underscore format the GSA/USAi gateway accepts.
+  // Dashed variants (e.g. 'claude-opus-4') are NOT accepted and cause upstream
+  // errors — verified against the gateway on 2026-06-26 alongside backlog #18.
+  // Override any tier by setting TIER_HIGH/MEDIUM/LOW_MODEL in .env (the server
+  // reads those vars and forwards them via /config as tier_*_model fields).
+  high:   () => appConfig.tier_high_model   || 'claude_4_8_opus',
+  medium: () => appConfig.tier_medium_model || 'claude_4_6_sonnet',
+  low:    () => appConfig.tier_low_model    || 'claude_4_5_haiku',
+};
 
 function getSelectedModel() {
   const modelSelect = document.getElementById('modelSelect');
@@ -375,6 +440,8 @@ function saveSettings() {
       chunkSize: document.getElementById('chunkSize')?.value,
       topChunks: document.getElementById('topChunks')?.value,
       baseUrl: document.getElementById('baseUrlInput')?.value,
+      // Auto Model Router (#19): persist the tier select (Off/Auto/High/Medium/Low)
+      modelTier: document.getElementById('modelTierSelect')?.value,
     };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch (err) {
@@ -414,6 +481,8 @@ function restoreSettings() {
   setVal('chunkSize', settings.chunkSize);
   setVal('topChunks', settings.topChunks);
   if (settings.baseUrl) setVal('baseUrlInput', settings.baseUrl);
+  // Auto Model Router (#19): restore the tier select; default 'auto' when absent.
+  setVal('modelTierSelect', settings.modelTier ?? 'auto');
 
   // Model select (and custom box visibility)
   if (settings.model) {
@@ -522,7 +591,7 @@ const TOOL_REGISTRY = {
       if (!query) return 'Error: no query provided.';
       if (!fileChunks.length) return 'No files have been uploaded in this session.';
       const topK = Number.isInteger(args?.top_k) && args.top_k > 0 ? args.top_k : topChunksPerQuery;
-      const chunks = getRelevantChunks(query, topK);
+      const chunks = await getRelevantChunks(query, topK);
       if (!chunks.length) return 'No relevant excerpts found in the uploaded files.';
       return chunks
         .map((c, i) => `[Excerpt ${i + 1} from ${c.fileName} (relevance ${(c.score * 100).toFixed(0)}%)]\n${c.text}`)
@@ -590,10 +659,7 @@ const TOOL_REGISTRY = {
       const query = safeTrim(args?.query);
       if (!query) return 'Error: no query provided.';
       try {
-        const resp = await fetch(`/memory/search?q=${encodeURIComponent(query)}&k=5`);
-        const data = await resp.json();
-        if (!resp.ok) return `Error searching memory: ${data?.error || resp.status}`;
-        const results = data?.results || [];
+        const results = await embedMemorySearch(query, 5);
         if (!results.length) return 'No relevant memories were found.';
         logger.info('memory', `search_memory "${query}" → ${results.length} hit(s)`);
         return results
@@ -653,6 +719,103 @@ const TOOL_REGISTRY = {
   },
 };
 
+// MCP bridge tool names — gated on has_mcp_bridge + Obsidian Memory toggle.
+const MCP_TOOLS = ['obsidian_rename_tag', 'obsidian_move_note', 'obsidian_list_vaults'];
+
+// Generic helper: call POST /mcp/tool and return the result string (throws on error).
+async function callMcpTool(toolName, args) {
+  const resp = await fetch('/mcp/tool', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tool: toolName, arguments: args }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data?.error || `MCP error ${resp.status}`);
+  return data.result ?? 'done';
+}
+
+// Extend the TOOL_REGISTRY with the three MCP bridge tools.
+Object.assign(TOOL_REGISTRY, {
+  obsidian_rename_tag: {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'obsidian_rename_tag',
+        description: 'Rename a tag across all notes in the Obsidian vault. Requires the Obsidian-MCP bridge to be configured.',
+        parameters: {
+          type: 'object',
+          properties: {
+            oldTag: { type: 'string', description: 'The existing tag name to rename (without the leading #).' },
+            newTag: { type: 'string', description: 'The new tag name to replace it with (without the leading #).' },
+          },
+          required: ['oldTag', 'newTag'],
+        },
+      },
+    },
+    async run(args) {
+      const oldTag = safeTrim(args?.oldTag);
+      const newTag = safeTrim(args?.newTag);
+      if (!oldTag || !newTag) return 'Error: oldTag and newTag are required.';
+      try {
+        const result = await callMcpTool('rename_tag', { oldTag, newTag });
+        return `Renamed tag "${oldTag}" to "${newTag}". Result: ${result}`;
+      } catch (err) {
+        return 'Error renaming tag: ' + (err?.message || 'request failed');
+      }
+    },
+  },
+
+  obsidian_move_note: {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'obsidian_move_note',
+        description: 'Move or rename a note within the Obsidian vault. Requires the Obsidian-MCP bridge to be configured.',
+        parameters: {
+          type: 'object',
+          properties: {
+            source: { type: 'string', description: 'Current relative path of the note (e.g. "note.md" or "folder/note.md").' },
+            destination: { type: 'string', description: 'New relative path for the note.' },
+          },
+          required: ['source', 'destination'],
+        },
+      },
+    },
+    async run(args) {
+      const source = safeTrim(args?.source);
+      const destination = safeTrim(args?.destination);
+      if (!source || !destination) return 'Error: source and destination are required.';
+      try {
+        const result = await callMcpTool('move_note', { source, destination });
+        return `Moved "${source}" to "${destination}". Result: ${result}`;
+      } catch (err) {
+        return 'Error moving note: ' + (err?.message || 'request failed');
+      }
+    },
+  },
+
+  obsidian_list_vaults: {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'obsidian_list_vaults',
+        description: 'List all available Obsidian vaults accessible via the MCP bridge. Requires the Obsidian-MCP bridge to be configured.',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    async run(_args) {
+      try {
+        const resp = await fetch('/mcp/vaults');
+        const data = await resp.json();
+        if (!resp.ok) return 'Error listing vaults: ' + (data?.error || resp.status);
+        return 'Available vaults: ' + (data.result ?? 'none returned');
+      } catch (err) {
+        return 'Error listing vaults: ' + (err?.message || 'request failed');
+      }
+    },
+  },
+});
+
 // Build the `tools` array for the API request based on availability.
 function getEnabledTools() {
   const tools = [];
@@ -665,6 +828,9 @@ function getEnabledTools() {
     // user has enabled the Obsidian Memory toggle.
     if ((name === 'search_memory' || name === 'save_memory')
         && (!appConfig.has_obsidian || !memoryEnabled)) continue;
+    // Only advertise MCP bridge tools when the bridge is configured AND the
+    // user has enabled the Obsidian Memory toggle (reuses the same gate).
+    if (MCP_TOOLS.includes(name) && (!appConfig.has_mcp_bridge || !memoryEnabled)) continue;
     tools.push(tool.definition);
   }
   return tools;
@@ -1111,6 +1277,81 @@ async function showCachedFilesPanel() {
   }
 }
 
+// ─── Embeddings-based memory search (#16 Ph3) ────────────────────────────────
+// cosineSimilarity: compute the cosine similarity between two numeric vectors.
+// Returns 0 for null/empty/mismatched inputs to avoid NaN propagation downstream.
+function cosineSimilarity(a, b) {
+  if (!a || !b || !a.length || !b.length || a.length !== b.length) return 0;
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  if (!denom) return 0;
+  return dot / denom;
+}
+
+// embedTexts: call POST /embeddings with an array of strings and return the
+// embedding vectors in index order. Throws on HTTP or parse failure so callers
+// can catch and fall back to keyword order. Injectable fetchFn for tests.
+async function embedTexts(texts, fetchFn) {
+  const fetcher = fetchFn || fetch;
+  const resp = await fetcher('/embeddings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input: texts }),
+  });
+  if (!resp.ok) throw new Error(`/embeddings returned ${resp.status}`);
+  const data = await resp.json();
+  // OpenAI-compatible response: { data: [{ index, embedding }] }
+  const items = data.data;
+  if (!Array.isArray(items)) throw new Error('/embeddings response missing data array');
+  // Sort by index to guarantee order matches `texts`
+  const sorted = items.slice().sort((x, y) => x.index - y.index);
+  return sorted.map(item => item.embedding);
+}
+
+// embedMemorySearch: search /memory/search then, when embeddings are available,
+// re-rank the results by cosine similarity to the query embedding. Falls back
+// gracefully to the keyword-ranked order on any error.
+// Injectable fetchFn allows full isolation in tests (no network needed).
+async function embedMemorySearch(query, k = 5, fetchFn) {
+  const fetcher = fetchFn || fetch;
+
+  // 1. Always fetch keyword-ranked results first
+  const searchResp = await fetcher(`/memory/search?q=${encodeURIComponent(query)}&k=${k}`);
+  const searchData = await searchResp.json();
+  if (!searchResp.ok) throw new Error(`/memory/search returned ${searchResp.status}`);
+  const results = (searchData.results || []).slice();
+
+  // 2. Skip semantic re-ranking when the server hasn't got an embed model
+  if (!appConfig.has_embeddings || !searchData.embed_available || !results.length) {
+    return results;
+  }
+
+  // 3. Embed [query, snippet1, snippet2, …] in a single batch request
+  try {
+    const texts = [query, ...results.map(r => r.snippet || r.path)];
+    const vecs = await embedTexts(texts, fetcher);
+    if (!vecs || vecs.length < 2) return results; // sanity guard
+
+    const queryVec = vecs[0];
+    // Attach _sim and sort descending by cosine similarity to the query
+    results.forEach((r, i) => {
+      r._sim = cosineSimilarity(queryVec, vecs[i + 1] || null);
+    });
+    results.sort((a, b) => b._sim - a._sim);
+  } catch (err) {
+    // Embedding failed — silently fall back to keyword order (no _sim fields)
+    logger.warn('memory', 'Embedding re-rank failed; using keyword order', { error: err?.message });
+    // Remove any partially-attached _sim fields to keep the shape clean
+    results.forEach(r => delete r._sim);
+  }
+  return results;
+}
+
 function scoreChunkByKeywords(chunkText, queryText) {
   // Simple keyword-based scoring as fallback to embeddings
   const queryWords = queryText.toLowerCase().split(/\s+/).filter(w => w.length > 3);
@@ -1202,15 +1443,46 @@ async function handleFileUpload(event) {
   event.target.value = '';
 }
 
-function getRelevantChunks(query, topK = 5) {
-  if (!fileChunks.length) return [];
+// semanticSearchEnabled: opt-in toggle driven by the #semanticToggle checkbox.
+// When true AND appConfig.has_embeddings is set AND chunks carry stored
+// embeddings, getRelevantChunks re-ranks by cosine similarity instead of
+// keyword scoring. Falls back to keyword order on any error.
+let semanticSearchEnabled = false;
 
-  // Fallback to keyword matching
-  const scored = fileChunks.map(chunk => ({
+// getRelevantChunks: async so the semantic path can await embedTexts.
+// Injectable chunksArr / fetchFn / semanticFlag for unit-testing without a DOM.
+async function getRelevantChunks(query, topK = 5, chunksArr, fetchFn, semanticFlag) {
+  const chunks = chunksArr ?? fileChunks;
+  const useSemantic = (semanticFlag !== undefined) ? semanticFlag : semanticSearchEnabled;
+  if (!chunks.length) return [];
+
+  // Semantic path: all chunks must already have stored embeddings and toggle on
+  const hasEmbeds = chunks.every(c => Array.isArray(c.embedding) && c.embedding.length > 0);
+  if (useSemantic && appConfig.has_embeddings && hasEmbeds) {
+    try {
+      const queryVecs = await embedTexts([query], fetchFn);
+      const queryVec = queryVecs[0];
+      const scored = chunks.map(chunk => ({
+        ...chunk,
+        score: cosineSimilarity(queryVec, chunk.embedding),
+      }));
+      scored.sort((a, b) => b.score - a.score);
+      return scored.slice(0, topK).map(item => ({
+        fileName: item.fileName,
+        text: item.text,
+        score: item.score,
+      }));
+    } catch (err) {
+      // Embedding query failed — fall through to keyword scoring
+      logger.warn('rag', 'getRelevantChunks embed query failed; falling back to keyword', { error: err?.message });
+    }
+  }
+
+  // Keyword fallback
+  const scored = chunks.map(chunk => ({
     ...chunk,
     score: scoreChunkByKeywords(chunk.text, query),
   }));
-  
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, topK).map(item => ({
     fileName: item.fileName,
@@ -1828,7 +2100,7 @@ async function prepareContextMessages(inputs) {
 
   // 2. File Chunks
   if (fileChunks.length > 0) {
-    const relevantChunks = getRelevantChunks(inputs.content, topChunksPerQuery);
+    const relevantChunks = await getRelevantChunks(inputs.content, topChunksPerQuery);
     if (relevantChunks.length > 0) {
       const method = 'keyword matching';
       const CONTEXT_CHAR_LIMIT = 120000; // ~30k tokens
@@ -1848,12 +2120,11 @@ async function prepareContextMessages(inputs) {
   
   // 3. Obsidian memory auto-recall: search the vault and inject the top matches
   // as context before sending (opt-in, independent of the memory tools).
+  // Uses embedMemorySearch so results are re-ranked by embeddings when available.
   if (memoryAutoRecall && appConfig.has_obsidian) {
     try {
       document.getElementById('responseLog').textContent = 'Recalling from Obsidian memory...';
-      const resp = await fetch(`/memory/search?q=${encodeURIComponent(inputs.content)}&k=5`);
-      const data = await resp.json();
-      const results = (resp.ok && data?.results) ? data.results : [];
+      const results = await embedMemorySearch(inputs.content, 5);
       if (results.length) {
         const recalled = results
           .map((r, i) => `[Memory ${i + 1} from ${r.path}]\n${r.snippet}`)
@@ -1921,8 +2192,19 @@ function appendToolActivity(container, toolNames) {
 
 // Run the chat completion with tool support. Performs up to MAX_TOOL_ROUNDS
 // rounds of: call model → if it requests tool calls, execute them and loop.
-// Returns { assistantText, usage, toolsUsed } or { error }.
-async function runWithTools(basePayload, conversation) {
+// The final answer round can optionally be streamed via the injected streamFn.
+// Options:
+//   streamFinalAnswer (bool) — stream the last round via streamFn (default: false).
+//   callFn  — non-streaming call function (default: callChatApi); injectable for tests.
+//   streamFn — streaming call function (default: streamChatApi); injectable for tests.
+//   onDelta (fn) — callback(delta, full) called during streaming (default: null).
+// Returns { assistantText, usage, toolsUsed } or { error } or { aborted, assistantText? }.
+async function runWithTools(basePayload, conversation, {
+  streamFinalAnswer = false,
+  callFn = callChatApi,
+  streamFn = streamChatApi,
+  onDelta = null,
+} = {}) {
   const messages = basePayload.messages.slice();
   const tools = getEnabledTools();
   const toolsUsed = [];
@@ -1930,7 +2212,7 @@ async function runWithTools(basePayload, conversation) {
 
   if (!tools.length) {
     logger.warn('tools', 'No tools available to advertise; falling back to a normal call');
-    const { assistantText, usage, error, aborted } = await callChatApi(basePayload);
+    const { assistantText, usage, error, aborted } = await callFn(basePayload);
     if (aborted) return { aborted: true };
     return error ? { error } : { assistantText, usage, toolsUsed };
   }
@@ -1938,9 +2220,24 @@ async function runWithTools(basePayload, conversation) {
   logger.info('tools', `Starting tool loop`, { toolCount: tools.length, toolNames: tools.map(t => t.function?.name) });
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    // ── If streaming the final answer AND there are no more rounds of tool
+    // execution to do yet, we can stream this round directly. We don't know
+    // upfront whether the model will request tools, so we always use the
+    // non-streaming callFn first — EXCEPT when we've already executed at
+    // least one batch of tools and are resuming: in that case we issue the
+    // next request as a stream (no prior callFn needed for that round).
+    const isResumeAfterTools = round > 0 && toolsUsed.length > 0;
+    if (streamFinalAnswer && streamFn && isResumeAfterTools) {
+      // All prior tool rounds are done. Stream the follow-up answer.
+      const finalPayload = { ...basePayload, messages };
+      const streamResult = await streamFn(finalPayload, onDelta);
+      if (streamResult.aborted) return { aborted: true, assistantText: streamResult.assistantText };
+      return { ...streamResult, toolsUsed };
+    }
+
     // Tool calls require a non-streaming request so we can inspect tool_calls.
     const payload = { ...basePayload, messages, tools, tool_choice: 'auto' };
-    const { message, usage, error, aborted } = await callChatApi(payload);
+    const { message, usage, error, aborted } = await callFn(payload);
     if (aborted) return { aborted: true };
     if (error) {
       logger.error('tools', `Round ${round} request failed`, { error });
@@ -1957,7 +2254,15 @@ async function runWithTools(basePayload, conversation) {
     logger.info('tools', `Round ${round} response`, { hasContent: !!message.content, toolCallCount: toolCalls.length });
 
     if (!toolCalls.length) {
-      // No tools requested — this is the final answer.
+      // No tools requested — this is the final answer (round 0 only, since
+      // rounds > 0 with tools already done are handled above via streamFn).
+      if (streamFinalAnswer && streamFn) {
+        // Model returned text directly without calling any tools; stream it.
+        const finalPayload = { ...basePayload, messages };
+        const streamResult = await streamFn(finalPayload, onDelta);
+        if (streamResult.aborted) return { aborted: true, assistantText: streamResult.assistantText };
+        return { ...streamResult, toolsUsed };
+      }
       return { assistantText: message?.content || null, usage: lastUsage, toolsUsed };
     }
 
@@ -1983,9 +2288,10 @@ async function runWithTools(basePayload, conversation) {
   }
 
   // Hit the round limit — make one final call without tools to force an answer.
+  // This safety-net path stays non-streamed to keep the logic simple.
   logger.warn('tools', `Reached MAX_TOOL_ROUNDS (${MAX_TOOL_ROUNDS}); forcing final answer`);
   const finalPayload = { ...basePayload, messages };
-  const { assistantText, usage, error, aborted } = await callChatApi(finalPayload);
+  const { assistantText, usage, error, aborted } = await callFn(finalPayload);
   if (aborted) return { aborted: true };
   if (error) return { error };
   return { assistantText, usage: usage || lastUsage, toolsUsed };
@@ -2192,9 +2498,28 @@ async function sendMessage() {
 
     const payload = { model: inputs.model, messages };
 
+  // ─── Auto Model Router (#19) ─────────────────────────────────────────────
+  // Resolve the model to use. When the router is active (not 'off'), classify
+  // the message and look up the concrete model id via TIER_MAP. When 'off',
+  // use the user's manually-selected model unchanged.
+  const tierSel = document.getElementById('modelTierSelect')?.value || 'auto';
+  let routedModel = inputs.model;  // default: unchanged (router off or unavailable)
+  let modelTierLabel = '';         // surfaced in the message note
+  if (tierSel !== 'off') {
+    const tier = routeModel(inputs.content, { override: tierSel, toolsEnabled });
+    routedModel = TIER_MAP[tier]();
+    // 'auto' = content-based; any explicit High/Medium/Low selection is 'manual'.
+    const modeLabel = tierSel === 'auto' ? 'auto' : 'manual';
+    modelTierLabel = `Model: ${routedModel} (${modeLabel})`;
+    logger.info('router', `Auto model router: tier="${tier}" model="${routedModel}" mode="${modeLabel}"`);
+  }
+  payload.model = routedModel;
+
   // Some models reject certain params (e.g. reasoning models deprecate
   // `temperature`). Omit any excluded params for the selected model.
-  const excludedParams = getExcludedParams(inputs.model);
+  // Use the routedModel here (not inputs.model) so param exclusions match the
+  // actual model being sent when the router has swapped in a different model.
+  const excludedParams = getExcludedParams(routedModel);
 
   if (!excludedParams.has('temperature') && !Number.isNaN(inputs.temperature)) {
     payload.temperature = inputs.temperature;
@@ -2265,8 +2590,22 @@ async function sendMessage() {
 
   try {
     if (toolsEnabled) {
-      // 3a. Tool-calling path (non-streaming, multi-round)
-      const { assistantText, usage, toolsUsed, error, aborted } = await runWithTools(payload, conversation);
+      // 3a. Tool-calling path — multi-round tool loop; final answer is streamed
+      // when streaming is enabled so the user sees tokens arrive in real time.
+      const { group: asmGroup, bubble: asmBubble, noteEl: asmNoteEl } = streamEnabled
+        ? appendMessage(conversation, '', 'assistant', contextNote)
+        : { group: null, bubble: null, noteEl: null };
+      if (asmBubble) asmBubble.classList.add('streaming');
+
+      const toolOnDelta = streamEnabled ? (_delta, full) => {
+        renderBubbleText(asmBubble, full, false, false);
+        conversation.scrollTop = conversation.scrollHeight;
+      } : null;
+
+      const { assistantText, usage, toolsUsed, error, aborted } = await runWithTools(
+        payload, conversation,
+        { streamFinalAnswer: streamEnabled, onDelta: toolOnDelta },
+      );
       responseLog.textContent = '';
 
       if (aborted) {
@@ -2289,10 +2628,10 @@ async function sendMessage() {
         ? ''
         : contextNote;
       const { group, noteEl } = appendMessage(conversation, finalText, 'assistant', contextNote);
-      setMessageNote(group, noteEl, [contextNoteForAssistant, toolNote, usageText]);
+      setMessageNote(group, noteEl, [contextNoteForAssistant, toolNote, modelTierLabel, usageText]);
       addMessageActions(group, 'assistant', userDisplayIndex + 1);
       conversation.scrollTop = conversation.scrollHeight;
-      await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages, [contextNoteForAssistant, toolNote]);
+      await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages, [contextNoteForAssistant, toolNote, modelTierLabel]);
 
       const duration = (performance.now() - startTime).toFixed(2);
       logger.info('chat', 'Tool-assisted response received', { duration: `${duration}ms`, textLength: finalText.length, usage: usage || null, toolsUsed });
@@ -2325,7 +2664,7 @@ async function sendMessage() {
       }
       renderBubbleText(bubble, finalText, true);
       const usageText = formatUsage(usage);
-      setMessageNote(group, noteEl, [contextNote, aborted ? 'cancelled' : '', usageText]);
+      setMessageNote(group, noteEl, [contextNote, aborted ? 'cancelled' : '', modelTierLabel, usageText]);
       addMessageActions(group, 'assistant', userDisplayIndex + 1);
       conversation.scrollTop = conversation.scrollHeight;
       await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages);
@@ -2363,7 +2702,7 @@ async function sendMessage() {
       }
       const usageText = formatUsage(usage);
       const { group, noteEl } = appendMessage(conversation, finalText, 'assistant', contextNote);
-      setMessageNote(group, noteEl, [contextNote, jsonNote, usageText]);
+      setMessageNote(group, noteEl, [contextNote, jsonNote, modelTierLabel, usageText]);
       addMessageActions(group, 'assistant', userDisplayIndex + 1);
       conversation.scrollTop = conversation.scrollHeight;
       await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages);
@@ -2509,6 +2848,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       sel.value = e.target.value;
       sel.dispatchEvent(new Event('change'));
     }
+  });
+  // Auto Model Router (#19): persist tier select changes.
+  document.getElementById('modelTierSelect')?.addEventListener('change', () => {
+    saveSettings();
+    logger.info('router', `Model tier select changed to "${document.getElementById('modelTierSelect')?.value}"`);
   });
 
   document.getElementById('modelCustom')?.addEventListener('input', () => {
@@ -2666,6 +3010,185 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadChatHistory();
 });
 
+// ─── Prompt Templates (#12) ───────────────────────────────────────────────────
+// Built-in library of reusable system prompts. User-saved templates are persisted
+// to localStorage under PROMPT_TEMPLATES_KEY as Array<{id, name, text}>.
+// IDs: built-ins use plain slugs; user templates use 'user-<timestamp>'.
+const PROMPT_TEMPLATES_KEY = 'usai.prompt-templates.v1';
+
+const BUILTIN_TEMPLATES = [
+  { id: 'code-reviewer',   name: 'Code reviewer',          text: 'You are an expert code reviewer. Review for correctness, clarity, and security.' },
+  { id: 'python-expert',   name: 'Python expert',          text: 'You are a Python expert. Provide idiomatic, well-documented Python.' },
+  { id: 'concise-bullets', name: 'Concise bullet points',  text: 'Answer concisely using bullet points. Skip preamble.' },
+  { id: 'socratic-tutor',  name: 'Socratic tutor',         text: 'Guide me with questions rather than giving direct answers.' },
+  { id: 'editor',          name: 'Editor / proofreader',   text: 'Edit my text for grammar, clarity, and conciseness. Preserve my voice.' },
+  { id: 'no-system',       name: '(Clear system prompt)',  text: '' },
+];
+
+/**
+ * Load all templates: built-ins first, then any user-saved templates from
+ * localStorage. Accepts an optional ls param (default: globalThis.localStorage)
+ * so tests can inject a fake storage without side-effects.
+ */
+function loadPromptTemplates(ls) {
+  const storage = ls || globalThis.localStorage;
+  let userTemplates = [];
+  try {
+    const raw = storage.getItem(PROMPT_TEMPLATES_KEY);
+    if (raw) userTemplates = JSON.parse(raw);
+    if (!Array.isArray(userTemplates)) userTemplates = [];
+  } catch (_) {
+    userTemplates = [];
+  }
+  return [...BUILTIN_TEMPLATES, ...userTemplates];
+}
+
+/**
+ * Persist user-saved templates (the non-built-in portion) to localStorage.
+ * Catches QuotaExceededError and warns via logger without corrupting existing data.
+ */
+function savePromptTemplates(userTemplates, ls) {
+  const storage = ls || globalThis.localStorage;
+  try {
+    storage.setItem(PROMPT_TEMPLATES_KEY, JSON.stringify(userTemplates));
+  } catch (e) {
+    if (typeof logger !== 'undefined') {
+      logger.warn('templates', 'localStorage quota exceeded — template not saved.');
+    }
+  }
+}
+
+/**
+ * Apply a template text to the system prompt input field.
+ * Uses .value (plain text), never .innerHTML — XSS-safe by construction.
+ * Calls saveFn (default: saveSettings) to persist the new value.
+ *
+ * @param {string} text - Template text (may be empty for 'Clear' template).
+ * @param {HTMLInputElement} [inputEl] - The #systemPrompt element.
+ * @param {Function} [saveFn] - Called after applying; defaults to saveSettings.
+ */
+function applyTemplate(text, inputEl, saveFn) {
+  const el = inputEl || document.getElementById('systemPrompt');
+  const save = saveFn || saveSettings;
+  if (el) el.value = text;
+  save();
+}
+
+/**
+ * Save the current value as a named user template.
+ * Returns true on success, false if name or text is empty/whitespace.
+ *
+ * @param {string} name - Display name for the template.
+ * @param {string} text - Template text.
+ * @param {Storage} [ls] - localStorage-compatible object (injectable for tests).
+ */
+function saveCurrentAsTemplate(name, text, ls) {
+  if (!name || !name.trim()) return false;
+  if (!text || !text.trim()) return false;
+  const storage = ls || globalThis.localStorage;
+  let userTemplates = [];
+  try {
+    const raw = storage.getItem(PROMPT_TEMPLATES_KEY);
+    if (raw) userTemplates = JSON.parse(raw);
+    if (!Array.isArray(userTemplates)) userTemplates = [];
+  } catch (_) {
+    userTemplates = [];
+  }
+  // Use a counter suffix to guarantee uniqueness when called multiple times
+  // within the same millisecond (e.g. rapid tests or back-to-back saves).
+  const uid = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  userTemplates.push({ id: `user-${uid}`, name: name.trim(), text });
+  savePromptTemplates(userTemplates, storage);
+  return true;
+}
+
+/**
+ * Delete a user template by id. Built-in templates cannot be deleted (their
+ * ids don't start with 'user-', so this is a no-op if a built-in id is passed).
+ *
+ * @param {string} id - The template id to delete.
+ * @param {Storage} [ls] - localStorage-compatible object (injectable for tests).
+ */
+function deleteUserTemplate(id, ls) {
+  const storage = ls || globalThis.localStorage;
+  let userTemplates = [];
+  try {
+    const raw = storage.getItem(PROMPT_TEMPLATES_KEY);
+    if (raw) userTemplates = JSON.parse(raw);
+    if (!Array.isArray(userTemplates)) userTemplates = [];
+  } catch (_) {
+    userTemplates = [];
+  }
+  const filtered = userTemplates.filter(t => t.id !== id);
+  savePromptTemplates(filtered, storage);
+}
+
+/**
+ * Render the template dropdown panel contents and attach event listeners.
+ * Called when the panel is opened or when templates change.
+ */
+function renderTemplateDropdown() {
+  const panel = document.getElementById('promptTemplatePanel');
+  if (!panel) return;
+  const templates = loadPromptTemplates();
+  const inputEl = document.getElementById('systemPrompt');
+
+  // Build the list items
+  const listHtml = templates.map(t => {
+    const isUser = t.id.startsWith('user-');
+    const deleteBtn = isUser
+      ? `<button class="pt-delete-btn" data-id="${escapeHtml(t.id)}" title="Delete template" aria-label="Delete template ${escapeHtml(t.name)}">✕</button>`
+      : '';
+    return `<button class="pt-item-btn" data-text="${escapeHtml(t.text)}">${escapeHtml(t.name)}</button>${deleteBtn}`;
+  }).join('');
+
+  // Save-as section
+  const saveSection = `
+    <div class="pt-save-row" id="ptSaveRow">
+      <input id="ptNameInput" class="pt-name-input" type="text" placeholder="Template name…" aria-label="New template name" maxlength="60" />
+      <button id="ptSaveBtn" class="pt-save-btn">Save</button>
+    </div>`;
+
+  panel.innerHTML = `<div class="pt-list">${listHtml}</div>${saveSection}`;
+
+  // Apply template on item click
+  panel.querySelectorAll('.pt-item-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      applyTemplate(btn.dataset.text, inputEl);
+      panel.hidden = true;
+    });
+  });
+
+  // Delete user template
+  panel.querySelectorAll('.pt-delete-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteUserTemplate(btn.dataset.id);
+      renderTemplateDropdown(); // re-render after delete
+    });
+  });
+
+  // Save current as template
+  const saveBtn = panel.querySelector('#ptSaveBtn');
+  const nameInput = panel.querySelector('#ptNameInput');
+  if (saveBtn && nameInput) {
+    saveBtn.addEventListener('click', () => {
+      const name = nameInput.value.trim();
+      const text = inputEl ? inputEl.value : '';
+      if (saveCurrentAsTemplate(name, text)) {
+        nameInput.value = '';
+        renderTemplateDropdown(); // re-render to show new template
+      } else {
+        nameInput.focus();
+      }
+    });
+    // Allow Enter in the name field to save
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); }
+    });
+  }
+}
+
 // ─── Test hook (Node only) ────────────────────────────────────────────────────
 // Export pure helper functions so the Node test runner (`node --test`) can import
 // and unit-test them. This block is a no-op in the browser: `module` is undefined
@@ -2690,6 +3213,66 @@ if (typeof module !== 'undefined' && module.exports) {
     applySidebarCollapsed,
     _testToggle,
     _testInit,
+    // Embeddings-based memory search helpers (#16 Ph3)
+    cosineSimilarity,
+    embedTexts,
+    embedMemorySearch,
+    // Expose appConfig for tests that need to set has_embeddings
+    appConfig,
+    // Test shim: embedMemorySearch that uses an injectable fetch AND the module's
+    // appConfig so tests can toggle appConfig.has_embeddings freely.
+    _embedMemorySearchTest: (query, k, fetchFn) => embedMemorySearch(query, k, fetchFn),
+    // Prompt Templates helpers (injectable localStorage for tests)
+    loadPromptTemplates,
+    applyTemplate,
+    saveCurrentAsTemplate,
+    deleteUserTemplate,
+    BUILTIN_TEMPLATES,
+    PROMPT_TEMPLATES_KEY,
+    // getRelevantChunks test hook: injectable chunks/fetch/semanticFlag for unit testing
+    _getRelevantChunksTest: (chunks, query, topK, fetchFn, semanticFlag) =>
+      getRelevantChunks(query, topK, chunks, fetchFn, semanticFlag),
+    // Expose semanticSearchEnabled state for tests
+    get semanticSearchEnabled() { return semanticSearchEnabled; },
+    set semanticSearchEnabled(v) { semanticSearchEnabled = v; },
+    // Streaming + tool calling test hook — injects callFn/streamFn for isolation.
+    // Patches getEnabledTools to return a minimal stub so the tool loop is
+    // exercised even without a live TOOL_REGISTRY match.
+    _runWithToolsTest: async (basePayload, conv, opts) => {
+      // Temporarily inject a no-op tool so the loop engages (otherwise
+      // getEnabledTools() returns [] and runWithTools short-circuits to a plain
+      // callFn call, bypassing the tool-round / stream-final-answer logic).
+      const _orig = Object.assign({}, TOOL_REGISTRY);
+      TOOL_REGISTRY._test_noop = {
+        definition: {
+          type: 'function',
+          function: { name: 'test_tool', description: 'test', parameters: { type: 'object', properties: {}, required: [] } },
+        },
+        async run() { return 'ok'; },
+      };
+      // Force context7/memory gates open so the stub tool isn't filtered out.
+      const _origCfg = { ...appConfig };
+      appConfig.has_context7 = true;
+      appConfig.has_obsidian = false;
+      appConfig.has_mcp_bridge = false;
+      try {
+        return await runWithTools(
+          basePayload,
+          conv ?? { appendChild: () => {}, scrollTop: 0, scrollHeight: 0 },
+          opts,
+        );
+      } finally {
+        delete TOOL_REGISTRY._test_noop;
+        Object.assign(appConfig, _origCfg);
+      }
+    },
+    // MCP bridge helpers exposed for unit testing
+    callMcpTool,
+    MCP_TOOLS,
+    getEnabledTools,
+    // Auto Model Router (#19) — pure classifier + tier map
+    routeModel,
+    TIER_MAP,
   };
 }
 

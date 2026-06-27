@@ -42,6 +42,18 @@ def load_config():
         # Obsidian "second brain" long-term memory
         'obsidian_vault_path': os.getenv('OBSIDIAN_VAULT_PATH', ''),
         'obsidian_memory_subdir': os.getenv('OBSIDIAN_MEMORY_SUBDIR', 'USAi'),
+        # Embeddings-based memory search (#16 Ph3)
+        'embed_model': os.getenv('EMBED_MODEL', ''),
+        'embed_input_type': os.getenv('EMBED_INPUT_TYPE', 'search_document'),
+        # Obsidian-MCP bridge (#16 Ph2) — optional Node subprocess for rich vault ops
+        'obsidian_mcp_path': os.getenv('OBSIDIAN_MCP_PATH', ''),
+        'obsidian_node_path': os.getenv('OBSIDIAN_NODE_PATH', 'node'),
+        # Auto model router tier overrides (#19 fix) — optional; when set, the
+        # client-side TIER_MAP uses these ids instead of the hardcoded defaults.
+        # Useful for deployments whose gateway uses different model aliases.
+        'tier_high_model':   os.getenv('TIER_HIGH_MODEL',   ''),
+        'tier_medium_model': os.getenv('TIER_MEDIUM_MODEL', ''),
+        'tier_low_model':    os.getenv('TIER_LOW_MODEL',    ''),
     }
     global CONFIG
     CONFIG = values
@@ -89,6 +101,98 @@ def _resolve_memory_file(memory_dir, rel_path):
     except ValueError:
         return None
     return candidate
+
+
+# ── Obsidian-MCP bridge (#16 Phase 2) ────────────────────────────────────────
+
+# Allowlist of obsidian-mcp tool names the server is willing to forward.
+# This prevents the model from calling destructive or unintended operations.
+MCP_TOOL_ALLOWLIST = {
+    "create_note", "edit_note", "read_note", "search_vault",
+    "add_tags", "remove_tags", "rename_tag", "move_note",
+    "list_available_vaults", "create_directory", "delete_note",
+}
+
+
+def _mcp_enabled():
+    """Return True iff the MCP bridge is fully configured and the vault exists.
+
+    Requires OBSIDIAN_MCP_PATH to point at an existing file AND the Obsidian
+    vault to be reachable via get_memory_dir().  Both conditions must be true
+    because the bridge needs a vault path to pass to the subprocess.
+    """
+    mcp_path = (CONFIG.get('obsidian_mcp_path') or '').strip()
+    if not mcp_path:
+        return False
+    if not Path(mcp_path).exists():
+        return False
+    return get_memory_dir() is not None
+
+
+def call_obsidian_mcp(tool_name, arguments, timeout=10):
+    """Invoke an obsidian-mcp tool via a short-lived Node subprocess.
+
+    Spawns:  <node_path> <mcp_path> <vault_path>
+    Sends a JSON-RPC 2.0 request on stdin; reads the response from stdout.
+
+    Returns (result_text, None) on success, or (None, error_string) on any
+    failure — TimeoutExpired, FileNotFoundError, JSON parse error, or a
+    JSON-RPC error object in the response.  Never raises.
+
+    The vault_path is taken from CONFIG (admin-configured), not from
+    user-supplied input, so there is no path-traversal risk here.
+    """
+    mcp_path = (CONFIG.get('obsidian_mcp_path') or '').strip()
+    node_path = (CONFIG.get('obsidian_node_path') or 'node').strip()
+    vault_path = (CONFIG.get('obsidian_vault_path') or '').strip()
+
+    rpc_request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": tool_name, "arguments": arguments},
+    }
+
+    try:
+        completed = subprocess.run(  # nosec B603 B607 — node_path/mcp_path/vault_path are admin-configured env vars, not user input
+            [node_path, mcp_path, vault_path],
+            input=json.dumps(rpc_request).encode(),
+            capture_output=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return None, f"obsidian-mcp timed out after {timeout}s"
+    except FileNotFoundError as exc:
+        return None, f"obsidian-mcp not found: {exc}"
+    except Exception as exc:  # pragma: no cover
+        return None, f"obsidian-mcp error: {exc}"
+
+    # Parse the first valid JSON line from stdout.
+    stdout = (completed.stdout or b'').decode('utf-8', errors='replace')
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        # JSON-RPC error → surface it as an error string.
+        if 'error' in data:
+            msg = data['error'].get('message', str(data['error']))
+            return None, msg
+        # Success — extract text from result.content[0].text (obsidian-mcp format)
+        result = data.get('result', {})
+        content = result.get('content', [])
+        if content and isinstance(content, list):
+            text = content[0].get('text', '') if isinstance(content[0], dict) else str(content[0])
+        else:
+            text = str(result)
+        return text, None
+
+    # No parseable JSON line found — treat as an error.
+    stderr = (completed.stderr or b'').decode('utf-8', errors='replace').strip()
+    return None, f"obsidian-mcp returned no JSON (stderr: {stderr[:200]})"
 
 
 # RFC 1918 and other reserved/private network ranges that must never be proxied.
@@ -377,6 +481,16 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             'has_api_key': bool(CONFIG.get('api_key')),
             'has_context7': bool(CONFIG.get('context7_api_key') and CONFIG.get('context7_base_url')),
             'has_obsidian': get_memory_dir() is not None,
+            # True when an embeddings model is configured (enables semantic search in the UI)
+            'has_embeddings': bool(CONFIG.get('embed_model')),
+            # True when the Obsidian-MCP bridge is fully configured (#16 Ph2)
+            'has_mcp_bridge': _mcp_enabled(),
+            # Optional client-side model router tier overrides (#19 fix).
+            # Non-secret: these are model ids, not credentials. Empty string means
+            # the client falls back to its hardcoded verified defaults.
+            'tier_high_model':   CONFIG.get('tier_high_model',   ''),
+            'tier_medium_model': CONFIG.get('tier_medium_model', ''),
+            'tier_low_model':    CONFIG.get('tier_low_model',    ''),
         }
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
@@ -447,7 +561,7 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({'error': str(err)}).encode('utf-8'))
 
-    # ── Obsidian "second brain" memory ──────────────────────────────────────
+    # ── Obsidian \"second brain\" memory ──────────────────────────────────────
     def _json_response(self, status, payload):
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
@@ -503,7 +617,13 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         results.sort(key=lambda r: r['score'], reverse=True)
         results = results[:k]
         add_log('info', 'memory', f'search "{query}" → {len(results)} hit(s)')
-        self._json_response(200, {'ok': True, 'query': query, 'results': results})
+        self._json_response(200, {
+            'ok': True,
+            'query': query,
+            'results': results,
+            # Let the frontend know whether /embeddings re-ranking is available.
+            'embed_available': bool(CONFIG.get('embed_model')),
+        })
 
     def _memory_list(self):
         """GET /memory/list — list saved memory notes (newest first)."""
@@ -600,8 +720,109 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         except Exception as err:
             self._json_response(500, {'error': str(err)})
             return
-        add_log('info', 'memory', f'saved memory "{title}" → {target.name}')
+        add_log('info', 'memory', f'saved memory "{title}" -> {target.name}')
         self._json_response(200, {'ok': True, 'path': target.name, 'title': title})
+
+    # ── Obsidian-MCP bridge handlers (#16 Phase 2) ────────────────────────────
+
+    def _read_mcp_body(self):
+        """Read and parse the JSON request body for MCP endpoints.
+
+        Enforces a 5 MB body limit (returns None and sends 413 on oversize).
+        Returns the parsed dict, or None if the read/parse fails (response already sent).
+        """
+        content_length = int(self.headers.get('Content-Length', 0))
+        if content_length > 5 * 1024 * 1024:
+            self._json_response(413, {'error': 'Payload too large'})
+            return None
+        try:
+            body = self.rfile.read(content_length).decode('utf-8')
+            return json.loads(body)
+        except Exception as exc:
+            self._json_response(400, {'error': str(exc)})
+            return None
+
+    def _post_mcp_tool(self):
+        """POST /mcp/tool — generic allowlisted obsidian-mcp tool call.
+
+        Body: { "tool": "<tool_name>", "arguments": { ... } }
+        Returns: { "ok": true, "result": "..." }  or  { "error": "..." }
+        """
+        if not _mcp_enabled():
+            self._json_response(400, {'error': 'MCP bridge not configured'})
+            return
+        data = self._read_mcp_body()
+        if data is None:
+            return
+        tool = (data.get('tool') or '').strip()
+        if tool not in MCP_TOOL_ALLOWLIST:
+            self._json_response(400, {'error': f'Tool "{tool}" not allowed'})
+            return
+        arguments = data.get('arguments') or {}
+        result, err = call_obsidian_mcp(tool, arguments)
+        if err is not None:
+            self._json_response(502, {'error': err})
+            return
+        add_log('info', 'mcp', f'tool "{tool}" succeeded')
+        self._json_response(200, {'ok': True, 'result': result})
+
+    def _post_mcp_rename_tag(self):
+        """POST /mcp/rename-tag — convenience endpoint for rename_tag.
+
+        Body: { "oldTag": "foo", "newTag": "bar" }
+        """
+        if not _mcp_enabled():
+            self._json_response(400, {'error': 'MCP bridge not configured'})
+            return
+        data = self._read_mcp_body()
+        if data is None:
+            return
+        old_tag = (data.get('oldTag') or '').strip()
+        new_tag = (data.get('newTag') or '').strip()
+        if not old_tag or not new_tag:
+            self._json_response(400, {'error': 'oldTag and newTag are required'})
+            return
+        result, err = call_obsidian_mcp('rename_tag', {'oldTag': old_tag, 'newTag': new_tag})
+        if err is not None:
+            self._json_response(502, {'error': err})
+            return
+        add_log('info', 'mcp', f'rename_tag "{old_tag}" -> "{new_tag}"')
+        self._json_response(200, {'ok': True, 'result': result})
+
+    def _post_mcp_move_note(self):
+        """POST /mcp/move-note — convenience endpoint for move_note.
+
+        Body: { "source": "note.md", "destination": "folder/note.md" }
+        """
+        if not _mcp_enabled():
+            self._json_response(400, {'error': 'MCP bridge not configured'})
+            return
+        data = self._read_mcp_body()
+        if data is None:
+            return
+        source = (data.get('source') or '').strip()
+        destination = (data.get('destination') or '').strip()
+        if not source or not destination:
+            self._json_response(400, {'error': 'source and destination are required'})
+            return
+        result, err = call_obsidian_mcp('move_note', {'source': source, 'destination': destination})
+        if err is not None:
+            self._json_response(502, {'error': err})
+            return
+        add_log('info', 'mcp', f'move_note "{source}" -> "{destination}"')
+        self._json_response(200, {'ok': True, 'result': result})
+
+    def _get_mcp_vaults(self):
+        """GET /mcp/vaults — list available Obsidian vaults via obsidian-mcp."""
+        if not _mcp_enabled():
+            self._json_response(400, {'error': 'MCP bridge not configured'})
+            return
+        result, err = call_obsidian_mcp('list_available_vaults', {})
+        if err is not None:
+            self._json_response(502, {'error': err})
+            return
+        add_log('info', 'mcp', 'list_available_vaults succeeded')
+        self._json_response(200, {'ok': True, 'result': result})
 
     def do_GET(self):
         request_path = self.path.split('?', 1)[0]
@@ -614,6 +835,7 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             '/memory/search': self._memory_search,
             '/memory/list': self._memory_list,
             '/memory/read': self._memory_read,
+            '/mcp/vaults': self._get_mcp_vaults,
         }
 
         handler = routes.get(request_path)
@@ -741,6 +963,90 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({'error': str(err)}).encode('utf-8'))
 
+    def _post_embeddings(self):
+        """POST /embeddings — proxy an embeddings request to the upstream API.
+
+        Body: { input: string[] }  (OpenAI-compatible).
+        Returns the upstream /v1/embeddings response verbatim.
+
+        Guards:
+        - 400 if EMBED_MODEL is not configured.
+        - 400 if 'input' is missing or not a list.
+        - 400 if input list is empty or too long (> 512 strings).
+        - 502 if base_url passes SSRF check fails.
+        - 413 if the payload exceeds 1 MB.
+        """
+        embed_model = CONFIG.get('embed_model', '')
+        if not embed_model:
+            self._json_response(400, {'error': 'EMBED_MODEL not configured'})
+            return
+
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 1 * 1024 * 1024:  # 1 MB max
+                self._json_response(413, {'error': 'Payload too large'})
+                return
+            body = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(body)
+        except Exception as err:
+            self._json_response(400, {'error': str(err)})
+            return
+
+        input_texts = data.get('input')
+        if not isinstance(input_texts, list) or len(input_texts) == 0:
+            self._json_response(400, {'error': '"input" must be a non-empty array'})
+            return
+        if len(input_texts) > 512:
+            self._json_response(400, {'error': '"input" exceeds maximum of 512 strings'})
+            return
+
+        base_url = CONFIG.get('base_url', '').rstrip('/')
+        if not base_url:
+            self._json_response(503, {'error': 'base_url not configured'})
+            return
+
+        embed_url = base_url + '/v1/embeddings'
+
+        # SSRF guard — base_url is admin-configured; still must be a public URL.
+        if not CONFIG.get('_test_allow_loopback') and not is_safe_upstream_url(embed_url):
+            self._json_response(502, {'error': 'embed URL rejected by SSRF guard'})
+            return
+
+        api_key = CONFIG.get('api_key', '')
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        }
+        if api_key:
+            headers['Authorization'] = 'Bearer ' + api_key
+
+        # Resolve optional input_type (Cohere-style, ignored by OpenAI)
+        input_type = CONFIG.get('embed_input_type', 'search_document')
+        payload = {'model': embed_model, 'input': input_texts}
+        if input_type:
+            payload['input_type'] = input_type
+
+        try:
+            req = Request(embed_url,
+                          data=json.dumps(payload).encode('utf-8'),
+                          headers=headers,
+                          method='POST')
+            with urlopen(req) as resp:  # nosec B310 — embed_url validated by is_safe_upstream_url()
+                resp_body = resp.read()
+                resp_status = resp.status
+            self.send_response(resp_status)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(resp_body)
+        except HTTPError as err:
+            err_body = err.read()
+            self.send_response(err.code)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(err_body)
+        except URLError as err:
+            self._json_response(502, {'error': str(err)})
+
     def do_POST(self):
         request_path = self.path.split('?', 1)[0]
         routes = {
@@ -751,6 +1057,10 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             '/new-chat-session': self._post_new_chat_session,
             '/chunk-cache': self._post_chunk_cache,
             '/memory/save': self._memory_save,
+            '/embeddings': self._post_embeddings,
+            '/mcp/tool': self._post_mcp_tool,
+            '/mcp/rename-tag': self._post_mcp_rename_tag,
+            '/mcp/move-note': self._post_mcp_move_note,
         }
 
         handler = routes.get(request_path)

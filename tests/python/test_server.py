@@ -172,6 +172,14 @@ class LoadConfigTests(unittest.TestCase):
         self.assertEqual(server.CONFIG['default_model'], 'gpt-test')
         self.assertEqual(server.CONFIG['obsidian_memory_subdir'], 'USAi')
         self.assertEqual(server.CONFIG['context7_path'], '/v1/context')
+        # MCP bridge keys added in Sprint 09 (#16 Ph2) — verify defaults are loaded
+        self.assertEqual(server.CONFIG['obsidian_mcp_path'], '')
+        self.assertEqual(server.CONFIG['obsidian_node_path'], 'node')
+        # Auto model router tier overrides (#19 fix) — verify defaults are loaded
+        # (empty strings so TIER_MAP falls back to its hardcoded verified ids)
+        self.assertEqual(server.CONFIG['tier_high_model'],   '')
+        self.assertEqual(server.CONFIG['tier_medium_model'], '')
+        self.assertEqual(server.CONFIG['tier_low_model'],    '')
 
 
 class IsSafeUpstreamUrlTests(unittest.TestCase):

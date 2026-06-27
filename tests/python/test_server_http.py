@@ -139,6 +139,22 @@ class ConfigEndpointTests(ServerHTTPTestBase):
         self.assertNotIn('api_key', body)
         self.assertNotIn('context7_api_key', body)
 
+    def test_config_includes_tier_model_fields(self):
+        """GET /config exposes tier_*_model fields so the client TIER_MAP can
+        pick up operator overrides set via TIER_HIGH/MEDIUM/LOW_MODEL env vars.
+        When unset (empty), the fields are still present so the client knows
+        no override is in force and falls back to its hardcoded verified defaults.
+        (#19 fix — these keys were missing from _get_config before this patch.)
+        """
+        status, body = _request('GET', self.url('/config'))
+        self.assertEqual(status, 200)
+        self.assertIn('tier_high_model',   body)
+        self.assertIn('tier_medium_model', body)
+        self.assertIn('tier_low_model',    body)
+        # Default test server has no TIER_*_MODEL set — keys must be empty strings.
+        self.assertEqual(body['tier_high_model'],   '')
+        self.assertEqual(body['tier_medium_model'], '')
+
 
 class MemoryLifecycleTests(ServerHTTPTestBase):
     def test_save_then_list_read_and_search(self):
