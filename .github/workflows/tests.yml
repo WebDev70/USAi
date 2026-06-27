@@ -52,7 +52,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install runtime dependency + dev-only coverage tool
-        run: python -m pip install --upgrade pip && pip install -r requirements.txt coverage
+        # Split into two separate pip invocations so the hash-pinned requirements.txt
+        # (which activates --require-hashes mode) does not contaminate the bare
+        # `coverage` install. This mirrors what `make setup` does locally.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install coverage
       - name: Syntax check (server.py)
         run: python -m py_compile server.py
       - name: Run Python tests with branch coverage gate
