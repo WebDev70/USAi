@@ -204,27 +204,55 @@ Governance Board audit
 
 ## Relationship to the RAIL pipeline
 
-The Governance Board sits **outside** the per-task RAIL loop but **feeds** it:
+The Governance Board sits **outside** the per-task RAIL loop but **feeds** it.
+The two levels of governance operate at complementary scopes:
 
 ```
-            ┌─────────────────────────────────────┐
-            │        GOVERNANCE BOARD             │
-            │  (periodic, whole-project review)   │
-            │  SBA · SA · SE · SPMS               │
-            └──────────────┬──────────────────────┘
-                           │ findings → backlog.md + self-improvement
-                           ▼
-            ┌─────────────────────────────────────┐
-            │           RAIL PIPELINE             │
-            │  (per-task, iterating loop)         │
-            │  PO → Planner → SME → Test →        │
-            │  Security → Review → CI             │
-            └─────────────────────────────────────┘
+             ┌─────────────────────────────────────┐
+             │        GOVERNANCE BOARD             │
+             │  (periodic, whole-project review)   │
+             │  SBA · SA · SE · SPMS               │
+             └──────────────┬──────────────────────┘
+                            │ findings → backlog.md + self-improvement
+                            ↓
+             ┌─────────────────────────────────────┐
+             │           RAIL PIPELINE             │
+             │  (per-task, iterating loop)         │
+             │  PO → Planner → SME → Test →        │
+             │  Security → Review → CI             │
+             └─────────────────────────────────────┘
 ```
 
-The RAIL pipeline's Continuous Improvement role (Role 5) produces **micro-learnings**
+### Shift-left governance (per-requirement, inside RAIL)
+
+A *per-requirement* subset of the SBA/SA rubric is applied during **`/spec`
+Step 2b** — before any implementation begins:
+
+| `/spec` check | Governance source | What it catches early |
+|---------------|-------------------|-----------------------|
+| G-1 AC testability | SBA-3 | Vague, non-binary ACs that would fail the Definition of Done |
+| G-2 Scope / value | SBA-2 | Scope creep or gold-plating beyond the stated goal |
+| G-3 Dependency coherence | SBA-5-lite | Undeclared prerequisites on open backlog items |
+
+These findings are **advisory** — recorded in the spec’s §4b but do not block
+Status: Ready. The intent is to catch requirement-level failures cheaply, at the
+moment of authoring, rather than at sprint-close audit.
+
+### Full Governance Board (macro-assessment, sprint cadence)
+
+The full four-role `/govern` audit remains a **sprint-close / on-demand** activity.
+Its rubrics (SBA cross-roadmap coherence, SA forward readiness and principle
+adherence, SE code quality and innovation, SPMS process maturity) all require a
+body of completed work to assess — they cannot be meaningfully evaluated per-spec
+and would create excessive friction if run at that cadence.
+
+The RAIL pipeline’s Continuous Improvement role (Role 5) produces **micro-learnings**
 (per-task retros). The Governance Board produces **macro-assessments** (project health).
-Both feed `backlog.md` and the self-improvement log, and both write to the Obsidian vault.
+The `/spec` shift-left gate bridges the two: requirement soundness is checked early,
+while structural and process health is assessed periodically.
+
+All three levels feed `backlog.md` and the self-improvement log, and all write to
+the Obsidian vault.
 
 ---
 

@@ -154,6 +154,18 @@ Next to the model selector, choose how hard reasoning-capable models "think" bef
 answering (Off / Low / Medium / High). Higher effort can improve hard problems but
 uses more tokens and is slower. Models that don't support reasoning ignore this.
 
+**How to verify reasoning actually engaged:** look for two signals in the assistant reply:
+1. **💭 Thinking block** — a collapsible block above the answer showing the model's
+   chain-of-thought. Only appears when the model returned reasoning content.
+2. **Reasoning token count** — the per-message note beneath each reply now shows
+   `… · 32 reasoning tokens` (example) when the API reports non-zero
+   `reasoning_tokens`. A count of zero, or no count at all, means the model did not
+   use reasoning — the setting was either unsupported or the effort level was too low
+   to trigger it on that particular message.
+
+If you set **High** and neither signal appears, the model you selected does not
+support the `reasoning_effort` parameter and silently ignored it.
+
 ### Smart parameter handling
 Some models reject certain parameters (for example, several reasoning models
 deprecate `temperature`). USAi **detects this automatically** and omits unsupported
@@ -429,6 +441,32 @@ affect functionality and can be ignored.
 - Reload the browser tab.
 - Look in the **Debug Logs** panel for errors.
 
+### How do I preserve server logs across restarts?
+
+By default, USAi Chat keeps logs in memory only — they are lost when the server
+stops. To write **persistent, timestamped JSONL log files** to a `logs/` directory
+in the project, enable log file persistence in your `.env`:
+
+```
+PERSIST_LOGS=true
+LOG_FILE_MAX=20    # optional — max number of session log files to keep (default 20)
+```
+
+Restart the server. From then on, each run creates a file like:
+
+```
+logs/2026-06-27-143000-server.jsonl
+```
+
+Each line is a JSON object:
+
+```json
+{"timestamp": "2026-06-27T14:30:00.123", "level": "info", "component": "memory", "message": "search \"foo\" → 2 hit(s)", "details": {}}
+```
+
+Older session files are automatically deleted when the count exceeds `LOG_FILE_MAX`.
+Log files are git-ignored — they won't appear in `git status`.
+
 ### How do I tell if the server is up without opening the browser?
 
 ```bash
@@ -464,6 +502,56 @@ decide whether the container is ready. No secrets are ever returned by this endp
 |----------|--------|
 | **Enter** / **Ctrl+Enter** | Send message |
 | **Shift+Enter** | New line (don't send) |
+
+---
+
+## 11. Raw API Response Capture (developer feature)
+
+This is an **opt-in developer/operator tool** — it is off by default and does
+not affect the chat experience.
+
+When enabled, USAi saves the complete JSON envelope returned by the upstream API
+for every non-streaming chat request to `.raw_responses/` on the server. Each
+file contains the full response body (`id`, `model`, `usage`, `finish_reason`,
+`choices`, etc.) plus the HTTP status, endpoint path, model name, and timestamp.
+
+### How to enable
+
+Add to your `.env` file:
+
+```
+CAPTURE_RAW_RESPONSES=true
+RAW_RESPONSES_MAX=200   # (optional) max files to keep; oldest deleted at cap
+```
+
+Restart the server. Files appear under `.raw_responses/` in your project root.
+
+### What is NOT captured
+
+- Your API key / `Authorization` header (never stored — only the response body).
+- Streaming responses (SSE capture is a separate future feature).
+
+### Browsing captures
+
+You can inspect files directly:
+
+```bash
+ls .raw_responses/
+cat .raw_responses/<filename>.json | python3 -m json.tool
+```
+
+Or via the server API:
+
+```bash
+# List all captures (metadata only)
+curl http://localhost:8000/raw-responses
+
+# Read a specific record
+curl "http://localhost:8000/raw-responses?id=<filename>"
+
+# Delete all captures
+curl -X DELETE http://localhost:8000/raw-responses
+```
 
 ---
 

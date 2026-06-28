@@ -332,6 +332,26 @@ catching failures before they leave a developer's machine (backlog **#28**).
    narrative split into `docs/tooling/continue.md` and `docs/tooling/cline.md`;
    this doc renamed from `testing-and-agents-strategy.md` to be
    harness-agnostic.
+8. **RAIL hardening Phase 1** (done, backlog #35, 2026-06-24): five phases closing
+   trust-vs-verification gaps — `scripts/spec-check.sh` (spec↔build contract),
+   TDD Red receipt in `/build`, memory-note existence gate in `/loop`, Python
+   branch coverage + ratchet (`scripts/ratchet-check.sh`, `.coverage-thresholds`),
+   doc-consistency check (`scripts/doc-consistency-check.sh`), change-type
+   classifier in `/spec`, escalation memory note in `/loop`, security depth
+   (hash-pinned `python-dotenv`, memory-note secret scan in `security-scan.sh`).
+9. **Governance Board + shift-left governance** (done, backlog #46, 2026-06-27):
+   four-role Governance Board (`docs/governance.md`, `.clinerules/workflows/govern.md`)
+   with sprint-close cadence; per-requirement SBA/SA-lite pre-check added to
+   `/spec` Step 2b (G-1 AC testability · G-2 scope/value · G-3 dependency
+   coherence); spec template gains `§4b` findings table.
+10. **RAIL hardening Phase 2** (done, backlog #47, 2026-06-27): seven workflow
+    improvements — §6e SME cross-reference labels + §6f shift-left findings gate
+    in `/review`; prevention-rule recall receipt in `/build` and `/spec`; spec
+    amendment mini-protocol + `## Spec changelog` in `/build`/`/spec` template;
+    clean-state guarantee (stash/revert) in `/loop` escalation; coverage ratchet
+    self-advancement rule (≥5pp threshold) in `/loop` + `govern.md` SE-4; mutation
+    testing cadence wired into `/loop` retro + `govern.md` SE-2; `getEnabledTools`
+    duplication fixed in `.clinerules/rail-pipeline.md`.
 
 ---
 

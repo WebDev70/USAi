@@ -117,7 +117,10 @@ Unmatched paths fall through to `SimpleHTTPRequestHandler` (static file serving)
 | `GET` | `/memory/search` | Full-text search across memory notes |
 | `GET` | `/memory/read` | Read a single memory note |
 | `GET` | `/logs` | Tail the in-memory log buffer |
-| `GET` | `/chunk-cache` | List cached file chunks |
+| `GET` | `/raw-responses` | List raw API response capture metadata (newest-first) |
+| `GET` | `/raw-responses?id=` | Read one full raw-response capture record |
+| `DELETE` | `/raw-responses` | Clear all raw-response capture records |
+| `DELETE` | `/raw-responses?id=` | Delete one raw-response capture record |
 | `POST` | `/proxy` | Proxy chat completions to upstream (streaming + non-streaming) |
 | `POST` | `/context7` | Proxy Context7 documentation queries |
 | `POST` | `/memory/save` | Save a new Obsidian memory note |
@@ -147,12 +150,22 @@ and **never reach the browser**.
 | Archived sessions | `.chat_sessions/<id>.json` | JSON | Saved chat sessions |
 | File chunks | `.chunk_cache/` | JSON files | Per-file text chunks for RAG |
 | Obsidian memory | `<OBSIDIAN_VAULT_PATH>/<OBSIDIAN_MEMORY_SUBDIR>/memories/` | Markdown | Long-term memory notes with YAML frontmatter |
+| Raw API responses | `.raw_responses/<timestamp>_<uid>.json` | JSON | Full upstream response envelopes (opt-in; `CAPTURE_RAW_RESPONSES=true`) |
+| Server logs | `logs/<timestamp>-server.jsonl` | JSONL | Per-session structured log lines (opt-in; `PERSIST_LOGS=true`) |
 
 ### 3e. Logging
 
-`add_log(level, msg)` appends to an in-memory `LOGS` list (capped at 500 entries)
-and writes to `stderr`. Log level, component tag, and timestamp are included.
-Secrets are never logged. Accessible via `GET /logs`.
+`add_log(level, component, message, details=None)` appends to an in-memory
+`server_logs` list (capped at `MAX_LOGS=1000`) and `print()`s to stdout.
+Log level, component tag, and timestamp are included. Secrets are never logged.
+The buffer is accessible via `GET /logs` and can be cleared via `POST /logs/clear`.
+
+**Optional disk persistence (#49):** When `PERSIST_LOGS=true`, every `add_log()` call
+also appends a JSON line to `logs/<YYYY-MM-DD-HHMMSS>-server.jsonl` (one file per
+server run). Files are rotated by mtime — the oldest are pruned when the count
+exceeds `LOG_FILE_MAX` (default 20). Write failures are swallowed so a logging
+disk error can never interrupt request handling. The `persist_logs` boolean is
+exposed via `GET /config` (never the raw flag value).
 
 ---
 
