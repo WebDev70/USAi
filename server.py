@@ -17,6 +17,13 @@ CACHE_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = PROJECT_ROOT / 'chat_history.json'
 SESSIONS_DIR = PROJECT_ROOT / '.chat_sessions'
 SESSIONS_DIR.mkdir(exist_ok=True)
+RAW_RESPONSES_DIR = PROJECT_ROOT / '.raw_responses'
+RAW_RESPONSES_DIR.mkdir(exist_ok=True)
+LOGS_DIR = PROJECT_ROOT / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+# Per-session log file stamp: set once at import so every add_log() call within
+# a single server run writes to the same JSONL file (e.g. 2026-06-27-143000-server.jsonl).
+_LOG_SESSION_STAMP = datetime.now().strftime('%Y-%m-%d-%H%M%S')
 
 # In-memory log storage
 server_logs = []
@@ -54,6 +61,14 @@ def load_config():
         'tier_high_model':   os.getenv('TIER_HIGH_MODEL',   ''),
         'tier_medium_model': os.getenv('TIER_MEDIUM_MODEL', ''),
         'tier_low_model':    os.getenv('TIER_LOW_MODEL',    ''),
+        # Raw API response capture (#48-v1) — opt-in, off by default.
+        # CAPTURE_RAW_RESPONSES=true|1|yes to enable.
+        'capture_raw_responses': os.getenv('CAPTURE_RAW_RESPONSES', '').lower() in ('1', 'true', 'yes'),
+        'raw_responses_max': max(1, int(os.getenv('RAW_RESPONSES_MAX', '200') or '200')),
+        # Log file persistence (#49) — opt-in, off by default.
+        # PERSIST_LOGS=true|1|yes to write JSONL log files to logs/.
+        'persist_logs': os.getenv('PERSIST_LOGS', '').lower() in ('1', 'true', 'yes'),
+        'log_file_max': max(1, int(os.getenv('LOG_FILE_MAX', '20') or '20')),
     }
     global CONFIG
     CONFIG = values
@@ -268,6 +283,87 @@ def add_log(level, component, message, details=None):
     if len(server_logs) > MAX_LOGS:
         server_logs.pop(0)
     print(f"[{level}] {component}: {message}")
+    _persist_log(log_entry)
+
+
+def _persist_log(entry):
+    """Append one log entry as a JSON line to the session JSONL file in logs/.
+
+    Opt-in: does nothing when PERSIST_LOGS is not enabled.
+    Write failures are always swallowed — a logging failure must never break
+    request handling. Secrets are never logged (same guarantee as add_log).
+    Rotation: prune the oldest *.jsonl files (excluding the current session file)
+    beyond log_file_max before each write so logs/ never grows unbounded.
+    The log filename is server-generated (never from user input), so there is
+    no path-traversal risk here.
+    """
+    if not CONFIG.get('persist_logs'):
+        return
+    try:
+        cap = max(1, int(CONFIG.get('log_file_max') or 20))
+        log_file = LOGS_DIR / f'{_LOG_SESSION_STAMP}-server.jsonl'
+        # Rotation: enforce cap on number of session JSONL files, keeping the
+        # current session file alive regardless of count.
+        existing = sorted(
+            LOGS_DIR.glob('*.jsonl'),
+            key=lambda p: p.stat().st_mtime,
+        )
+        others = [p for p in existing if p != log_file]
+        while len(others) >= cap:
+            others.pop(0).unlink(missing_ok=True)
+        with log_file.open('a', encoding='utf-8') as fh:
+            fh.write(json.dumps(entry) + '\n')
+    except Exception:  # nosec — persist failure must never break the caller
+        pass
+
+
+def _capture_raw_response(meta, raw_bytes):
+    """Write one raw-response record to RAW_RESPONSES_DIR (opt-in, non-streaming only).
+
+    meta: dict containing timestamp, method, path, status, model (str or None).
+    raw_bytes: the upstream response body bytes — stored verbatim (parsed as JSON
+    when possible; falls back to a UTF-8 string on decode error).
+
+    Callers must wrap this in try/except — a capture failure must never break the
+    proxy response that is already being sent to the client.
+
+    Security: the Authorization header / API key is NEVER passed here and is never
+    stored. Only response-body content and neutral request metadata are persisted.
+    """
+    import secrets as _secrets
+    # Generate a collision-safe filename from the timestamp + 4 random hex bytes.
+    ts_safe = meta['timestamp'].replace(':', '-').replace('.', '-')
+    uid = _secrets.token_hex(4)
+    filename = f"{ts_safe}_{uid}.json"
+    dest = RAW_RESPONSES_DIR / filename  # server-generated name — no user input
+
+    try:
+        raw_parsed = json.loads(raw_bytes.decode('utf-8'))
+    except Exception:
+        raw_parsed = raw_bytes.decode('utf-8', errors='replace')
+
+    record = {
+        'id': filename,
+        'timestamp': meta['timestamp'],
+        'method': meta['method'],
+        'path': meta['path'],
+        'status': meta['status'],
+        'streamed': False,
+        'model': meta.get('model'),
+        'raw': raw_parsed,
+    }
+
+    # Rotation: enforce the cap by deleting the oldest file(s) first.
+    cap = max(1, int(CONFIG.get('raw_responses_max') or 200))
+    existing = sorted(
+        RAW_RESPONSES_DIR.glob('*.json'),
+        key=lambda p: p.stat().st_mtime,
+    )
+    while len(existing) >= cap:
+        existing.pop(0).unlink(missing_ok=True)
+
+    dest.write_text(json.dumps(record), encoding='utf-8')
+    add_log('info', 'capture', f'Raw response captured: {filename} status={meta["status"]}')
 
 
 class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
@@ -278,10 +374,18 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
     disable_nagle_algorithm = True
 
     def _proxy_api(self, method, request_body=None):
-        """Proxy /api/* requests to the base_url configured in .env."""
+        """Proxy /api/* requests to the base_url configured in .env.
+
+        Every call — success, HTTP error, and network failure — is recorded via
+        add_log so the full upstream conversation is visible in the debug panel
+        and persisted to logs/*.jsonl (when PERSIST_LOGS=true).  The API key /
+        Authorization header is NEVER logged.
+        """
         config = CONFIG
         base_url = config.get('base_url', '').rstrip('/')
         if not base_url:
+            add_log('error', 'proxy', 'base_url not configured — cannot proxy request',
+                    {'method': method, 'path': self.path})
             self.send_response(503)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -294,6 +398,8 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         # This makes the nosec B310 suppression below honest.
         # _test_allow_loopback is set only by the test suite; never set in production.
         if not CONFIG.get('_test_allow_loopback') and not is_safe_upstream_url(upstream_url):
+            add_log('error', 'proxy', 'SSRF guard rejected upstream URL',
+                    {'method': method, 'path': self.path})
             self.send_response(502)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -309,14 +415,22 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         if auth:
             headers['Authorization'] = auth
 
-        # Detect a streaming request so we can relay bytes as they arrive
+        # Detect a streaming request so we can relay bytes as they arrive.
+        # Also extract model name for log context (never the key).
         wants_stream = False
+        req_model = None
         if request_body:
             try:
-                wants_stream = bool(json.loads(request_body).get('stream'))
+                parsed_body = json.loads(request_body)
+                wants_stream = bool(parsed_body.get('stream'))
+                req_model = parsed_body.get('model')
             except Exception:
                 wants_stream = False
 
+        _t0 = datetime.now()
+        add_log('info', 'proxy', f'→ {method} {self.path}',
+                {'model': req_model, 'stream': wants_stream,
+                 'body_bytes': len(request_body) if request_body else 0})
         try:
             req = Request(upstream_url, data=request_body, headers=headers, method=method)
             with urlopen(req) as resp:  # nosec B310 — URL validated by is_safe_upstream_url() above (http/https only)
@@ -370,17 +484,57 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
                 response_body = resp.read()
                 response_status = resp.status
                 content_type = resp.headers.get('Content-Type', 'application/json')
+            # Raw-response capture (opt-in, non-streaming only).
+            # Never captures the Authorization header — only response body + neutral metadata.
+            if CONFIG.get('capture_raw_responses'):
+                try:
+                    req_model = None
+                    if request_body:
+                        try:
+                            req_model = json.loads(request_body).get('model')
+                        except Exception:
+                            pass
+                    _capture_raw_response({
+                        'timestamp': datetime.now().isoformat(),
+                        'method': method,
+                        'path': self.path,
+                        'status': response_status,
+                        'model': req_model,
+                    }, response_body)
+                except Exception as cap_err:  # nosec — capture failure must never break the proxy
+                    add_log('warn', 'capture', f'Capture failed (non-fatal): {cap_err}')
             self.send_response(response_status)
             self.send_header('Content-Type', content_type)
             self.end_headers()
             self.wfile.write(response_body)
         except HTTPError as err:
             error_body = err.read()
+            _elapsed = round((datetime.now() - _t0).total_seconds() * 1000)
+            # Log first 500 bytes of upstream error for diagnosis (never the key).
+            add_log('error', 'proxy', f'upstream HTTP {err.code} {self.path}',
+                    {'status': err.code, 'latency_ms': _elapsed, 'model': req_model,
+                     'upstream_error': error_body[:500].decode('utf-8', errors='replace')})
+            # Also capture error responses when capture is enabled.
+            if CONFIG.get('capture_raw_responses'):
+                try:
+                    _capture_raw_response({
+                        'timestamp': datetime.now().isoformat(),
+                        'method': method,
+                        'path': self.path,
+                        'status': err.code,
+                        'model': None,
+                    }, error_body)
+                except Exception as cap_err:
+                    add_log('warn', 'capture', f'Capture failed on error response (non-fatal): {cap_err}')
             self.send_response(err.code)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(error_body)
         except URLError as err:
+            _elapsed = round((datetime.now() - _t0).total_seconds() * 1000)
+            add_log('error', 'proxy', f'upstream unreachable {self.path}',
+                    {'error': str(err), 'latency_ms': _elapsed, 'model': req_model,
+                     'upstream': base_url})
             self.send_response(502)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -466,6 +620,51 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({'turns': []}).encode('utf-8'))
 
+    def _get_raw_responses(self):
+        """GET /raw-responses         → list metadata (newest first, no 'raw' field).
+        GET /raw-responses?id=<name>  → full record including 'raw' payload, or 404.
+        """
+        params = parse_qs(urlparse(self.path).query)
+        rec_id = params.get('id', [None])[0]
+        if rec_id:
+            # Path-traversal guard: reject any id that contains a path separator
+            # (e.g. "../../etc/passwd") before even reducing to a basename.
+            # Then additionally verify the resolved file stays inside RAW_RESPONSES_DIR.
+            if '/' in rec_id or '\\' in rec_id or rec_id.startswith('.'):
+                self._json_response(400, {'error': 'Invalid id'})
+                return
+            safe_name = Path(rec_id).name
+            rec_file = RAW_RESPONSES_DIR / safe_name
+            try:
+                rec_file.resolve().relative_to(RAW_RESPONSES_DIR.resolve())
+            except ValueError:
+                self._json_response(400, {'error': 'Invalid id'})
+                return
+            if rec_file.exists():
+                self._json_response(200, json.loads(rec_file.read_text(encoding='utf-8')))
+            else:
+                self._json_response(404, {'error': 'Not found'})
+        else:
+            entries = []
+            for p in sorted(
+                RAW_RESPONSES_DIR.glob('*.json'),
+                key=lambda x: x.stat().st_mtime,
+                reverse=True,
+            ):
+                try:
+                    data = json.loads(p.read_text(encoding='utf-8'))
+                    entries.append({
+                        'id': data.get('id', p.name),
+                        'timestamp': data.get('timestamp', ''),
+                        'method': data.get('method', ''),
+                        'path': data.get('path', ''),
+                        'status': data.get('status'),
+                        'model': data.get('model'),
+                    })
+                except Exception:
+                    pass
+            self._json_response(200, entries)
+
     def _get_config(self):
         # SECURITY: never expose secrets (api_key, context7_api_key) to the
         # browser. The proxy injects the API key server-side, so the client only
@@ -491,6 +690,12 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             'tier_high_model':   CONFIG.get('tier_high_model',   ''),
             'tier_medium_model': CONFIG.get('tier_medium_model', ''),
             'tier_low_model':    CONFIG.get('tier_low_model',    ''),
+            # Boolean: whether raw API response capture is enabled (#48-v1).
+            # Never expose the flag value itself — only the derived boolean.
+            'has_raw_capture': bool(CONFIG.get('capture_raw_responses')),
+            # Boolean: whether JSONL log file persistence is enabled (#49).
+            # Never expose the flag value itself — only the derived boolean.
+            'persist_logs': bool(CONFIG.get('persist_logs')),
         }
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
@@ -563,10 +768,12 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
 
     # ── Obsidian \"second brain\" memory ──────────────────────────────────────
     def _json_response(self, status, payload):
+        body = json.dumps(payload).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
         self.end_headers()
-        self.wfile.write(json.dumps(payload).encode('utf-8'))
+        self.wfile.write(body)
 
     def _memory_search(self):
         """GET /memory/search?q=...&k=5 — keyword search over memory notes.
@@ -836,6 +1043,9 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             '/memory/list': self._memory_list,
             '/memory/read': self._memory_read,
             '/mcp/vaults': self._get_mcp_vaults,
+            '/raw-responses': self._get_raw_responses,
+            '/logs': self._get_logs,
+            '/logs/files': self._get_log_files,
         }
 
         handler = routes.get(request_path)
@@ -849,7 +1059,82 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
 
         super().do_GET()
 
+    def _get_logs(self):
+        """GET /logs — return the in-memory server_logs buffer as JSON array."""
+        self._json_response(200, server_logs)
+
+    def _get_log_files(self):
+        """GET /logs/files          → list session log files (newest first).
+        GET /logs/files?name=<f>  → read one file as array of log entries.
+
+        Path-traversal guard: name must be a plain filename with no path
+        separators, no leading dot, and must resolve to inside LOGS_DIR.
+        Returns {enabled, files} on list (200 even when PERSIST_LOGS=false).
+        Returns 404 when named file not found; 400 on traversal attempt.
+        Large files are capped at 500 entries (newest lines read first).
+        Malformed JSONL lines are skipped silently.
+        """
+        params = parse_qs(urlparse(self.path).query)
+        name = params.get('name', [None])[0]
+
+        if name:
+            # ── Read a specific log file ─────────────────────────────────────
+            # Path-traversal guard (same pattern as /raw-responses).
+            if '/' in name or '\\' in name or name.startswith('.'):
+                self._json_response(400, {'error': 'Invalid name'})
+                return
+            safe_name = Path(name).name
+            log_file = LOGS_DIR / safe_name
+            try:
+                log_file.resolve().relative_to(LOGS_DIR.resolve())
+            except ValueError:
+                self._json_response(400, {'error': 'Invalid name'})
+                return
+            if not log_file.exists():
+                self._json_response(404, {'error': 'Not found'})
+                return
+            entries = []
+            try:
+                lines = log_file.read_text(encoding='utf-8').splitlines()
+                # Cap at last 500 entries (newest = bottom of file)
+                for line in lines[-500:]:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entries.append(json.loads(line))
+                    except Exception:
+                        pass  # skip malformed lines
+            except Exception:
+                pass
+            self._json_response(200, {'name': safe_name, 'entries': entries})
+        else:
+            # ── List all session log files ───────────────────────────────────
+            enabled = bool(CONFIG.get('persist_logs'))
+            files = []
+            try:
+                for p in sorted(
+                    LOGS_DIR.glob('*.jsonl'),
+                    key=lambda x: x.stat().st_mtime,
+                    reverse=True,
+                ):
+                    stat = p.stat()
+                    files.append({
+                        'name': p.name,
+                        'size': stat.st_size,
+                        'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    })
+            except Exception:
+                pass
+            self._json_response(200, {'enabled': enabled, 'files': files})
+
     def _post_logs(self):
+        """POST /logs — receive a structured log entry from the frontend and
+        store it in server_logs (and persist to JSONL when enabled).
+
+        Body: {level, component, message, details?}
+        Returns 200 {ok: true} on success, 400 on bad JSON, 413 when too large.
+        """
         try:
             content_length = int(self.headers.get('Content-Length', 0))
             if content_length > 65536:  # 64 KB max per log entry
@@ -860,14 +1145,14 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
                 return
             body = self.rfile.read(content_length).decode('utf-8')
             data = json.loads(body)
-            
+
             level = data.get('level', 'info')
             component = data.get('component', 'frontend')
             message = data.get('message', '')
             details = data.get('details', {})
-            
+
             add_log(level, component, message, details)
-            
+
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -1110,6 +1395,33 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({'ok': True}).encode('utf-8'))
 
+    def _delete_raw_responses(self):
+        """DELETE /raw-responses?id=<name>  → delete one record.
+        DELETE /raw-responses               → clear all records.
+        """
+        params = parse_qs(urlparse(self.path).query)
+        rec_id = params.get('id', [None])[0]
+        if rec_id:
+            # Path-traversal guard: reject any id that contains a path separator
+            # (e.g. "../../etc/passwd") before even reducing to a basename.
+            # Then additionally verify the resolved file stays inside RAW_RESPONSES_DIR.
+            if '/' in rec_id or '\\' in rec_id or rec_id.startswith('.'):
+                self._json_response(400, {'error': 'Invalid id'})
+                return
+            safe_name = Path(rec_id).name
+            rec_file = RAW_RESPONSES_DIR / safe_name
+            try:
+                rec_file.resolve().relative_to(RAW_RESPONSES_DIR.resolve())
+            except ValueError:
+                self._json_response(400, {'error': 'Invalid id'})
+                return
+            if rec_file.exists():
+                rec_file.unlink()
+        else:
+            for p in RAW_RESPONSES_DIR.glob('*.json'):
+                p.unlink(missing_ok=True)
+        self._json_response(200, {'ok': True})
+
     def _post_new_chat_session(self):
         archived_id = None
         if HISTORY_FILE.exists():
@@ -1145,7 +1457,7 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         routes = {
             '/chunk-cache': self._delete_chunk_cache,
             '/sessions': self._delete_sessions,
-
+            '/raw-responses': self._delete_raw_responses,
         }
 
         handler = routes.get(request_path)

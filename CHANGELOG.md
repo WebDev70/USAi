@@ -1,5 +1,213 @@
 ## [Unreleased]
 
+### Fixed (2026-06-27 — `_post_logs` crash / "Network error: Failed to fetch" root cause)
+
+**Root cause:** During Sprint #50 (Log File Viewer), the `_get_log_files()` method was
+inserted into `server.py` but the orphaned body of the former `_post_logs()` handler was
+left inside it as unreachable code — and the `def _post_logs(self):` header itself was
+deleted.  The `do_POST` routes dict still referenced `self._post_logs`, which no longer
+existed.  Every chat message the browser sent resulted in:
+```
+AttributeError: 'EnvConfigHTTPRequestHandler' object has no attribute '_post_logs'
+```
+The server thread threw, the connection was dropped, and the browser showed
+`Network error: Failed to fetch`.  **This was not a real network / API problem** — the
+upstream `api.gsa.usai.gov` was never contacted.
+
+- **`server.py`**: Restored `def _post_logs(self):` method (with proper `def` header and
+  indentation), containing the 413 guard, JSON parse, `add_log()` call, and 200/400
+  responses. Added `GET /logs` → `_get_logs()` which returns `server_logs` as a JSON
+  array (it was previously missing from `do_GET` routes, causing a 301 redirect).
+
+### Added (2026-06-27 — Full observability / "catch everything" logging)
+
+- **`server.py` `_proxy_api`**: Now logs every proxy lifecycle event via `add_log`:
+  - `→ METHOD /path` with `{model, stream, body_bytes}` on request start.
+  - `← STATUS /path` with `{status, bytes, latency_ms}` on success.
+  - `← stream N /path` + `stream complete` with `{bytes_relayed, elapsed_ms}` for
+    SSE streaming (also logs client-disconnect mid-stream as `warn`).
+  - `upstream HTTP NNN` with `{status, latency_ms, upstream_error: first 500 bytes}`
+    on `HTTPError` — so the exact upstream message (e.g. 401, 422, model-not-found)
+    is visible in the Debug panel immediately, no guessing.
+  - `upstream unreachable` with `{error, latency_ms, upstream}` on `URLError`
+    (DNS failure, connection refused, timeout).
+  - `SSRF guard rejected` / `base_url not configured` as `error` level.
+  - API key / Authorization header is **never** logged anywhere.
+- **`app.js`**: Global uncaught-error capture — two new event listeners:
+  - `window.addEventListener('error', …)` — routes all synchronous JS exceptions
+    through `logger.error('uncaught', …)` so they appear in the Debug panel and
+    persisted JSONL file.
+  - `window.addEventListener('unhandledrejection', …)` — same for unhandled promise
+    rejections (the typical source of "Failed to fetch" disappearing silently).
+- **`app.js`**: New `loggedFetch(url, options)` helper — drop-in `fetch()` wrapper that:
+  - Logs `→ METHOD URL` at `info` level on start.
+  - Logs `← STATUS METHOD URL` + `latency_ms` on completion (error-level when !ok).
+  - Logs error message + latency on network failure (`throw`) before re-throwing.
+  - Never logs the `Authorization` header.
+  - Self-referential `/logs` POSTs are excluded to avoid infinite recursion.
+  - Wired into `callChatApi`, `streamChatApi`, and `loadConfig` (`/config`).
+- **`tests/python/test_server_branches.py`**: 2 new regression tests in `LogsTests`:
+  - `test_get_logs_returns_list` — `GET /logs` returns a JSON array containing POSTed entries.
+  - `test_all_post_routes_resolve_to_real_methods` — asserts every route referenced in
+    `do_POST`'s routes dict maps to a real method on the handler class.  This is the test
+    that would have caught the `#50` regression before it shipped.
+
+### Added (2026-06-27 — Log file viewer in Debug panel #50)
+- **`server.py`**: New `GET /logs/files` endpoint.
+  - `GET /logs/files` → list session log files newest-first with `{enabled, files:[{name,size,modified}]}`.
+  - `GET /logs/files?name=<file>` → read entries from one file as `{name, entries:[...]}`.
+  - Path-traversal guard: names containing `/`, `\`, or starting with `.` return 400.
+  - Returns `{enabled:false, files:[]}` when `PERSIST_LOGS` is off (never 404 on list).
+  - Large files capped at 500 entries (newest lines); malformed JSONL lines skipped silently.
+  - `_json_response()` now sets `Content-Length` header so HTTP/1.0 responses parse correctly.
+  - `/logs/files` registered in `do_GET` routes dict.
+- **`app.js`**: `Logger` class gains `getLogFiles()`, `readLogFile(name)`, `renderFilesTab()`.
+  Tab-switch listener wires the two `.debug-tab` buttons (Live / Log Files) — toggling
+  `#debugLogs` vs `#debugFiles`, hiding filter controls on the files tab, and calling
+  `renderFilesTab()` when the files tab is activated.
+- **`index.html`**: Debug panel gains `.debug-tabs` strip (Live / Log Files buttons) and
+  `#debugFiles` div below `#debugLogs`; `styles.css?v=24` → `?v=25`.
+- **`styles.css`**: `.debug-tabs`, `.debug-tab`, `.debug-tab.active`, `.debug-files`,
+  `.log-file-row`, `.log-file-name`, `.log-file-meta`, `.log-file-loading/empty`,
+  `#debugFileEntries` — all new styles for the files tab.
+- **`tests/python/test_server_branches.py`**: 4 new tests `LogFilesViewerTests` (LV-1…LV-4):
+  list-when-enabled, list-when-disabled, read-file-entries, path-traversal-rejected.
+
+
+- **`logs/`** — New tracked directory with `.gitkeep` and `logs/README.md`
+  (naming convention, format, rotation, enabling via env, security note).
+- **`server.py`**: Opt-in JSONL log file persistence.
+  - `LOGS_DIR` (`logs/`) created at import time alongside other runtime dirs.
+  - `_LOG_SESSION_STAMP` — ISO timestamp captured once at import; shared by all
+    `add_log()` calls within a single server run.
+  - `_persist_log(entry)` — appends one JSON line per `add_log()` call to
+    `logs/<stamp>-server.jsonl` when `PERSIST_LOGS=true`. Write failures are
+    always swallowed (same defensive posture as `_capture_raw_response`).
+    Rotation: oldest `*.jsonl` files (excluding the current session file) are
+    pruned when the count reaches `LOG_FILE_MAX` (default 20).
+  - `add_log()` now calls `_persist_log(log_entry)` after the in-memory append.
+  - `load_config()` gains `persist_logs` and `log_file_max` from `PERSIST_LOGS`
+    and `LOG_FILE_MAX` env vars (both opt-in / off by default).
+  - `_get_config()` exposes `persist_logs: bool` (non-secret derived boolean).
+- **`.env.example`**: new `PERSIST_LOGS=false` / `LOG_FILE_MAX=20` section under
+  "Optional: Log file persistence".
+- **`.gitignore`**: `logs/*.log` and `logs/*.jsonl` added (runtime state);
+  `logs/.gitkeep` and `logs/README.md` remain tracked.
+- **`docs/ARCHITECTURE.md`**: §3d table gains "Server logs" row; §3e Logging
+  description updated to reflect actual `add_log` signature, in-memory cap, and
+  new optional disk persistence.
+- **`docs/USER_GUIDE.md`** §10 Troubleshooting: new "How do I preserve server
+  logs across restarts?" entry with setup steps and example output.
+- **`tests/python/test_server.py`**: 4 new tests (PL-1…PL-4) in `AddLogTests`:
+  write-when-enabled, no-op-when-disabled, failure-swallowed, file-rotation.
+  `setUp`/`tearDown` extended to save/restore `LOGS_DIR` and `_LOG_SESSION_STAMP`.
+
+
+- **`server.py`**: New opt-in raw API response capture feature.
+  - `RAW_RESPONSES_DIR` (`.raw_responses/`) — new on-disk rotating store; one JSON
+    file per non-streaming `/api/*` proxy response.
+  - `_capture_raw_response(meta, raw_bytes)` — pure helper that writes the full
+    upstream response envelope (`id`, `model`, `usage`, `finish_reason`, `choices`,
+    HTTP status, timestamp, etc.) to `.raw_responses/`. Capture failure is always
+    non-fatal (wrapped in `try/except`). The `Authorization` header / API key is
+    **never** stored — only the response body and neutral request metadata.
+  - Capture hook in `_proxy_api()`: fires on every successful non-streaming response
+    (including `HTTPError` responses) when `CAPTURE_RAW_RESPONSES=true`.
+  - Rotation: oldest file deleted before each write when count ≥ `RAW_RESPONSES_MAX`
+    (default 200).
+  - `GET /raw-responses` — list metadata (newest-first, no `raw` payload).
+  - `GET /raw-responses?id=` — read one full record including `raw` payload.
+  - `DELETE /raw-responses?id=` — delete one record.
+  - `DELETE /raw-responses` — clear all records.
+  - Both new endpoints have identical path-traversal guards to `/sessions`.
+  - `has_raw_capture` boolean added to `/config` (never exposes the flag value).
+- **`.env.example`**: new `CAPTURE_RAW_RESPONSES=false` / `RAW_RESPONSES_MAX=200`
+  section under "Optional: Raw API response capture".
+- **`.gitignore`**: `.raw_responses/` added (runtime state, not tracked).
+- **`tests/python/test_server_http.py`**: 4 new integration tests (RC-1…RC-4):
+  capture-on creates file with correct metadata; list/read/delete round-trip;
+  delete-all clears store; `/config` `has_raw_capture` boolean.
+- **`tests/python/test_server_branches.py`**: 5 new branch/security tests (RC-5…RC-8):
+  capture-off flag respected; rotation cap; path-traversal rejected on GET and DELETE;
+  no API key in stored record.
+- **`docs/ARCHITECTURE.md`**: `.raw_responses/` data-store row; 4 new endpoint rows.
+- **`docs/specs/raw-response-capture.md`**: full feature spec written.
+
+> Streaming SSE capture deferred to backlog #48-streaming (see backlog.md).
+
+### Added (2026-06-27 — Reasoning token proof in message note)
+- **`app.js` `formatUsage()`**: now reads
+  `usage.completion_tokens_details.reasoning_tokens` (OpenAI-standard field) with
+  a fallback to a top-level `reasoning_tokens` field used by some providers. When
+  the value is present **and > 0** it is appended to the per-message token summary,
+  e.g. `84 in · 51 out · 135 total · 32 reasoning tokens`. When absent or zero the
+  output is **unchanged** — non-reasoning calls show no difference. This is the
+  definitive, API-sourced proof that a reasoning effort setting actually engaged
+  (vs. being ignored by a model that doesn't support it). The 💭 Thinking block
+  (feature #11) remains the secondary visual signal.
+- **`tests/js/app.test.mjs`**: 4 new `FU-R*` test cases — `FU-R1` (reasoning
+  tokens appended), `FU-R2` (zero count → no false positive), `FU-R3` (top-level
+  fallback field), `FU-R4` (no details object → unchanged output). 84 JS tests
+  green (was 79 before this sprint).
+
+### Changed (2026-06-27 — Backlog #47 Ph1–Ph7 — RAIL Hardening Phase 2)
+- **Ph1 — Fix §6e cross-reference bug** (`review.md`): added canonical §6e-BE /
+  §6e-FE / §6e-DOCS blockquote with links to the three SME mandatory-gate tables;
+  added new **§6f shift-left governance findings gate** requiring spec §4b to be
+  filled (G-1/G-2/G-3) with advisory GAP for unfiled deferrals.
+- **Ph2 — Prevention-rule recall receipt** (`build.md`, `spec.md`): both pre-flight
+  sections now require reading `self-improvement-log.md` and emitting a one-line
+  receipt before writing code or asking the first interview question.
+- **Ph3 — Spec amendment mini-protocol** (`build.md`): new §3d "Spec amendment
+  protocol" defines pause → propose → confirm → record → continue; `spec.md`
+  template gains optional `## Spec changelog` section (populated during `/build`
+  only if amendments occur).
+- **Ph4 — §4b in review gate** (`review.md`): already part of Ph1 §6f above.
+- **Ph5 — Clean-state guarantee** (`loop.md`): escalation block gains
+  "Clean-state guarantee" with Option A (stash/branch) and Option B (revert);
+  escalation memory note template gains `## Working-tree state` section.
+- **Ph6 — Coverage ratchet self-advancement** (`loop.md`, `govern.md`): `/loop`
+  Continuous Improvement section now calls the ratchet check explicitly and
+  defines the ≥ 5pp threshold for proposing a bump; `govern.md` SE-4 gains a
+  ratchet-rule verification check.
+- **Ph7 — Wire mutation testing** (`loop.md`, `govern.md`): `/loop` Continuous
+  Improvement section adds optional mutation audit step; `govern.md` SE-2 adds
+  mutation-testing reference with 60% kill-rate advisory threshold.
+- **Bonus fix — `rail-pipeline.md` convention duplication** (`.clinerules/`): the
+  `getEnabledTools` inline reference replaced with a pointer to `docs/rail-pipeline.md`;
+  `doc-consistency-check.sh` now exits 0 cleanly.
+- No app code, runtime deps, tests, or CSS changed.
+- Files: `.clinerules/workflows/review.md`, `.clinerules/workflows/build.md`,
+  `.clinerules/workflows/spec.md`, `.clinerules/workflows/loop.md`,
+  `.clinerules/workflows/govern.md`, `.clinerules/rail-pipeline.md`,
+  `docs/specs/rail-hardening-phase2.md`.
+
+### Changed (2026-06-27 — Backlog #46 — Shift-left governance in /spec)
+- **`/spec` Step 2b — Shift-left SBA/SA-lite governance check** — Added a new
+  lightweight pre-check step to `.clinerules/workflows/spec.md` that runs three
+  advisory checks before the spec is written:
+  - **G-1 AC testability (SBA-3):** each acceptance criterion must be binary and
+    observable; vague ACs are rewritten before proceeding.
+  - **G-2 Scope / value justification (SBA-2):** confirms every in-scope item
+    maps to the stated goal, flagging scope creep or gold-plating as advisory.
+  - **G-3 Dependency coherence (SBA-5-lite):** names any open backlog prerequisites
+    the spec depends on, so they are declared rather than discovered mid-sprint.
+- **Spec template §4b** — Added a shift-left governance findings table to the
+  embedded spec template so results are recorded in the spec itself and visible
+  to `/review`.
+- **`govern.md` cadence note** — Added a shift-left cross-reference explaining
+  that per-requirement SBA/SA checks run at `/spec`; the full four-role
+  macro-assessment stays at sprint close / on demand.
+- **`docs/governance.md` — "Relationship to RAIL" expanded** — Replaced the
+  single-paragraph description with a two-level governance model: shift-left
+  (per-requirement, advisory, inside RAIL) and Governance Board
+  (macro-assessment, sprint cadence, outside RAIL), including a mapping table.
+- All findings at Step 2b are **advisory** — they do not block Status: Ready.
+  The full `/govern` cadence is unchanged.
+- No app code, tests, runtime deps, or CSS changed.
+- Files: `.clinerules/workflows/spec.md`, `.clinerules/workflows/govern.md`,
+  `docs/governance.md`, `docs/specs/spec-shift-left-governance.md`.
+
 ### Added (2026-06-27 — Backlog #28 — Pre-commit git hook)
 - **`make hooks` target** — one-command install of the git pre-commit hook:
   symlinks `.git/hooks/pre-commit` → `scripts/pre-commit.sh`; idempotent;

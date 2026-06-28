@@ -949,6 +949,75 @@ class Logger {
     }
   }
 
+  async getLogFiles() {
+    try {
+      const resp = await fetch('/logs/files');
+      return resp.ok ? await resp.json() : { enabled: false, files: [] };
+    } catch (err) {
+      console.error('Failed to fetch log files:', err);
+      return { enabled: false, files: [] };
+    }
+  }
+
+  async readLogFile(name) {
+    try {
+      const resp = await fetch(`/logs/files?name=${encodeURIComponent(name)}`);
+      return resp.ok ? await resp.json() : { entries: [] };
+    } catch (err) {
+      console.error('Failed to read log file:', err);
+      return { entries: [] };
+    }
+  }
+
+  async renderFilesTab() {
+    const container = document.getElementById('debugFiles');
+    if (!container) return;
+    container.innerHTML = '<div class="log-file-loading">Loading…</div>';
+    const { enabled, files } = await this.getLogFiles();
+    if (!enabled) {
+      container.innerHTML = `<div class="log-file-empty">
+        Log file persistence is not enabled.<br>
+        Add <code>PERSIST_LOGS=true</code> to your <code>.env</code> and restart the server.
+      </div>`;
+      return;
+    }
+    if (!files || files.length === 0) {
+      container.innerHTML = '<div class="log-file-empty">No log files yet. Log files are created when the server writes its first log entry.</div>';
+      return;
+    }
+    container.innerHTML = files.map(f => `
+      <div class="log-file-row" data-name="${escapeHtml(f.name)}">
+        <span class="log-file-name">${escapeHtml(f.name)}</span>
+        <span class="log-file-meta">${escapeHtml(new Date(f.modified).toLocaleString())} · ${escapeHtml(String(f.size))} B</span>
+      </div>
+    `).join('') + '<div id="debugFileEntries"></div>';
+
+    container.querySelectorAll('.log-file-row').forEach(row => {
+      row.addEventListener('click', async () => {
+        container.querySelectorAll('.log-file-row').forEach(r => r.classList.remove('active'));
+        row.classList.add('active');
+        const entriesDiv = document.getElementById('debugFileEntries');
+        if (entriesDiv) entriesDiv.innerHTML = '<div class="log-file-loading">Loading entries…</div>';
+        const { entries } = await this.readLogFile(row.dataset.name);
+        if (entriesDiv) {
+          if (!entries || entries.length === 0) {
+            entriesDiv.innerHTML = '<div class="log-file-empty">No entries in this file.</div>';
+            return;
+          }
+          entriesDiv.innerHTML = entries.map(log => `
+            <div class="log-entry log-${escapeHtml(log.level || 'info')}">
+              <span class="log-time">${escapeHtml(new Date(log.timestamp).toLocaleTimeString())}</span>
+              <span class="log-level">${escapeHtml((log.level || 'info').toUpperCase())}</span>
+              <span class="log-component">${escapeHtml(log.component || '')}</span>
+              <span class="log-message">${escapeHtml(log.message || '')}</span>
+              ${log.details && Object.keys(log.details).length > 0 ? `<span class="log-details">${escapeHtml(JSON.stringify(log.details))}</span>` : ''}
+            </div>
+          `).join('');
+        }
+      });
+    });
+  }
+
   async clear() {
     this.localLogs = [];
     try {
@@ -1528,7 +1597,7 @@ function applyDefaultModel() {
 async function loadConfig() {
   try {
     logger.info('config', 'Loading configuration from /config');
-    const resp = await fetch('/config');
+    const resp = await loggedFetch('/config');
     if (!resp.ok) {
       logger.warn('config', `Config endpoint returned ${resp.status}`);
       return;
@@ -1757,6 +1826,14 @@ function formatUsage(usage) {
   if (prompt != null) parts.push(`${prompt} in`);
   if (completion != null) parts.push(`${completion} out`);
   if (total != null) parts.push(`${total} total`);
+  // Reasoning token count — the definitive proof that reasoning effort engaged.
+  // Prefer the OpenAI-standard nested field; fall back to a top-level field used
+  // by some providers. Only shown when > 0 so non-reasoning calls are unchanged.
+  const reasoningTokens =
+    usage.completion_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens;
+  if (reasoningTokens != null && reasoningTokens > 0) {
+    parts.push(`${reasoningTokens} reasoning`);
+  }
   return parts.length ? `${parts.join(' · ')} tokens` : '';
 }
 
@@ -2154,7 +2231,7 @@ async function callChatApi(payload) {
     };
     // Send Authorization only if the user typed a key; otherwise the proxy injects it.
     if (inputs.key) headers['Authorization'] = 'Bearer ' + inputs.key;
-    const resp = await fetch(endpoint, {
+    const resp = await loggedFetch(endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
@@ -2309,7 +2386,7 @@ async function streamChatApi(payload, onDelta) {
       'Accept': 'text/event-stream',
     };
     if (inputs.key) headers['Authorization'] = 'Bearer ' + inputs.key;
-    const resp = await fetch(endpoint, {
+    const resp = await loggedFetch(endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -2739,6 +2816,71 @@ function cancelActiveRequest() {
   }
 }
 
+// ── Global error capture ─────────────────────────────────────────────────────
+// Catch ALL uncaught JS errors and unhandled promise rejections so they appear
+// in the debug panel and the persisted JSONL logs — nothing falls through.
+window.addEventListener('error', (event) => {
+  const details = {
+    message: event.message || '',
+    filename: event.filename || '',
+    lineno: event.lineno || 0,
+    colno: event.colno || 0,
+    stack: event.error?.stack || '',
+  };
+  // Use console.error first (synchronous) in case logger itself is broken.
+  console.error('[UNCAUGHT ERROR]', details);
+  if (typeof logger !== 'undefined') {
+    logger.error('uncaught', event.message || 'Unknown JS error', details);
+  }
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason;
+  const details = {
+    message: reason?.message || String(reason),
+    stack: reason?.stack || '',
+  };
+  console.error('[UNHANDLED REJECTION]', details);
+  if (typeof logger !== 'undefined') {
+    logger.error('uncaught', `Unhandled promise rejection: ${details.message}`, details);
+  }
+});
+
+// ── loggedFetch — drop-in fetch() wrapper ────────────────────────────────────
+// Every network call in the app goes through here so we get:
+//   • URL + method logged on start
+//   • HTTP status + latency on completion
+//   • Full error message on network failure (the "Failed to fetch" problem)
+// Secrets (Authorization) are deliberately not logged.
+async function loggedFetch(url, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  const t0 = performance.now();
+  // Log start (only for calls that matter — skip the /logs self-reporting call
+  // to avoid infinite recursion).
+  const isSelfLog = typeof url === 'string' && (url === '/logs' || url.startsWith('/logs?'));
+  if (!isSelfLog && typeof logger !== 'undefined') {
+    logger.info('fetch', `→ ${method} ${url}`, { method, url });
+  }
+  try {
+    const resp = await fetch(url, options);
+    const elapsed = Math.round(performance.now() - t0);
+    if (!isSelfLog && typeof logger !== 'undefined') {
+      const level = resp.ok ? 'info' : 'error';
+      logger[level]('fetch', `← ${resp.status} ${method} ${url}`,
+        { status: resp.status, latency_ms: elapsed, ok: resp.ok });
+    }
+    return resp;
+  } catch (err) {
+    const elapsed = Math.round(performance.now() - t0);
+    console.error(`[loggedFetch] ${method} ${url} threw:`, err);
+    if (!isSelfLog && typeof logger !== 'undefined') {
+      logger.error('fetch', `✗ ${method} ${url} — ${err.message}`,
+        { error: err.message, latency_ms: elapsed });
+    }
+    throw err;  // re-throw so callers handle it as before
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   if (prefersDark || localStorage.getItem('theme') === 'dark') {
     setTheme(true);
@@ -2990,6 +3132,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('debugToggle')?.addEventListener('click', () => {
     const panel = document.getElementById('debugPanel');
     panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+  });
+
+  // Tab switching: Live ↔ Log Files
+  document.querySelectorAll('.debug-tab').forEach(tab => {
+    tab.addEventListener('click', async () => {
+      document.querySelectorAll('.debug-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const isFiles = tab.dataset.tab === 'files';
+      document.getElementById('debugLogs').style.display = isFiles ? 'none' : '';
+      document.getElementById('debugFiles').style.display = isFiles ? '' : 'none';
+      // Controls (filter, level, clear) only apply to live tab
+      const controls = document.querySelector('.debug-controls');
+      if (controls) controls.style.display = isFiles ? 'none' : '';
+      if (isFiles) {
+        await logger.renderFilesTab();
+      }
+    });
   });
 
   // Debug panel hidden by default
