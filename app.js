@@ -388,7 +388,7 @@ async function fetchContext7(query) {
   const params = new URLSearchParams({ query: query || '' });
   try {
     logger.info('context7', 'Fetching context', { queryLength: query?.length || 0 });
-    const resp = await fetch('/context7?' + params.toString());
+    const resp = await loggedFetch('/context7?' + params.toString());
     if (!resp.ok) {
       logger.warn('context7', `Fetch failed with status ${resp.status}`);
       return null;
@@ -703,7 +703,7 @@ const TOOL_REGISTRY = {
       const content = safeTrim(args?.content);
       if (!content) return 'Error: no content provided to save.';
       try {
-        const resp = await fetch('/memory/save', {
+        const resp = await loggedFetch('/memory/save', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title, content, tags: args?.tags || [] }),
@@ -724,7 +724,7 @@ const MCP_TOOLS = ['obsidian_rename_tag', 'obsidian_move_note', 'obsidian_list_v
 
 // Generic helper: call POST /mcp/tool and return the result string (throws on error).
 async function callMcpTool(toolName, args) {
-  const resp = await fetch('/mcp/tool', {
+  const resp = await loggedFetch('/mcp/tool', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tool: toolName, arguments: args }),
@@ -805,7 +805,7 @@ Object.assign(TOOL_REGISTRY, {
     },
     async run(_args) {
       try {
-        const resp = await fetch('/mcp/vaults');
+        const resp = await loggedFetch('/mcp/vaults');
         const data = await resp.json();
         if (!resp.ok) return 'Error listing vaults: ' + (data?.error || resp.status);
         return 'Available vaults: ' + (data.result ?? 'none returned');
@@ -941,7 +941,7 @@ class Logger {
 
   async getLogs() {
     try {
-      const resp = await fetch('/logs');
+      const resp = await loggedFetch('/logs');
       return resp.ok ? await resp.json() : [];
     } catch (err) {
       console.error('Failed to fetch logs:', err);
@@ -951,7 +951,7 @@ class Logger {
 
   async getLogFiles() {
     try {
-      const resp = await fetch('/logs/files');
+      const resp = await loggedFetch('/logs/files');
       return resp.ok ? await resp.json() : { enabled: false, files: [] };
     } catch (err) {
       console.error('Failed to fetch log files:', err);
@@ -961,7 +961,7 @@ class Logger {
 
   async readLogFile(name) {
     try {
-      const resp = await fetch(`/logs/files?name=${encodeURIComponent(name)}`);
+      const resp = await loggedFetch(`/logs/files?name=${encodeURIComponent(name)}`);
       return resp.ok ? await resp.json() : { entries: [] };
     } catch (err) {
       console.error('Failed to read log file:', err);
@@ -1021,7 +1021,7 @@ class Logger {
   async clear() {
     this.localLogs = [];
     try {
-      await fetch('/logs/clear', { method: 'POST' });
+      await loggedFetch('/logs/clear', { method: 'POST' });
     } catch (err) {
       console.error('Failed to clear logs:', err);
     }
@@ -1104,7 +1104,7 @@ async function saveChunkCache() {
   for (const filename of uploadedFiles) {
     const chunks = fileChunks.filter(c => c.fileName === filename);
     try {
-      const resp = await fetch('/chunk-cache', {
+      const resp = await loggedFetch('/chunk-cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename, chunks }),
@@ -1124,7 +1124,7 @@ async function saveChunkCache() {
 
 async function deleteChunkCache(filename) {
   try {
-    await fetch('/chunk-cache?file=' + encodeURIComponent(filename), { method: 'DELETE' });
+    await loggedFetch('/chunk-cache?file=' + encodeURIComponent(filename), { method: 'DELETE' });
     logger.info('cache', `Deleted cache for "${filename}"`);
   } catch (err) {
     logger.warn('cache', `Error deleting cache for "${filename}"`, { error: err?.message });
@@ -1134,7 +1134,7 @@ async function deleteChunkCache(filename) {
 
 async function restoreFromCache(filename) {
   try {
-    const resp = await fetch('/chunk-cache?file=' + encodeURIComponent(filename));
+    const resp = await loggedFetch('/chunk-cache?file=' + encodeURIComponent(filename));
     if (!resp.ok) {
       logger.warn('cache', `Cache not found for "${filename}"`);
       return;
@@ -1163,7 +1163,7 @@ async function archiveCurrentSession() {
   const title = raw.slice(0, 50).trim() + (raw.length > 50 ? '\u2026' : '');
   const id = currentSessionId || `session_${Date.now()}`;
   try {
-    await fetch('/sessions', {
+    await loggedFetch('/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1184,7 +1184,7 @@ async function showSessionsList() {
   const el = document.getElementById('chatSessionsList');
   if (!el) return;
   try {
-    const resp = await fetch('/sessions');
+    const resp = await loggedFetch('/sessions');
     const sessions = resp.ok ? await resp.json() : [];
     if (!sessions.length) {
       el.innerHTML = '<p class="sessions-empty">No saved chats yet</p>';
@@ -1207,7 +1207,7 @@ async function showSessionsList() {
     el.querySelectorAll('.session-delete').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
-        await fetch(`/sessions?id=${encodeURIComponent(btn.dataset.id)}`, { method: 'DELETE' });
+        await loggedFetch(`/sessions?id=${encodeURIComponent(btn.dataset.id)}`, { method: 'DELETE' });
         if (btn.dataset.id === currentSessionId) currentSessionId = null;
         showSessionsList();
       });
@@ -1219,7 +1219,7 @@ async function showSessionsList() {
 
 async function restoreSession(id) {
   try {
-    const resp = await fetch(`/sessions?id=${encodeURIComponent(id)}`);
+    const resp = await loggedFetch(`/sessions?id=${encodeURIComponent(id)}`);
     if (!resp.ok) return;
     const data = await resp.json();
     const turns = data.turns || [];
@@ -1271,7 +1271,7 @@ async function saveChatHistory() {
   const MAX_TURNS = 200;
   const turns = chatDisplayHistory.slice(-MAX_TURNS);
   try {
-    await fetch('/chat-history', {
+    await loggedFetch('/chat-history', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ turns }),
@@ -1283,7 +1283,7 @@ async function saveChatHistory() {
 
 async function loadChatHistory() {
   try {
-    const resp = await fetch('/chat-history');
+    const resp = await loggedFetch('/chat-history');
     if (!resp.ok) return;
     const data = await resp.json();
     const turns = data.turns || [];
@@ -1321,7 +1321,7 @@ async function showCachedFilesPanel() {
   const el = document.getElementById('cachedFilesPanel');
   if (!el) return;
   try {
-    const resp = await fetch('/chunk-cache');
+    const resp = await loggedFetch('/chunk-cache');
     const entries = resp.ok ? await resp.json() : [];
     if (!entries.length) {
       el.innerHTML = '';
@@ -1746,7 +1746,7 @@ function addCopyButton(bubble) {
 // Returns the parsed response ({ ok, path, title }) or { error }.
 async function saveMemory(title, content, tags = []) {
   try {
-    const resp = await fetch('/memory/save', {
+    const resp = await loggedFetch('/memory/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, content, tags }),
@@ -2001,7 +2001,7 @@ async function loadModels() {
     const headers = { Accept: 'application/json' };
     // Only send Authorization if the user typed a key; otherwise the proxy adds it.
     if (key) headers.Authorization = 'Bearer ' + key;
-    const resp = await fetch(url, {
+    const resp = await loggedFetch(url, {
       method: 'GET',
       headers,
     });
@@ -2900,7 +2900,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     conversationHistory.length = 0;
     chatDisplayHistory.length = 0;
     currentSessionId = null;
-    await fetch('/new-chat-session', { method: 'POST' });
+    await loggedFetch('/new-chat-session', { method: 'POST' });
     await showSessionsList();
     logger.info('chat', 'New chat started — conversation history cleared');
     document.querySelector('.main-content').classList.remove('in-conversation');

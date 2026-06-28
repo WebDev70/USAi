@@ -1,6 +1,21 @@
 ## [Unreleased]
 
-### Fixed (2026-06-27 — `_post_logs` crash / "Network error: Failed to fetch" root cause)
+### Fixed (2026-06-27 — Wire all remaining fetch() calls through loggedFetch)
+
+- **`app.js`**: All 23 remaining bare `fetch()` call-sites converted to `loggedFetch()`.
+  Every network call in the app now produces a structured log entry (URL, method, HTTP
+  status, latency_ms, and full error on throw) visible in the Debug panel and persisted to
+  `logs/*.jsonl`. Covered endpoints: `/context7`, `/memory/save` (tool + saveMemory),
+  `/mcp/tool`, `/mcp/vaults`, `getLogs`/`getLogFiles`/`readLogFile`/`clear` (Logger
+  class), `/chunk-cache` (save/delete/restore/list), `/sessions` (save/list/delete/restore),
+  `/chat-history` (save/load), `/new-chat-session`, `/api/v1/models`.
+  The two intentional non-converted sites are: the raw `fetch('/logs', …)` inside
+  `Logger.log()` itself (to prevent infinite recursion — it's already guarded by the
+  `isSelfLog` check in `loggedFetch`) and the `fetch(url, options)` inside `loggedFetch`
+  itself (it *is* the wrapper).
+- **84 JS tests green. 170 Python tests green. Security scan clean.**
+
+
 
 **Root cause:** During Sprint #50 (Log File Viewer), the `_get_log_files()` method was
 inserted into `server.py` but the orphaned body of the former `_post_logs()` handler was
