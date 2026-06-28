@@ -117,10 +117,16 @@ print('%.2f' % pct)
     --js-branch "$JS_BRANCH_LIVE"
 else
   echo "── JS unit tests (node --test) ────────────────────────────"
-  # Enumerate test files with `find` and pass them explicitly. This is portable:
-  # directory args to `node --test` require Node >= 21, and a quoted `**` glob
-  # isn't expanded by bash (globstar off). `find` works everywhere.
-  node --test $(find tests/js -name '*.test.mjs')
+  # Pure-helper unit tests (no jsdom). Behavior tests run separately below.
+  node --test $(find tests/js -name '*.test.mjs' ! -name 'app.behavior.test.mjs')
+
+  echo "── JS behavior tests (jsdom, dev-only) ────────────────────"
+  if [ -d "node_modules/jsdom" ]; then
+    node --test tests/js/app.behavior.test.mjs
+  else
+    echo "  ⚠ jsdom not installed — skipping behavior tests."
+    echo "    Run: npm install  (or: make dev-setup)"
+  fi
 
   echo "── Python unit/integration tests (unittest) ──────────────"
   "$PY" -m unittest discover -s tests/python -p 'test_*.py'

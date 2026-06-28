@@ -10,7 +10,10 @@ Archive/
 # Runtime/local state written by the server (not source)
 chat_history.json
 .chat_sessions/
+.raw_responses/
 .chunk_cache/
+logs/*.log
+logs/*.jsonl
 
 # macOS cruft
 .DS_Store
@@ -27,3 +30,8 @@ coverage.xml
 # Vault notes belong in the real Obsidian Vault, never tracked here.
 Users/
 Library/
+
+# Node dev-only dependencies (jsdom for behavior tests). Never shipped in app.
+node_modules/
+package-lock.json
+

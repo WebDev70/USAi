@@ -10,7 +10,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **45**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **47**.
 
 ---
 
@@ -96,6 +96,30 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     endpoints). This would improve test isolation and readability.
   - Defer until the threshold is reached; no action needed now.
   - Governance: 2026-06-26 audit INNOV-01.
+
+- [x] **47. RAIL hardening Phase 2** *(M, 7 phases)* — Done (2026-06-27): Ph1 §6e cross-ref fix + §6f shift-left gate added to `review.md`; Ph2 prevention-rule recall receipts in `build.md` + `spec.md`; Ph3 spec-amendment protocol + `## Spec changelog` template section in `build.md`/`spec.md`; Ph5 clean-state guarantee in `loop.md` escalation block; Ph6 coverage ratchet self-advancement rule in `loop.md` + SE-4 in `govern.md`; Ph7 mutation-test cadence wired into `loop.md` + SE-2 in `govern.md`; bonus: `getEnabledTools` duplication fixed in `.clinerules/rail-pipeline.md` — `doc-consistency-check.sh` exits 0.
+       Spec: docs/specs/rail-hardening-phase2.md
+
+- [x] **48. Raw API response capture (non-streaming v1)** *(S)* — Done (2026-06-27): Opt-in capture of full upstream JSON envelopes (non-streaming only) to `.raw_responses/<ts>_<uid>.json`; `_capture_raw_response()` helper with rotating cap; `GET`/`DELETE /raw-responses` endpoints; `has_raw_capture` in `/config`; path-traversal guard; auth key never stored; 9 tests (RC-1…RC-8 + rotation) green; docs updated.
+       Spec: docs/specs/raw-response-capture.md
+
+- [x] **50. Log file viewer in Debug panel** *(S)* — Done (2026-06-27): `GET /logs/files` endpoint (list + read, path-traversal guard, 500-entry cap); `Log Files` tab in Debug panel with file list + clickable entry viewer; `Content-Length` fix in `_json_response()`; 4 new tests (LV-1…LV-4) green; CSS + `?v=25`; CHANGELOG updated.
+       Spec: docs/specs/log-file-viewer.md
+
+** *(S)* — Done (2026-06-27): `logs/` dir tracked (`.gitkeep` + `README.md`); `_persist_log()` helper wired into `add_log()`; opt-in via `PERSIST_LOGS=true`; per-run JSONL files with mtime-based rotation at `LOG_FILE_MAX=20`; `persist_logs` bool in `/config`; 4 new unit tests (PL-1…PL-4) green; docs updated.
+       Spec: docs/specs/log-directory-persistence.md
+
+- [ ] **48b. Raw API response capture (streaming SSE v2)** *(S)* — Accumulate SSE byte chunks during relay; write completed stream to `.raw_responses/` with `streamed: true`; must be zero-latency-impact and best-effort on client disconnect.
+       Depends on: #48 (done). Spec: TBD.
+
+- [x] **46. Shift-left governance: add SBA/SA-lite checks to `/spec`** *(S)* — Done (2026-06-27):
+  Added **Step 2b** to `.clinerules/workflows/spec.md` with three advisory checks
+  (G-1 AC testability, G-2 scope/value justification, G-3 dependency coherence).
+  Added **§4b** to the spec template to record findings. Updated `govern.md` cadence
+  note and `docs/governance.md` "Relationship to RAIL" section with a shift-left
+  vs. macro-audit split table. All findings are advisory; full `/govern` stays at
+  sprint close. No app code, tests, or CSS changed.
+  Spec: `docs/specs/spec-shift-left-governance.md`
 
 ### Testing strategy improvements (from QA review 2026-06-24)
 
@@ -802,3 +826,6 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 - [x] **28. Pre-commit git hook for test/syntax gates** *(S)* — Done (2026-06-27): `make hooks` symlinks `.git/hooks/pre-commit` → `scripts/pre-commit.sh`; 6 regression tests (PC-1…PC-6) green; documented in `README.md` (Git hooks section) and `AGENTS.md`.
        Spec: docs/specs/pre-commit-hook.md
+
+- [x] **51. Frontend behavior test layer (jsdom dev-only)** *(M)* — Done (2026-06-27): `package.json` (dev-only, no `"type":"module"`), `jsdom ^25` dev dep; `tests/js/app.behavior.test.mjs` — 15 passing tests (B-01…B-19) exercising `callChatApi`, `streamChatApi`, `appendMessage`, `saveSettings/restoreSettings`, `saveMemory`, `archiveCurrentSession`, `loadChatHistory`, and the global `unhandledrejection` handler via `vm.runInContext`; `run-tests.sh` updated with separate behavior-test step (jsdom-guarded, graceful skip); `.gitignore` adds `node_modules/` + `package-lock.json`; all 84 existing JS helper tests still green.
+       Spec: docs/specs/frontend-behavior-tests.md

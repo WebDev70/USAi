@@ -1,5 +1,40 @@
 ## [Unreleased]
 
+### Added (2026-06-27 — Frontend behavior test layer, jsdom dev-only)
+
+- **`tests/js/app.behavior.test.mjs`** (new): 15-test jsdom-based behavior suite
+  covering the previously-untested orchestration layer of `app.js`:
+  - B-01–B-03: `callChatApi` — happy path, 4xx error, network error (throw)
+  - B-04–B-05: `streamChatApi` — SSE delta streaming, 429 error before body
+  - B-06–B-07: `appendMessage` — user/assistant DOM output + markdown-body class
+  - B-08+B-09: `saveSettings` / `restoreSettings` — round-trip through localStorage
+  - B-13–B-14: `saveMemory` — 200 ok/400 error paths
+  - B-15–B-16: `archiveCurrentSession` — empty/non-empty history guard
+  - B-17–B-18: `loadChatHistory` — 2-turn render / empty-turns no-op
+  - B-19: global `unhandledrejection` handler — does not propagate exceptions
+  
+  **Strategy:** uses Node's built-in `vm.runInContext` to load `app.js` inside a
+  real jsdom window so module-scope `function` declarations land in the jsdom context
+  and are callable directly (e.g. `win.callChatApi()`). `fetch` is replaced with a
+  per-test stub; no real network calls.
+
+- **`package.json`** (new): dev-only manifest (`"private": true`, no `"type":"module"`)
+  with `"devDependencies": { "jsdom": "^25.0.0" }`. Never ships in the running app.
+
+- **`run-tests.sh`**: Added separate jsdom-guarded behavior-test step:
+  ```
+  ── JS behavior tests (jsdom, dev-only) ──────────────
+    node --test tests/js/app.behavior.test.mjs  (or: ⚠ jsdom not installed — skip)
+  ```
+  Pure-helper unit tests now run in a separate `node --test` invocation (excluding
+  `app.behavior.test.mjs`) to prevent `vm.createContext` from interfering with
+  the existing `require()`-based test loader.
+
+- **`.gitignore`**: Added `node_modules/` and `package-lock.json` (dev tooling, never tracked).
+
+- **`backlog.md`**: Item #51 marked Done.
+- **`docs/specs/frontend-behavior-tests.md`**: Status updated to Done.
+
 ### Fixed (2026-06-27 — Wire all remaining fetch() calls through loggedFetch)
 
 - **`app.js`**: All 23 remaining bare `fetch()` call-sites converted to `loggedFetch()`.

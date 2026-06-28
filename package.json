@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "description": "Dev-only tooling for USAi Chat (not shipped in the app).",
+  "devDependencies": {
+    "jsdom": "^25.0.0"
+  },
+  "scripts": {
+    "test": "node --test $(find tests/js -name '*.test.mjs')",
+    "test:behavior": "node --test tests/js/app.behavior.test.mjs",
+    "dev-setup": "npm install"
+  }
+}

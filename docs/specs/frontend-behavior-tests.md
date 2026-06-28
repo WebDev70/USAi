@@ -1,8 +1,7 @@
 # Spec: Frontend Behavior Tests (jsdom dev-only layer)
 
-**Status:** Ready  
-**Created:** 2026-06-24  
-**Author:** Cline  
+**Status:** Done
+**Created:** 2026-06-24
 **Type:** feature (test infrastructure only — no app-code changes)
 
 ---
