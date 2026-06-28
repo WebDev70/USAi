@@ -9,6 +9,7 @@ importing it must NOT start the HTTP server (it doesn't — `run()` is guarded b
 `if __name__ == '__main__'`).
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -117,12 +118,18 @@ class AddLogTests(unittest.TestCase):
     def setUp(self):
         self._saved_logs = list(server.server_logs)
         self._saved_max = server.MAX_LOGS
+        self._saved_config = dict(server.CONFIG)
+        self._saved_logs_dir = server.LOGS_DIR
+        self._saved_stamp = server._LOG_SESSION_STAMP
         server.server_logs.clear()
 
     def tearDown(self):
         server.server_logs.clear()
         server.server_logs.extend(self._saved_logs)
         server.MAX_LOGS = self._saved_max
+        server.CONFIG = self._saved_config
+        server.LOGS_DIR = self._saved_logs_dir
+        server._LOG_SESSION_STAMP = self._saved_stamp
 
     def test_appends_entry_with_fields(self):
         server.add_log('info', 'test', 'hello', {'k': 'v'})
@@ -141,6 +148,91 @@ class AddLogTests(unittest.TestCase):
         self.assertLessEqual(len(server.server_logs), 6)
         # Oldest entries dropped; the latest is retained.
         self.assertEqual(server.server_logs[-1]['message'], 'msg 9')
+
+    # ── PL-1: persist enabled — writes valid JSON line ───────────────────────
+    def test_persist_log_writes_jsonl_when_enabled(self):
+        """PL-1: _persist_log writes a valid JSON line to logs/ when PERSIST_LOGS=true."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            server.LOGS_DIR = Path(tmpdir)
+            server._LOG_SESSION_STAMP = '2026-06-27-143000'
+            server.CONFIG = dict(server.CONFIG)
+            server.CONFIG['persist_logs'] = True
+            server.CONFIG['log_file_max'] = 20
+            entry = {
+                'timestamp': '2026-06-27T14:30:00',
+                'level': 'info',
+                'component': 'test',
+                'message': 'PL-1 test',
+                'details': {},
+            }
+            server._persist_log(entry)
+            log_file = Path(tmpdir) / '2026-06-27-143000-server.jsonl'
+            self.assertTrue(log_file.exists(), 'JSONL file should be created')
+            line = log_file.read_text(encoding='utf-8').strip()
+            parsed = json.loads(line)
+            self.assertEqual(parsed['message'], 'PL-1 test')
+            self.assertEqual(parsed['level'], 'info')
+            self.assertEqual(parsed['component'], 'test')
+
+    # ── PL-2: persist disabled — no file written ─────────────────────────────
+    def test_persist_log_noop_when_disabled(self):
+        """PL-2: _persist_log is a no-op when PERSIST_LOGS is false (default)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            server.LOGS_DIR = Path(tmpdir)
+            server._LOG_SESSION_STAMP = '2026-06-27-143001'
+            server.CONFIG = dict(server.CONFIG)
+            server.CONFIG['persist_logs'] = False
+            entry = {
+                'timestamp': '2026-06-27T14:30:01',
+                'level': 'info', 'component': 'test',
+                'message': 'PL-2 test', 'details': {},
+            }
+            server._persist_log(entry)
+            log_file = Path(tmpdir) / '2026-06-27-143001-server.jsonl'
+            self.assertFalse(log_file.exists(), 'No file should be created when persist_logs is off')
+
+    # ── PL-3: write failure swallowed — add_log never raises ─────────────────
+    def test_persist_log_failure_is_swallowed(self):
+        """PL-3: A write failure (bad path) is swallowed; add_log() must not raise."""
+        # Point LOGS_DIR at a non-existent deep path so open() will fail.
+        server.LOGS_DIR = Path('/nonexistent/path/that/does/not/exist')
+        server._LOG_SESSION_STAMP = '2026-06-27-143002'
+        server.CONFIG = dict(server.CONFIG)
+        server.CONFIG['persist_logs'] = True
+        server.CONFIG['log_file_max'] = 20
+        # Must not raise — failure is always swallowed.
+        try:
+            server.add_log('info', 'test', 'PL-3 write failure test')
+        except Exception as exc:
+            self.fail(f'add_log raised unexpectedly: {exc}')
+
+    # ── PL-4: rotation — oldest file pruned when at cap ──────────────────────
+    def test_log_file_rotation(self):
+        """PL-4: Oldest *.jsonl files are pruned when the count reaches log_file_max."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            server.LOGS_DIR = Path(tmpdir)
+            server.CONFIG = dict(server.CONFIG)
+            server.CONFIG['persist_logs'] = True
+            server.CONFIG['log_file_max'] = 3
+            # Create 3 existing "old" session files.
+            for i in range(3):
+                old_file = Path(tmpdir) / f'2026-06-2{i}-090000-server.jsonl'
+                old_file.write_text('{"msg": "old"}\n', encoding='utf-8')
+            # Now write a new session — rotation should prune oldest.
+            server._LOG_SESSION_STAMP = '2026-06-27-143003'
+            entry = {
+                'timestamp': '2026-06-27T14:30:03',
+                'level': 'info', 'component': 'test',
+                'message': 'PL-4 rotation test', 'details': {},
+            }
+            server._persist_log(entry)
+            remaining = list(Path(tmpdir).glob('*.jsonl'))
+            # cap=3, 3 old + 1 new = 4 total; oldest should be pruned to stay at ≤ cap
+            self.assertLessEqual(len(remaining), 3,
+                                 f'Expected ≤3 files after rotation, got {len(remaining)}: {remaining}')
+            # The new session file must be present.
+            new_file = Path(tmpdir) / '2026-06-27-143003-server.jsonl'
+            self.assertIn(new_file, remaining, 'Current session file must survive rotation')
 
 
 class LoadConfigTests(unittest.TestCase):

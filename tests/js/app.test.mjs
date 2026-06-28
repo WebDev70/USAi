@@ -106,6 +106,52 @@ test('formatUsage tolerates both prompt_tokens and input_tokens naming', () => {
   assert.equal(app.formatUsage(null), '');
 });
 
+// FU-R1: reasoning_tokens inside completion_tokens_details → appended as "· 32 reasoning"
+test('formatUsage appends reasoning token count when completion_tokens_details.reasoning_tokens > 0', () => {
+  assert.equal(
+    app.formatUsage({
+      prompt_tokens: 84,
+      completion_tokens: 51,
+      total_tokens: 135,
+      completion_tokens_details: { reasoning_tokens: 32 },
+    }),
+    '84 in · 51 out · 135 total · 32 reasoning tokens'
+  );
+});
+
+// FU-R2: reasoning_tokens === 0 → NO reasoning segment (no false positive)
+test('formatUsage does NOT append reasoning segment when reasoning_tokens is 0', () => {
+  const result = app.formatUsage({
+    prompt_tokens: 10,
+    completion_tokens: 5,
+    total_tokens: 15,
+    completion_tokens_details: { reasoning_tokens: 0 },
+  });
+  assert.equal(result, '10 in · 5 out · 15 total tokens');
+  assert.ok(!result.includes('reasoning'), 'must not mention reasoning when count is 0');
+});
+
+// FU-R3: top-level reasoning_tokens fallback (alt provider shape)
+test('formatUsage accepts top-level reasoning_tokens as fallback', () => {
+  assert.equal(
+    app.formatUsage({
+      prompt_tokens: 20,
+      completion_tokens: 10,
+      total_tokens: 30,
+      reasoning_tokens: 5,
+    }),
+    '20 in · 10 out · 30 total · 5 reasoning tokens'
+  );
+});
+
+// FU-R4: no completion_tokens_details at all → output unchanged (regression guard)
+test('formatUsage is unchanged when no completion_tokens_details present', () => {
+  assert.equal(
+    app.formatUsage({ prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }),
+    '10 in · 5 out · 15 total tokens'
+  );
+});
+
 test('getExcludedParams omits temperature for Claude Opus', () => {
   const excluded = app.getExcludedParams('claude_opus_4');
   assert.ok(excluded.has('temperature'), 'opus models exclude temperature');

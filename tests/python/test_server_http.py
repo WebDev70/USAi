@@ -74,6 +74,7 @@ class ServerHTTPTestBase(unittest.TestCase):
         cls._saved_sessions = server.SESSIONS_DIR
         cls._saved_cache = server.CACHE_DIR
         cls._saved_history = server.HISTORY_FILE
+        cls._saved_raw_responses = server.RAW_RESPONSES_DIR
 
         cls._tmp = tempfile.TemporaryDirectory()
         tmp = Path(cls._tmp.name)
@@ -82,6 +83,8 @@ class ServerHTTPTestBase(unittest.TestCase):
         server.SESSIONS_DIR.mkdir()
         server.CACHE_DIR = tmp / 'cache'
         server.CACHE_DIR.mkdir()
+        server.RAW_RESPONSES_DIR = tmp / 'raw_responses'
+        server.RAW_RESPONSES_DIR.mkdir()
         server.HISTORY_FILE = tmp / 'chat_history.json'
         # A real, empty vault so has_obsidian works for memory tests.
         cls._vault = tmp / 'vault'
@@ -114,6 +117,7 @@ class ServerHTTPTestBase(unittest.TestCase):
         server.SESSIONS_DIR = cls._saved_sessions
         server.CACHE_DIR = cls._saved_cache
         server.HISTORY_FILE = cls._saved_history
+        server.RAW_RESPONSES_DIR = cls._saved_raw_responses
 
     def url(self, path):
         return f'http://127.0.0.1:{self.port}{path}'
@@ -305,6 +309,118 @@ class RoutingTests(ServerHTTPTestBase):
     def test_unknown_delete_route_is_404(self):
         status, _ = _request('DELETE', self.url('/no-such-endpoint'))
         self.assertEqual(status, 404)
+
+
+class RawResponsesIntegrationTests(ServerHTTPTestBase):
+    """RC-1…RC-4: integration tests for the raw-response capture feature."""
+
+    def _enable_capture(self):
+        """Helper — enable capture and return original value for teardown."""
+        orig = server.CONFIG.get('capture_raw_responses')
+        server.CONFIG['capture_raw_responses'] = True
+        server.CONFIG['raw_responses_max'] = 200
+        return orig
+
+    def _disable_capture(self, orig):
+        if orig is None:
+            server.CONFIG.pop('capture_raw_responses', None)
+        else:
+            server.CONFIG['capture_raw_responses'] = orig
+
+    def test_rc1_capture_on_creates_file(self):
+        """RC-1: calling _capture_raw_response writes exactly one file with correct metadata."""
+        raw_dir = server.RAW_RESPONSES_DIR
+        # Clear any pre-existing files in the temp raw dir.
+        for p in raw_dir.glob('*.json'):
+            p.unlink()
+        orig = self._enable_capture()
+        try:
+            server._capture_raw_response(
+                {'timestamp': '2026-06-27T10:00:00', 'method': 'POST',
+                 'path': '/api/v1/chat/completions', 'status': 200, 'model': 'gpt-4'},
+                b'{"id":"chat-abc","choices":[{"message":{"content":"hello"}}],"usage":{"total_tokens":5}}'
+            )
+            files = list(raw_dir.glob('*.json'))
+            self.assertEqual(len(files), 1, 'Exactly one capture file should be written')
+            record = json.loads(files[0].read_text(encoding='utf-8'))
+            self.assertEqual(record['status'], 200)
+            self.assertEqual(record['path'], '/api/v1/chat/completions')
+            self.assertEqual(record['model'], 'gpt-4')
+            self.assertFalse(record['streamed'])
+            self.assertIn('id', record['raw'])
+            # Auth key must NOT appear anywhere.
+            content = json.dumps(record)
+            self.assertNotIn('SECRET-should-never-leak', content)
+        finally:
+            self._disable_capture(orig)
+
+    def test_rc2_list_and_read_and_delete_single(self):
+        """RC-2: GET /raw-responses lists; GET ?id= reads; DELETE ?id= removes."""
+        raw_dir = server.RAW_RESPONSES_DIR
+        for p in raw_dir.glob('*.json'):
+            p.unlink()
+        orig = self._enable_capture()
+        try:
+            server._capture_raw_response(
+                {'timestamp': '2026-06-27T10:01:00', 'method': 'POST',
+                 'path': '/api/v1/chat/completions', 'status': 201, 'model': 'gpt-3.5'},
+                b'{"choices":[{"message":{"content":"test"}}]}'
+            )
+            # List — no 'raw' field in listing.
+            status, listing = _request('GET', self.url('/raw-responses'))
+            self.assertEqual(status, 200)
+            self.assertEqual(len(listing), 1)
+            self.assertNotIn('raw', listing[0])
+            rec_id = listing[0]['id']
+            # Read full record.
+            status, full = _request('GET', self.url(f'/raw-responses?id={rec_id}'))
+            self.assertEqual(status, 200)
+            self.assertIn('raw', full)
+            self.assertEqual(full['status'], 201)
+            # Delete single record.
+            status, _ = _request('DELETE', self.url(f'/raw-responses?id={rec_id}'))
+            self.assertEqual(status, 200)
+            status, _ = _request('GET', self.url(f'/raw-responses?id={rec_id}'))
+            self.assertEqual(status, 404)
+        finally:
+            self._disable_capture(orig)
+
+    def test_rc3_delete_all_clears_store(self):
+        """RC-3: DELETE /raw-responses (no id) clears all files."""
+        raw_dir = server.RAW_RESPONSES_DIR
+        for p in raw_dir.glob('*.json'):
+            p.unlink()
+        orig = self._enable_capture()
+        try:
+            for i in range(3):
+                server._capture_raw_response(
+                    {'timestamp': f'2026-06-27T10:0{i}:00', 'method': 'POST',
+                     'path': '/api/test', 'status': 200, 'model': None},
+                    b'{}'
+                )
+            status, listing = _request('GET', self.url('/raw-responses'))
+            self.assertEqual(len(listing), 3)
+            status, _ = _request('DELETE', self.url('/raw-responses'))
+            self.assertEqual(status, 200)
+            status, listing = _request('GET', self.url('/raw-responses'))
+            self.assertEqual(listing, [])
+        finally:
+            self._disable_capture(orig)
+
+    def test_rc4_config_has_raw_capture_boolean(self):
+        """RC-4: /config returns has_raw_capture boolean."""
+        # Default: off in test setup (capture_raw_responses not set).
+        status, body = _request('GET', self.url('/config'))
+        self.assertEqual(status, 200)
+        self.assertIn('has_raw_capture', body)
+        self.assertFalse(body['has_raw_capture'])
+        # Enable and re-check.
+        orig = self._enable_capture()
+        try:
+            status, body = _request('GET', self.url('/config'))
+            self.assertTrue(body['has_raw_capture'])
+        finally:
+            self._disable_capture(orig)
 
 
 if __name__ == '__main__':
