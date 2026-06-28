@@ -27,6 +27,14 @@ Search locations (all three — recall everything relevant):
 Surface any prior decisions, lessons learned, or related specs that bear on this
 feature. Note what was found (or "no prior context found") in the spec's preamble.
 
+**Prevention-rule recall receipt.** Also read `self-improvement-log.md` in
+`<OBSIDIAN_VAULT_PATH>/Cline/memories/`. Scan each entry and emit:
+- `Prevention-rule recall: none apply` — if no entries are relevant to this task.
+- `Prevention-rule recall: Entry 001 (stale server), Entry 003 (no log)` — list
+  all relevant entries by number and a one-word description.
+
+This receipt must appear before the first interview question. It cannot be skipped.
+
 ---
 
 ## Step 1 — Product Owner interview (PLAN MODE)
@@ -77,6 +85,50 @@ Before writing the spec, run a silent mental check against USAi conventions:
 | SSRF | Upstream calls go through `is_safe_upstream_url` |
 
 Flag any conflicts in the spec's Risks section.
+
+---
+
+## Step 2b — Shift-left governance check (SBA/SA-lite)
+
+> **Scope:** This is a *per-requirement* subset of the full Governance Board rubric.
+> It catches the three most common requirement-level failures **before** they bake
+> into a spec. The full four-role `/govern` audit (SBA · SA · SE · SPMS) remains
+> a **sprint-close / on-demand** activity — those macro-assessment roles require a
+> body of completed work to assess and cannot be meaningfully run per-spec.
+
+Run the following three lightweight checks **silently** (no user interruption unless
+a check fails). Record the outcome in **§4b of the spec template** (see below).
+All findings are **advisory** — they are recorded in the spec but do not block
+Status: Ready on their own.
+
+### Check G-1 — AC testability (SBA-3)
+For each acceptance criterion from Step 1 Q2:
+- Is it **binary** — can it only pass or fail, with no ambiguity?
+- Is it **observable** — testable by a unit/integration test or verifiable in the
+  running app with a specific, repeatable action?
+- **Flag** any AC that is vague (e.g. "feels faster", "looks better", "improves UX").
+- **Rewrite** flagged ACs as specific, binary criteria before proceeding.
+  - *Bad:* "The UI is more responsive."
+  - *Good:* "The loading spinner appears within 100 ms of submitting a message."
+
+### Check G-2 — Scope / value justification (SBA-2)
+- Does every item in scope map to the stated goal for the stated user?
+- Is there any element that adds complexity without clear user value (**scope creep**)?
+- Is any item being built *beyond* what users need right now (**gold-plating**)?
+- If yes to either: propose trimming to the stated goal. Record as advisory finding.
+
+### Check G-3 — Dependency coherence (SBA-5-lite)
+- Does this spec assume that a separate backlog item is already done?
+  (e.g. "Requires backlog #7 to ship first" or "Calls an endpoint added in #22.")
+- If so: name the dependency explicitly in §7 (Risks) and confirm whether the
+  prerequisite is already done (`[x]` in `backlog.md`) or still open.
+- Open prerequisites are advisory, not blocking — but they must be named.
+
+### Outcome
+- All three checks pass → proceed to Step 3 with no further action.
+- One or more flags → rewrite the affected AC / trim scope / note the dependency,
+  then record the findings in **§4b** of the spec. Do not block or re-interview
+  the user unless a rewrite requires their input.
 
 ---
 
@@ -146,6 +198,18 @@ As a <user> I want <goal> so that <value>.
 
 ---
 
+## 4b. Shift-left governance findings (Step 2b output)
+
+> Filled by Cline during `/spec`. Advisory — does not block Status: Ready.
+
+| Check | Result | Notes |
+|-------|--------|-------|
+| G-1 AC testability | ✅ Pass / ⚠️ Rewritten / N/A | <detail or "all ACs are binary and observable"> |
+| G-2 Scope / value | ✅ Pass / ⚠️ Advisory | <detail or "no scope creep identified"> |
+| G-3 Dependency coherence | ✅ Pass / ⚠️ Advisory | <detail or "no prerequisite backlog items"> |
+
+---
+
 ## 5. Test plan (Role 4 — Tester, written BEFORE implementation)
 
 | # | Test description | File | Type |
@@ -184,6 +248,14 @@ As a <user> I want <goal> so that <value>.
 - [ ] Docs updated per §6
 - [ ] Acceptance criteria AC-1…AC-N all verified
 - [ ] Memory note written to `Cline/memories/`
+
+## Spec changelog
+
+> *Optional — populated only when a spec amendment is made during `/build`
+> (see build.md §3d). Leave empty if no amendments were needed.*
+
+| Date | Section | Amendment | Reason |
+|------|---------|-----------|--------|
 ```
 
 ---

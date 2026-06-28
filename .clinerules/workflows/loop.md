@@ -106,6 +106,29 @@ If the build has not passed `/review` after 5 iterations:
 
 4. Do not keep looping without user input.
 
+### Clean-state guarantee (after escalation)
+
+Before awaiting user input, leave the working tree in a clean, recoverable state.
+Choose one of two options and record which was chosen in the escalation memory note:
+
+**Option A — Stash / branch (recommended when partial work has value):**
+```bash
+git stash push -m "rail-loop-escalation/<feature>-iter5"
+# or: git checkout -b wip/<feature>-escalated
+```
+
+**Option B — Revert to last green commit (when partial work is net-negative):**
+```bash
+git checkout -- .    # discard unstaged changes
+# or: git reset --hard <last-green-sha>
+```
+
+> **Never leave the working tree in a broken half-state.** A broken tree makes the
+> next attempt harder and can mask unrelated test failures. If in doubt, stash.
+
+Record the chosen option and the stash ref or commit SHA in the escalation memory
+note's `## Working-tree state` section (see template above).
+
 ---
 
 ## Done criteria (all must be true)
@@ -144,13 +167,44 @@ After a successful loop, before closing:
    - What failed review and why?
    - What took the most iterations?
 
+2. **Coverage ratchet self-advancement:** check if measured values warrant a
+   gate bump (see "Coverage ratchet self-advancement" below).
+
+3. **Optional mutation audit** (see "Optional deep-quality pass" below).
+
+4. **Propose improvements** — for each proposal, write it into **both** sinks:
+
+After recording the coverage numbers, check for advancement opportunities:
+
+- If any measured value exceeds its `.coverage-thresholds` gate by **≥ 5 percentage
+  points** (e.g., gate is 90%, measured is 95.3%), propose bumping the threshold in
+  the post-loop retro:
+  > "Coverage ratchet: `py_line` is 95.3% vs gate 90% (gap +5.3pp) — propose
+  > bumping gate to 93% in `.coverage-thresholds`."
+- Include the proposal in the **Follow-up proposals** section of the memory note.
+- Never auto-edit `.coverage-thresholds` — the proposal goes to the user for approval.
+
+### Optional deep-quality pass (mutation testing)
+
+For builds that **significantly touch `server.py`** (new helpers, new logic branches,
+refactored functions):
+
+```bash
+make mutation   # or: ./scripts/mutation-audit.sh
+```
+
+This is informational only (exits 0 always). Record the kill rate in the memory note.
+A drop in kill rate is a signal to add more assertion-rich tests. If the rate is
+below 60%, add a proposal to improve test assertion depth.
+
+
+
 2. **Propose improvements** — for each proposal, write it into **both** sinks:
 
    a. **`backlog.md`** — add a new `- [ ] **N. <title>** *(size)*` entry under the
       appropriate section. Do this in the same turn; do not leave it as a chat
       suggestion.
 
-   b. **Obsidian** — write a tagged note to `Cline/memories/`:
       ```
       File: <OBSIDIAN_VAULT_PATH>/Cline/memories/YYYY-MM-DD-HHMMSS-<feature>-proposals.md
       Tags: [usai-chat, rail-loop, proposals, <topic-tags>]

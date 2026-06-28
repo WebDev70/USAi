@@ -26,15 +26,24 @@ Before writing a single line of code:
    <OBSIDIAN_VAULT_PATH>/Continue Extension/memories/
    <OBSIDIAN_VAULT_PATH>/USAi/memories/
    ```
-3. **Confirm Status is "Ready"** (not Draft). If it's still Draft, pause and ask
+3. **Prevention-rule recall receipt.** Read `self-improvement-log.md` in
+   `<OBSIDIAN_VAULT_PATH>/Cline/memories/`. For each entry, check whether it
+   applies to this task. Emit one of:
+   - `Prevention-rule recall: none apply` — if no entries are relevant.
+   - `Prevention-rule recall: Entry 001 (stale server), Entry 002 (UI placement)` — list all relevant entries by number and one-word description.
+
+   This receipt is required before writing any code. It is the checkpoint that
+   entries 001–NNN have been scanned; it cannot be skipped or assumed.
+
+4. **Confirm Status is "Ready"** (not Draft). If it's still Draft, pause and ask
    the user to finish `/spec` first.
-4. **Confirm the backlog item is `[~]` In Progress.** Open `backlog.md` and
+5. **Confirm the backlog item is `[~]` In Progress.** Open `backlog.md` and
    verify the item for this spec is set to `[~]` with a spec link. If it is still
    `[ ]` Not started (i.e. the spec was written before the Step 3b rule existed),
    fix it now — flip to `[~]` and append `— spec: <path>` — before touching any
    code. This ensures the backlog accurately reflects work in flight.
-5. **Confirm you understand all 8 sections** of the spec before acting.
-6. **Check the `Type:` field** and apply role-skipping accordingly:
+6. **Confirm you understand all 8 sections** of the spec before acting.
+7. **Check the `Type:` field** and apply role-skipping accordingly:
 
    | Type | Roles to skip / adapt |
    |------|-----------------------|
@@ -124,7 +133,23 @@ python3 -m py_compile server.py   # Python syntax gate
 - Re-run the full suite to confirm still green.
 - Do not change behavior during refactor.
 
-### 3d. Docs in sync
+### 3d. Spec amendment protocol
+
+If during implementation you discover that the spec is **incorrect or incomplete**
+(the real code structure differs from §3/§4, or an AC is impossible as written):
+
+1. **Pause** — do not silently deviate from the spec.
+2. **Propose** a one-line amendment (e.g., "§3: add `utils.py` — helper extracted
+   from `server.py` to avoid import cycle").
+3. **Confirm** with the user (or in an unattended loop, record the amendment and
+   continue if it is clearly a clarification, not a scope change).
+4. **Record** the amendment in the spec's `## Spec changelog` section.
+5. **Continue** implementation with the amended spec as the new source of truth.
+
+> **Never silently expand scope.** A spec amendment is for corrections only —
+> if it adds new features or changes acceptance criteria, that requires a new spec.
+
+### 3e. Docs in sync
 
 Update docs **in the same turn** as the code change (per spec §6):
 - `CHANGELOG.md` — always, under `[Unreleased]`

@@ -134,6 +134,28 @@ From spec §2, verify each acceptance criterion:
 | CSS change bumps `styles.css?v=N` | ✅ / N/A / ❌ |
 | Comments explain *why* | ✅ / ❌ |
 
+> **§6e-BE / §6e-FE / §6e-DOCS:** When the spec touches domain-specific files,
+> the relevant SME mandatory gates apply within this section:
+> - **§6e-BE** (backend): re-run the "Mandatory back-end gates" table from `sme-backend.md`
+> - **§6e-FE** (frontend): re-run the "Mandatory front-end gates" table from `sme-frontend.md`
+> - **§6e-DOCS** (docs/memory): re-run the "Mandatory documentation gates" table from `sme-docs.md`
+>
+> If the spec does not touch the domain, mark the subsection N/A.
+
+### 6f. Shift-left governance findings gate (§4b)
+
+Confirm the spec's §4b table is filled:
+
+| §4b check | Present? | Advisory finding addressed or deferred? |
+|-----------|----------|----------------------------------------|
+| G-1 AC testability | ✅ / ❌ | ✅ addressed / deferred to #N / N/A |
+| G-2 Scope / value | ✅ / ❌ | ✅ addressed / deferred to #N / N/A |
+| G-3 Dependency coherence | ✅ / ❌ | ✅ addressed / deferred to #N / N/A |
+
+- If §4b is missing entirely: emit `GAP [docs]: spec §4b not filled — add shift-left findings table.`
+- If a ⚠️ finding has no deferral backlog item: emit as an **advisory GAP** (non-blocking):
+  `ADVISORY [process]: §4b G-N finding recorded but no deferral backlog item named.`
+
 ---
 
 ## Verdict

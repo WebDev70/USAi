@@ -16,6 +16,12 @@ INNOVATION). Findings flow into `backlog.md` and the self-improvement log.
 **Cadence:** every sprint close (auto-triggered from `.clinerules/scrum-artifacts.md`)
 OR on demand when the user types `/govern`.
 
+> **Shift-left note:** A *per-requirement* subset of the SBA/SA rubric (AC
+> testability · scope/value justification · dependency coherence) is already
+> applied by `/spec` Step 2b before implementation begins. The full four-role
+> audit here focuses on cross-sprint, macro-assessment findings that require a
+> body of completed work and cannot be meaningfully evaluated per-spec.
+
 ---
 
 ## Pre-flight
@@ -141,6 +147,10 @@ Walk through each item in the rubric. Score 1–5 and record a brief finding for
   - Tests that test implementation detail rather than behavior
   - Integration tests that make live network calls (should be zero)
 - Check `.coverage-thresholds` — are the thresholds higher than they were 2 audits ago (ratcheting)?
+- **Mutation testing:** run `./scripts/mutation-audit.sh` (or `make mutation`) for
+  any `server.py`-heavy changes since the last audit. Check the kill rate: below 60%
+  is a signal that tests assert on execution path rather than behaviour. Flag as
+  ADVISORY if the kill rate has dropped since the prior audit.
 
 ### SE-3: Security pattern consistency
 - Every endpoint added since last audit: does it use `get_memory_dir` path-traversal guard (for FS endpoints) and `is_safe_upstream_url` (for proxy endpoints)?
@@ -152,6 +162,9 @@ Walk through each item in the rubric. Score 1–5 and record a brief finding for
 - Read `.coverage-thresholds`. Compare `py_line`, `py_branch`, `js_branch` to prior audit (from governance report or sprint note).
 - Are any gates stagnant at the minimum for 2+ audits? Recommend a ratchet bump.
 - Are any gates at risk of regression (close to the threshold)?
+- **Ratchet self-advancement:** Check whether the `/loop` ratchet rule has been
+  applied — if measured coverage exceeded any gate by ≥ 5 points during the sprint
+  and no bump was proposed, flag as ADVISORY (the rule may have been skipped).
 
 ### SE-5: Innovation opportunities
 - Identify 1–3 concrete, low-risk innovation opportunities within project constraints:

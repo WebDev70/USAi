@@ -51,7 +51,8 @@ handing off to the next.
 - Validate the approach against USAi conventions (see `docs/rail-pipeline.md` §3):
   no new *runtime* dependencies (vanilla JS / stdlib Python + python-dotenv),
   SSRF guard, path-traversal rejection, CSS `?v=N` bump, `HOST`/`PORT` via
-  `resolve_bind_address`, tool gating via `getEnabledTools`.
+  `resolve_bind_address`, tool gating — see `docs/rail-pipeline.md` for the
+  canonical convention list.
 - Flag any design conflict before proceeding.
 
 ### 3. Developer (SME)
