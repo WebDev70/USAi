@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-    <link rel="stylesheet" href="styles.css?v=24">
+    <link rel="stylesheet" href="styles.css?v=25">
 
   </head>
   <body>
@@ -238,6 +238,10 @@
         <div class="debug-panel" id="debugPanel" style="display:none;">
           <div class="debug-header">
             <h3>Debug Logs</h3>
+            <div class="debug-tabs">
+              <button class="debug-tab active" data-tab="live">Live</button>
+              <button class="debug-tab" data-tab="files">Log Files</button>
+            </div>
             <div class="debug-controls">
               <select id="debugLevel">
                 <option value="all">All Levels</option>
@@ -250,6 +254,7 @@
             </div>
           </div>
           <div class="debug-logs" id="debugLogs"></div>
+          <div class="debug-files" id="debugFiles" style="display:none;"></div>
         </div>
       </main>
 

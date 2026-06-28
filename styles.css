@@ -1525,6 +1525,94 @@ body.dark-mode .markdown-body .md-pre {
   font-style: italic;
 }
 
+/* ── Log Files tab ────────────────────────────────────────────────────────── */
+
+.debug-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.debug-tab {
+  padding: 4px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.debug-tab.active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+
+.debug-tab:not(.active):hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.debug-files {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', 'Courier New', monospace;
+  font-size: 0.74rem;
+}
+
+.log-file-loading,
+.log-file-empty {
+  text-align: center;
+  color: var(--color-text-secondary);
+  padding: 2rem 0;
+  font-style: italic;
+  line-height: 1.7;
+}
+
+.log-file-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+  cursor: pointer;
+  border-left: 3px solid var(--color-border);
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.log-file-row:hover {
+  background: var(--color-bg-hover);
+  border-left-color: var(--color-accent);
+}
+
+.log-file-row.active {
+  border-left-color: var(--color-accent);
+  background: var(--color-bg-hover);
+}
+
+.log-file-name {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.log-file-meta {
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  font-size: 0.70rem;
+}
+
+#debugFileEntries {
+  margin-top: 8px;
+}
+
 .log-entry {
   padding: 7px 10px;
   margin-bottom: 5px;
