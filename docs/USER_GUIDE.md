@@ -467,6 +467,35 @@ Each line is a JSON object:
 Older session files are automatically deleted when the count exceeds `LOG_FILE_MAX`.
 Log files are git-ignored — they won't appear in `git status`.
 
+### Analyzing log files with RAIL (developer use)
+
+When `PERSIST_LOGS=true`, the RAIL pipeline automatically analyzes your session log
+files during every `/review` and `/govern` pass. You can also run the analyzer
+manually from the project root:
+
+```bash
+./scripts/analyze-logs.sh          # analyze logs/ (default)
+./scripts/analyze-logs.sh logs/    # same, explicit path
+```
+
+**What the analyzer reports:**
+
+- Total entries and a breakdown by level (`info`, `warn`, `error`) and component.
+- The top-3 most frequent error messages (sensitive patterns like `sk-`, `Bearer `
+  are automatically replaced with `[REDACTED]`).
+- Any `fetch` entries with `latency_ms > 2000ms` (latency outliers).
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| `0`  | No error entries found (or no log files exist) |
+| `1`  | One or more `"level": "error"` entries found |
+
+In the RAIL `/review` workflow, exit 1 is **advisory only** — it never converts a
+PASS review to FAIL. In `/govern` (sprint-close audit), the same error component
+appearing in two consecutive reports is escalated to **BLOCKING**.
+
 ### How do I tell if the server is up without opening the browser?
 
 ```bash

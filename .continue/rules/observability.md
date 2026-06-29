@@ -25,6 +25,22 @@ DevSecOps — without adding runtime dependencies or leaking secrets.
   Debug Logs panel so users can copy them when reporting issues, rather than dying
   silently in the console.
 
+## Analyzing logs — closing the runtime→QA loop
+
+Observability means **both writing and reading** the logs. The RAIL pipeline is
+wired to analyze session logs as part of its QA and self-improvement process:
+
+- **`scripts/analyze_logs.py`** + **`scripts/analyze-logs.sh`** — stdlib Python
+  analyzer that reads `logs/*.jsonl`, counts errors by component, surfaces latency
+  outliers (>2000ms), and scrubs sensitive patterns (`sk-`, `Bearer `, etc.).
+  Exits 1 if any `"level":"error"` entries exist; exits 0 otherwise.
+- **`/review` §6g** — advisory runtime log gate runs `analyze-logs.sh` at every
+  review. Results surface as `ADVISORY [logs]:` lines — never converts PASS to FAIL.
+- **`/build` pre-flight step 3b** — log recall before touching component files
+  (informational only — never blocks the build).
+- **`/govern` SE-5** — log-trend audit at sprint close: recurring errors in the same
+  component across two consecutive reports escalate to BLOCKING.
+
 ## Health & operability (IaC tie-in)
 
 - The non-secret **`/config`** endpoint doubles as a liveness signal; the container
@@ -37,6 +53,9 @@ DevSecOps — without adding runtime dependencies or leaking secrets.
 
 - `add_log` rotation is already unit-tested (`tests/python/test_server.py`). If you
   change logging behavior (levels, rotation, redaction), add/adjust a test.
+- The log analyzer has its own test suite: `tests/python/test_analyze_logs.py`
+  (AL-1…AL-8 covering empty dirs, error detection, scrubbing, malformed lines).
 
 This role has no dedicated `/check`; the `code-quality-review` and `security-review`
 checks cover "uses the log buffer" and "never logs secrets" respectively.
+

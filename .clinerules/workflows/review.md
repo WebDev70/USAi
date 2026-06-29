@@ -156,6 +156,22 @@ Confirm the spec's §4b table is filled:
 - If a ⚠️ finding has no deferral backlog item: emit as an **advisory GAP** (non-blocking):
   `ADVISORY [process]: §4b G-N finding recorded but no deferral backlog item named.`
 
+### 6g. Runtime log review (advisory)
+
+Run the log analyzer if `PERSIST_LOGS` is enabled:
+
+```bash
+./scripts/analyze-logs.sh
+```
+
+| Result | Action |
+|--------|--------|
+| Exit 0 | ✅ Log review — clean |
+| Exit 1 (errors found) | Append `ADVISORY [logs]: N error entries — top: <list>` to gap list |
+| No files / disabled | Note "log review skipped (persistence disabled)" — not a gap |
+
+**Advisory only — never converts PASS to FAIL.**
+
 ---
 
 ## Verdict

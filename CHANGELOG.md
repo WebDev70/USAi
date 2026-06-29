@@ -1,6 +1,47 @@
 ## [Unreleased]
 
-### Added (2026-06-27 — Frontend behavior test layer, jsdom dev-only)
+### Added (2026-06-28 — RAIL log analysis, closing the runtime→QA loop, #52)
+
+- **`scripts/analyze_logs.py`** (new): stdlib Python log analyzer. Reads all
+  `logs/*.jsonl` files (capped at 5000 lines per file), counts entries by `level`
+  and `component`, identifies the top-3 most frequent error messages, and collects
+  `fetch` entries with `latency_ms > 2000ms` as latency outliers. Sensitive patterns
+  (`sk-`, `Bearer `, `api_key=`, `password=`) are scrubbed to `[REDACTED]` in all
+  output. Exits `1` if any `"level":"error"` entries found; `0` otherwise.
+
+- **`scripts/analyze-logs.sh`** (new): shell wrapper for the Python analyzer.
+  Auto-detects the project `.venv`; falls back to system `python3`. Accepts an
+  optional `[log-dir]` argument. Called by `/review` §6g, `/build` step 3b, and
+  `/govern` SE-5.
+
+- **`tests/python/test_analyze_logs.py`** (new): 8 TDD tests (AL-1…AL-8) covering
+  empty dir, all-info, single error, multiple errors same component, latency outlier
+  present/absent, secret scrubbing, and malformed JSON line skipping.
+
+- **`.clinerules/workflows/review.md` — §6g** (new): advisory "Runtime log review"
+  gate runs `analyze-logs.sh` at every `/review` pass. Exit 1 surfaces as
+  `ADVISORY [logs]:` lines in the gap list — never converts PASS to FAIL.
+
+- **`.clinerules/workflows/build.md` — pre-flight step 3b** (new): "Runtime log
+  recall" step runs `analyze-logs.sh` before touching any component files.
+  Informational only — never blocks the build.
+
+- **`.clinerules/workflows/govern.md` — SE-5** (new): "Log-trend audit" step at
+  sprint close. A component with errors → ADVISORY + backlog proposal. Same
+  component errors in two consecutive governance reports → BLOCKING + append to
+  `self-improvement-log.md`.
+
+- **`.continue/rules/observability.md`** updated: Observability is now defined as
+  *writing* AND *reading and acting on* runtime logs. Added "Analyzing logs" section
+  documenting `analyze_logs.py`, `/review §6g`, `/build step 3b`, and `/govern SE-5`.
+
+- **`docs/rail-pipeline.md` §5** updated: entry #11 added documenting the RAIL log
+  analysis rollout.
+
+- **`docs/USER_GUIDE.md` §10 Troubleshooting** updated: new "Analyzing log files
+  with RAIL (developer use)" subsection explaining how to run `analyze-logs.sh`,
+  what it reports, and how exit codes map to RAIL review/govern behavior.
+
 
 - **`tests/js/app.behavior.test.mjs`** (new): 15-test jsdom-based behavior suite
   covering the previously-untested orchestration layer of `app.js`:

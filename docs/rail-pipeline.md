@@ -352,6 +352,14 @@ catching failures before they leave a developer's machine (backlog **#28**).
     self-advancement rule (≥5pp threshold) in `/loop` + `govern.md` SE-4; mutation
     testing cadence wired into `/loop` retro + `govern.md` SE-2; `getEnabledTools`
     duplication fixed in `.clinerules/rail-pipeline.md`.
+11. **RAIL log analysis — closing the runtime→QA loop** (done, backlog #52,
+    2026-06-28): five phases wiring `logs/*.jsonl` runtime files into RAIL —
+    `scripts/analyze_logs.py` + `scripts/analyze-logs.sh` (stdlib Python analyzer,
+    secret scrubbing, latency outlier detection); `/review` §6g advisory runtime log
+    gate; `/build` pre-flight step 3b runtime log recall; `/govern` SE-5 log-trend
+    audit (recurring component errors escalate to BLOCKING); `observability.md`
+    extended to define "write AND analyze"; 8 tests `AL-1…AL-8`.
+    Observability now means both *writing* and *reading and acting on* runtime logs.
 
 ---
 

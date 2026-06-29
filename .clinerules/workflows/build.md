@@ -112,7 +112,20 @@ failing. This is the proof that tests were written first — it is required by t
 `/review` §6a TDD check. A build without a Red receipt is considered a TDD
 violation and will be flagged as a GAP.
 
-### 3b. GREEN — minimum code to pass
+### 3b. Runtime log recall (informational)
+
+Before touching any component files, run the log analyzer if `PERSIST_LOGS=true`:
+
+```bash
+./scripts/analyze-logs.sh
+```
+
+Scan for error entries in the `component` field matching the files being edited.
+Record any relevant errors in the session memory note as build context.
+**Informational only — never blocks the build.**
+If persistence is off or no files exist: skip ("log recall skipped").
+
+### 3c. GREEN — minimum code to pass
 
 Write the minimum production code to make the failing tests pass without breaking
 existing ones. Implement only what spec §4 (Technical approach) describes.

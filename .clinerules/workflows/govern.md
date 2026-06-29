@@ -166,7 +166,19 @@ Walk through each item in the rubric. Score 1–5 and record a brief finding for
   applied — if measured coverage exceeded any gate by ≥ 5 points during the sprint
   and no bump was proposed, flag as ADVISORY (the rule may have been skipped).
 
-### SE-5: Innovation opportunities
+### SE-5: Log-trend audit
+
+```bash
+./scripts/analyze-logs.sh
+```
+
+- A `component` with error entries → ADVISORY + propose a backlog item for that component.
+- Same `component` errors appear in two consecutive governance reports → BLOCKING +
+  append an entry to `Cline/memories/self-improvement-log.md` describing the recurring
+  pattern and recommending a fix.
+- `PERSIST_LOGS=false` or no `*.jsonl` files found → SE-5 **N/A** (note in report).
+
+### SE-6: Innovation opportunities
 - Identify 1–3 concrete, low-risk innovation opportunities within project constraints:
   - Modern vanilla CSS (container queries, `:has()`, `color-mix()`, View Transitions)?
   - Python 3.11+ features (`tomllib`, `ExceptionGroup`, improved `match`)?

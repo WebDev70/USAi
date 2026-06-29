@@ -10,7 +10,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **47**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **52**.
 
 ---
 
@@ -108,6 +108,9 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 ** *(S)* — Done (2026-06-27): `logs/` dir tracked (`.gitkeep` + `README.md`); `_persist_log()` helper wired into `add_log()`; opt-in via `PERSIST_LOGS=true`; per-run JSONL files with mtime-based rotation at `LOG_FILE_MAX=20`; `persist_logs` bool in `/config`; 4 new unit tests (PL-1…PL-4) green; docs updated.
        Spec: docs/specs/log-directory-persistence.md
+
+- [x] **52. RAIL Log Analysis — Closing the Runtime→QA Loop** *(M)* — Done (2026-06-28): `scripts/analyze_logs.py` + `analyze-logs.sh` (stdlib Python, secret scrubbing, latency outlier detection, 5000-line cap); `/review` §6g advisory log gate (never blocks PASS); `/build` pre-flight step 3b log recall (informational); `/govern` SE-5 log-trend audit (recurring component errors → BLOCKING); `observability.md` extended (write AND analyze); `docs/rail-pipeline.md` §5 entry #11; `docs/USER_GUIDE.md` log analysis subsection; 8 tests AL-1…AL-8 green.
+       Spec: docs/specs/rail-log-analysis.md
 
 - [ ] **48b. Raw API response capture (streaming SSE v2)** *(S)* — Accumulate SSE byte chunks during relay; write completed stream to `.raw_responses/` with `streamed: true`; must be zero-latency-impact and best-effort on client disconnect.
        Depends on: #48 (done). Spec: TBD.
