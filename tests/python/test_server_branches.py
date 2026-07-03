@@ -906,5 +906,430 @@ class LogFilesViewerTests(ServerBranchTestBase):
                           f'Expected 400/404 for name={bad_name!r}, got {status}')
 
 
+class ProjectsCRUDTests(unittest.TestCase):
+    """Projects CRUD: GET/POST/PUT/DELETE /projects and guard paths.
+
+    Covers server.py lines: _safe_project_id (1522), _get_projects (1527-1541),
+    _post_projects (1543-1581), _put_project (1583-1619), _delete_project (1621-1648).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._saved = (dict(server.CONFIG), server.SESSIONS_DIR,
+                      server.CACHE_DIR, server.HISTORY_FILE,
+                      server.PROJECTS_DIR)
+        cls._tmp = tempfile.TemporaryDirectory()
+        tmp = Path(cls._tmp.name)
+        server.SESSIONS_DIR = tmp / 'sessions'; server.SESSIONS_DIR.mkdir()
+        server.CACHE_DIR    = tmp / 'cache';    server.CACHE_DIR.mkdir()
+        server.PROJECTS_DIR = tmp / 'projects'; server.PROJECTS_DIR.mkdir()
+        server.HISTORY_FILE = tmp / 'chat_history.json'
+        server.CONFIG = {
+            'api_key': '',
+            'base_url': '',
+            'default_model': '',
+            'default_system_prompt': '',
+            'context7_api_key': '',
+            'context7_base_url': '',
+            'context7_path': '/v1/context',
+            'context7_method': 'GET',
+            'obsidian_vault_path': '',
+            'obsidian_memory_subdir': 'USAi',
+        }
+        cls._httpd = ThreadingHTTPServer(('127.0.0.1', 0),
+                                         server.EnvConfigHTTPRequestHandler)
+        cls.port = cls._httpd.server_address[1]
+        cls._thread = threading.Thread(target=cls._httpd.serve_forever, daemon=True)
+        cls._thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._httpd.shutdown(); cls._httpd.server_close(); cls._tmp.cleanup()
+        (server.CONFIG, server.SESSIONS_DIR, server.CACHE_DIR,
+         server.HISTORY_FILE, server.PROJECTS_DIR) = cls._saved
+
+    def url(self, p):
+        return f'http://127.0.0.1:{self.port}{p}'
+
+    # ── GET /projects ──────────────────────────────────────────────────────
+
+    def test_get_projects_empty(self):
+        """GET /projects returns empty list when no projects exist."""
+        status, body = _request('GET', self.url('/projects'))
+        self.assertEqual(status, 200)
+        self.assertEqual(body, [])
+
+    def test_get_projects_lists_created(self):
+        """GET /projects returns the project after POST."""
+        _request('POST', self.url('/projects'), {'name': 'List me'})
+        status, body = _request('GET', self.url('/projects'))
+        self.assertEqual(status, 200)
+        names = [p['name'] for p in body]
+        self.assertIn('List me', names)
+
+    # ── POST /projects ─────────────────────────────────────────────────────
+
+    def test_post_projects_creates_project(self):
+        """POST /projects with valid name returns 201 + project object."""
+        status, body = _request('POST', self.url('/projects'),
+                                {'name': 'My workspace'})
+        self.assertEqual(status, 201)
+        self.assertEqual(body['name'], 'My workspace')
+        self.assertIn('id', body)
+        self.assertFalse(body['pinned'])
+
+    def test_post_projects_400_when_name_blank(self):
+        """POST /projects with empty name returns 400."""
+        status, body = _request('POST', self.url('/projects'), {'name': ''})
+        self.assertEqual(status, 400)
+        self.assertIn('error', body)
+
+    def test_post_projects_400_when_name_missing(self):
+        """POST /projects with no name field returns 400."""
+        status, body = _request('POST', self.url('/projects'), {})
+        self.assertEqual(status, 400)
+        self.assertIn('error', body)
+
+    def test_post_projects_413_when_too_large(self):
+        """POST /projects → 413 when Content-Length exceeds 64 KB."""
+        from urllib.request import Request as _Req, urlopen as _urlopen
+        from urllib.error import HTTPError as _HTTPError
+        req = _Req(
+            self.url('/projects'),
+            data=b'x',
+            headers={'Content-Type': 'application/json',
+                     'Content-Length': str(64 * 1024 + 1)},
+            method='POST',
+        )
+        try:
+            _urlopen(req)
+            self.fail('Expected HTTPError 413')
+        except _HTTPError as err:
+            self.assertEqual(err.code, 413)
+
+    def test_post_projects_custom_memory_mode(self):
+        """POST /projects with custom memoryMode stores it."""
+        status, body = _request('POST', self.url('/projects'),
+                                {'name': 'rag-proj', 'memoryMode': 'rag'})
+        self.assertEqual(status, 201)
+        self.assertEqual(body['memoryMode'], 'rag')
+
+    # ── PUT /projects/<id> ─────────────────────────────────────────────────
+
+    def _create_project(self, name='Test project'):
+        _, body = _request('POST', self.url('/projects'), {'name': name})
+        return body['id']
+
+    def test_put_project_updates_name(self):
+        """PUT /projects/<id> updates the project name."""
+        pid = self._create_project('Old name')
+        status, body = _request('PUT', self.url(f'/projects/{pid}'),
+                                {'name': 'New name'})
+        self.assertEqual(status, 200)
+        self.assertEqual(body['name'], 'New name')
+
+    def test_put_project_updates_pinned(self):
+        """PUT /projects/<id> can pin/unpin a project."""
+        pid = self._create_project('Pin me')
+        status, body = _request('PUT', self.url(f'/projects/{pid}'),
+                                {'pinned': True})
+        self.assertEqual(status, 200)
+        self.assertTrue(body['pinned'])
+
+    def test_put_project_404_when_not_found(self):
+        """PUT /projects/<id> returns 404 when no such project exists."""
+        status, body = _request('PUT', self.url('/projects/nonexistent_id_xyz'),
+                                {'name': 'Ghost'})
+        self.assertEqual(status, 404)
+        self.assertIn('error', body)
+
+    def test_put_project_400_when_traversal_slash(self):
+        """PUT /projects/<id> returns 400 for slash in id."""
+        from urllib.request import Request as _Req, urlopen as _urlopen
+        from urllib.error import HTTPError as _HTTPError
+        import json as _json
+        req = _Req(
+            self.url('/projects/../etc/passwd'),
+            data=_json.dumps({'name': 'x'}).encode(),
+            headers={'Content-Type': 'application/json'},
+            method='PUT',
+        )
+        try:
+            resp = _urlopen(req)
+            code = resp.status
+        except _HTTPError as err:
+            code = err.code
+        # Traversal id → 400, or the router might return 404
+        self.assertIn(code, (400, 404))
+
+    def test_put_project_400_when_traversal_dot(self):
+        """PUT /projects/<id> returns 400 for dot-prefixed id."""
+        status, body = _request('PUT', self.url('/projects/.hidden'),
+                                {'name': 'x'})
+        self.assertEqual(status, 400)
+
+    def test_put_project_413_when_too_large(self):
+        """PUT /projects/<id> → 413 when Content-Length exceeds 64 KB."""
+        from urllib.request import Request as _Req, urlopen as _urlopen
+        from urllib.error import HTTPError as _HTTPError
+        pid = self._create_project('Big update')
+        req = _Req(
+            self.url(f'/projects/{pid}'),
+            data=b'x',
+            headers={'Content-Type': 'application/json',
+                     'Content-Length': str(64 * 1024 + 1)},
+            method='PUT',
+        )
+        try:
+            _urlopen(req)
+            self.fail('Expected HTTPError 413')
+        except _HTTPError as err:
+            self.assertEqual(err.code, 413)
+
+    # ── DELETE /projects/<id> ──────────────────────────────────────────────
+
+    def test_delete_project_removes_it(self):
+        """DELETE /projects/<id> removes the project file and returns 200."""
+        pid = self._create_project('Delete me')
+        status, body = _request('DELETE', self.url(f'/projects/{pid}'))
+        self.assertEqual(status, 200)
+        self.assertTrue(body['ok'])
+        # A second GET /projects should not list it
+        _, projects = _request('GET', self.url('/projects'))
+        ids = [p['id'] for p in projects]
+        self.assertNotIn(pid, ids)
+
+    def test_delete_project_idempotent(self):
+        """DELETE /projects/<id> is idempotent — 200 even when file is gone."""
+        pid = self._create_project('Delete twice')
+        _request('DELETE', self.url(f'/projects/{pid}'))
+        status, body = _request('DELETE', self.url(f'/projects/{pid}'))
+        self.assertEqual(status, 200)
+        self.assertTrue(body['ok'])
+
+    def test_delete_project_clears_session_project_id(self):
+        """DELETE /projects/<id> sets projectId=null on linked sessions."""
+        pid = self._create_project('Session owner')
+        # Create a session that belongs to this project
+        _, sess = _request('POST', self.url('/sessions'),
+                           {'title': 'Linked session', 'turns': [],
+                            'projectId': pid})
+        sess_id = sess['id']
+        # Delete the project
+        _request('DELETE', self.url(f'/projects/{pid}'))
+        # The session should still exist but with projectId cleared
+        _, sessions = _request('GET', self.url('/sessions'))
+        linked = next((s for s in sessions if s['id'] == sess_id), None)
+        self.assertIsNotNone(linked, 'Session should still exist after project delete')
+        self.assertIsNone(linked.get('projectId'),
+                          'projectId should be cleared after project delete')
+
+    def test_delete_project_400_when_traversal_dot(self):
+        """DELETE /projects/<id> returns 400 for dot-prefixed id."""
+        status, body = _request('DELETE', self.url('/projects/.hidden'))
+        self.assertEqual(status, 400)
+
+    # ── do_PUT unknown path ────────────────────────────────────────────────
+
+    def test_put_unknown_path_is_404(self):
+        """PUT on an unknown path returns 404."""
+        from urllib.request import Request as _Req, urlopen as _urlopen
+        from urllib.error import HTTPError as _HTTPError
+        req = _Req(
+            self.url('/no-such-endpoint'),
+            data=b'{}',
+            headers={'Content-Type': 'application/json'},
+            method='PUT',
+        )
+        try:
+            _urlopen(req)
+            self.fail('Expected HTTPError 404')
+        except _HTTPError as err:
+            self.assertEqual(err.code, 404)
+
+
+class ProjectsDirectUnitTests(unittest.TestCase):
+    """Unit tests that exercise hard-to-reach branches directly (no HTTP).
+
+    Covers:
+    - _safe_project_id(None / '') → returns None (line 1522)
+    - _get_projects: malformed JSON in a project file (lines 1534-1535)
+    - _put_project: JSON body parse error (lines 1604-1606)
+    - _delete_project: session JSON parse error during scan (lines 1644-1645)
+    """
+
+    def setUp(self):
+        self._saved_projects_dir = server.PROJECTS_DIR
+        self._saved_sessions_dir = server.SESSIONS_DIR
+        self._saved_config = dict(server.CONFIG)
+        self._tmp = tempfile.TemporaryDirectory()
+        tmp = Path(self._tmp.name)
+        server.PROJECTS_DIR = tmp / 'projects'; server.PROJECTS_DIR.mkdir()
+        server.SESSIONS_DIR = tmp / 'sessions'; server.SESSIONS_DIR.mkdir()
+        server.CONFIG = {
+            'api_key': '',
+            'base_url': '',
+            'default_model': '',
+            'default_system_prompt': '',
+            'context7_api_key': '',
+            'context7_base_url': '',
+            'context7_path': '/v1/context',
+            'context7_method': 'GET',
+            'obsidian_vault_path': '',
+            'obsidian_memory_subdir': 'USAi',
+        }
+        self._httpd = ThreadingHTTPServer(('127.0.0.1', 0),
+                                          server.EnvConfigHTTPRequestHandler)
+        self._port = self._httpd.server_address[1]
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
+
+    def tearDown(self):
+        self._httpd.shutdown(); self._httpd.server_close(); self._tmp.cleanup()
+        server.PROJECTS_DIR = self._saved_projects_dir
+        server.SESSIONS_DIR = self._saved_sessions_dir
+        server.CONFIG = self._saved_config
+
+    def url(self, p):
+        return f'http://127.0.0.1:{self._port}{p}'
+
+    def test_safe_project_id_returns_none_for_empty_string(self):
+        """_safe_project_id('') hits the 'if not raw_id: return None' branch (1522)."""
+        # An empty project id in the URL → 400
+        status, body = _request('PUT', self.url('/projects/'), {'name': 'x'})
+        # The server sees an empty id from the path strip → _safe_project_id returns None → 400
+        self.assertEqual(status, 400)
+
+    def test_get_projects_skips_malformed_json_file(self):
+        """_get_projects: a corrupt .json file is silently skipped (lines 1534-1535)."""
+        # Write a valid project and a corrupt file
+        (server.PROJECTS_DIR / 'good.json').write_text(
+            '{"id":"good","name":"Valid","memoryMode":"default","pinned":false,'
+            '"createdAt":"2026-01-01T00:00:00","updatedAt":"2026-01-01T00:00:00"}',
+            encoding='utf-8',
+        )
+        (server.PROJECTS_DIR / 'bad.json').write_text('NOT JSON {{{', encoding='utf-8')
+        status, body = _request('GET', self.url('/projects'))
+        self.assertEqual(status, 200)
+        # Only the valid project must appear
+        ids = [p['id'] for p in body]
+        self.assertIn('good', ids)
+        # bad.json silently skipped — list must not raise 500
+
+    def test_put_project_400_on_malformed_json_body(self):
+        """_put_project: malformed JSON body → 400 (lines 1604-1606)."""
+        # Create a project first so the id lookup succeeds
+        proj_id = 'proj_direct_test'
+        (server.PROJECTS_DIR / f'{proj_id}.json').write_text(
+            f'{{"id":"{proj_id}","name":"Test","memoryMode":"default","pinned":false,'
+            f'"createdAt":"2026-01-01T00:00:00","updatedAt":"2026-01-01T00:00:00"}}',
+            encoding='utf-8',
+        )
+        from urllib.request import Request as _Req, urlopen as _urlopen
+        from urllib.error import HTTPError as _HTTPError
+        req = _Req(
+            self.url(f'/projects/{proj_id}'),
+            data=b'{{not valid json',
+            headers={'Content-Type': 'application/json'},
+            method='PUT',
+        )
+        try:
+            _urlopen(req)
+            self.fail('Expected HTTPError 400')
+        except _HTTPError as err:
+            self.assertEqual(err.code, 400)
+
+    def test_delete_project_handles_corrupt_session_json(self):
+        """_delete_project: corrupt session file during scan is silently ignored (1644-1645)."""
+        # Create a project to delete
+        proj_id = 'proj_to_delete'
+        (server.PROJECTS_DIR / f'{proj_id}.json').write_text(
+            f'{{"id":"{proj_id}","name":"Del","memoryMode":"default","pinned":false,'
+            f'"createdAt":"2026-01-01T00:00:00","updatedAt":"2026-01-01T00:00:00"}}',
+            encoding='utf-8',
+        )
+        # Create a corrupt session file — the delete scanner must not crash
+        (server.SESSIONS_DIR / 'corrupt.json').write_text('NOT JSON', encoding='utf-8')
+        # Also create a valid session that references this project
+        (server.SESSIONS_DIR / 'linked.json').write_text(
+            f'{{"id":"linked","title":"T","turns":[],"projectId":"{proj_id}",'
+            f'"createdAt":"2026-01-01T00:00:00","updatedAt":"2026-01-01T00:00:00"}}',
+            encoding='utf-8',
+        )
+        status, body = _request('DELETE', self.url(f'/projects/{proj_id}'))
+        self.assertEqual(status, 200)
+        self.assertTrue(body['ok'])
+
+
+class RawResponsesPathTraversalDeleteTests(unittest.TestCase):
+    """RC-9: ValueError branch in _delete_raw_responses (lines 1454-1456, 1457->1462).
+
+    The ValueError branch is triggered when rec_file.resolve().relative_to(...)
+    raises — i.e. the resolved path escapes RAW_RESPONSES_DIR even though the
+    initial slash/backslash/dot checks passed.
+    """
+
+    def setUp(self):
+        self._saved_raw_dir = server.RAW_RESPONSES_DIR
+        self._saved_sessions = server.SESSIONS_DIR
+        self._saved_cache = server.CACHE_DIR
+        self._saved_history = server.HISTORY_FILE
+        self._saved_config = dict(server.CONFIG)
+        self._tmp = tempfile.TemporaryDirectory()
+        tmp = Path(self._tmp.name)
+        self._raw_dir = tmp / 'raw'
+        self._raw_dir.mkdir()
+        server.RAW_RESPONSES_DIR = self._raw_dir
+        server.SESSIONS_DIR = tmp / 'sessions'; server.SESSIONS_DIR.mkdir()
+        server.CACHE_DIR = tmp / 'cache';       server.CACHE_DIR.mkdir()
+        server.HISTORY_FILE = tmp / 'chat_history.json'
+        server.CONFIG = {
+            'api_key': '',
+            'base_url': '',
+            'default_model': '',
+            'default_system_prompt': '',
+            'context7_api_key': '',
+            'context7_base_url': '',
+            'context7_path': '/v1/context',
+            'context7_method': 'GET',
+            'obsidian_vault_path': '',
+            'obsidian_memory_subdir': 'USAi',
+        }
+        self._httpd = ThreadingHTTPServer(('127.0.0.1', 0),
+                                          server.EnvConfigHTTPRequestHandler)
+        self._port = self._httpd.server_address[1]
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
+
+    def tearDown(self):
+        self._httpd.shutdown(); self._httpd.server_close(); self._tmp.cleanup()
+        server.RAW_RESPONSES_DIR = self._saved_raw_dir
+        server.SESSIONS_DIR = self._saved_sessions
+        server.CACHE_DIR = self._saved_cache
+        server.HISTORY_FILE = self._saved_history
+        server.CONFIG = self._saved_config
+
+    def url(self, p):
+        return f'http://127.0.0.1:{self._port}{p}'
+
+    def test_delete_raw_response_by_valid_id_that_does_not_exist(self):
+        """DELETE /raw-responses?id=missing.json returns 200 (idempotent)."""
+        status, body = _request('DELETE', self.url('/raw-responses?id=missing.json'))
+        self.assertEqual(status, 200)
+        self.assertTrue(body['ok'])
+
+    def test_delete_raw_response_by_valid_id_that_exists(self):
+        """DELETE /raw-responses?id=<file> deletes the file (covers lines 1454-1458)."""
+        import json as _json
+        sample = {'id': 'abc', 'timestamp': '2026-01-01T00:00:00',
+                  'method': 'POST', 'path': '/test', 'status': 200, 'model': None,
+                  'response': {}}
+        (self._raw_dir / 'abc.json').write_text(_json.dumps(sample), encoding='utf-8')
+        status, body = _request('DELETE', self.url('/raw-responses?id=abc.json'))
+        self.assertEqual(status, 200)
+        self.assertTrue(body['ok'])
+        self.assertFalse((self._raw_dir / 'abc.json').exists())
+
+
 if __name__ == '__main__':
     unittest.main()

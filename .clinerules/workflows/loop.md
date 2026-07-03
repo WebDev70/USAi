@@ -154,6 +154,13 @@ note's `## Working-tree state` section (see template above).
       ```
       If this returns no file, the "Memory note written" checkbox must remain
       **unchecked** and be emitted as a GAP — write the note before declaring done.
+- [ ] **Leave-no-trace gate passed** (`/review §6h`):
+      - Spec `Status: Done` set?
+      - No scratch/temp files committed?
+      - All new TODOs/FIXMEs tracked in `backlog.md`?
+      - `CHANGELOG.md [Unreleased]` has an entry for this item?
+      If any of these are not yet satisfied, emit them as `[housekeeping]` GAPs before
+      declaring Done.
 - [ ] Memory note written (see below)
 
 ---

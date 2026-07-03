@@ -339,6 +339,126 @@ Uploaded/processed files are cached, and a panel lists your cached files.
 Click **+ New Chat** in the sidebar. Your current conversation is **archived to your
 chat history**, and a fresh conversation begins.
 
+### Projects
+**Projects** are named workspaces that group related chats together, making it easy to
+organise work by topic, client, or context.
+
+#### Create a project
+1. Click the **＋** button next to the **Projects** heading in the sidebar, or use
+   the **+ New Project** control.
+2. Enter a **project name** in the modal.
+3. Optionally, enter **Project instructions** — free-text that is automatically
+   prepended to every system prompt in this project (see [Project instructions](#project-instructions) below).
+4. Choose a **Memory mode** (cannot be changed later):
+   - **Default** — project chats share the global Obsidian memory pool (notes
+     written here are visible everywhere, and global notes are visible here).
+   - **Project-only** — project chats use a private memory scope, isolated from
+     other chats.
+5. Click **Create**.
+
+#### Open a project
+Click any project name in the **Projects** section of the sidebar. A new chat is
+started inside that project, and its name appears at the top of the conversation.
+
+#### Rename or pin a project
+Hover over the project in the sidebar and click **⋯** to open the context menu:
+- **Rename** — change the project name.
+- **Pin / Unpin** — pinned projects appear at the top of the sidebar in a **Pinned**
+  section.
+
+#### Delete a project
+In the ⋯ context menu, click **Delete**. A confirmation prompt appears.
+> **What happens to chats and memories?**
+> - Chats that belonged to the project are **kept** and moved to the **Chats** section
+>   (they are never deleted).
+> - Obsidian memory notes created inside the project are **preserved** in the vault;
+>   they are never destroyed.
+
+#### Memory Modes
+
+Every project has a **Memory mode** that is chosen at creation and **cannot be changed later**. It governs how Obsidian memory searches and saves are scoped for all chats in that project.
+
+| Mode | Search behaviour | Save behaviour |
+|------|-----------------|----------------|
+| **Default** | Draws results from **both** the global memory folder and this project's folder, merged by relevance score. | New notes are written to the **project folder** (not the global folder). |
+| **Project-only** | Reads **only** from this project's folder — global notes are excluded. Other chats (outside the project) also never see this project's notes. | New notes are written to the **project folder** only. |
+
+**Project folder path** (inside your vault):
+```
+<vault>/<memory subdir>/projects/<projectId>/memories/
+```
+
+**Global notes** are still accessible from any non-project chat, and from chats in projects set to **Default** mode.
+
+> 💡 Use **Default** when you want the project's AI context to benefit from (and contribute to) your general knowledge base.  
+> Use **Project-only** when the project contains sensitive or domain-specific content you want kept entirely separate.
+
+#### Project instructions
+
+Each project can have a set of **custom instructions** that are automatically prepended to every system prompt for chats in that project — you don't need to re-type them per chat.
+
+**Setting instructions:**
+- When **creating** a project, enter text in the optional **Instructions** textarea in the modal (up to 8 192 characters / ~2 000 words).
+- After creation, open the project settings (⋯ → **Settings** on the project row) and update the Instructions field, then click **Save**.
+
+**How the system prompt is composed:**
+
+```
+Layer 1: project.instructions   ← prepended automatically (if non-empty)
+Layer 2: per-chat system prompt ← from the "System prompt" input in Prompt & Parameters
+─────────────────────────────────────────────────────────────────
+Effective system prompt = [layer1, layer2].filter(non-empty).join('\n\n')
+```
+
+If only one layer is non-empty, it's used as-is with no extra blank lines.
+
+**Build paths that respect project instructions:**
+- First message in a chat
+- **↻ Regenerate** (re-uses the composed prompt automatically)
+- **✎ Edit & resend** (same)
+- Session restore (the app re-fetches the project record when restoring a session)
+
+> **Note:** If you update a project's instructions mid-chat, the new instructions take
+> effect the next time you **open** the project or **start a new chat** inside it.
+> The current session will keep the old instructions until then.
+
+#### Project files
+
+Projects support **shared knowledge files** that are available to every chat in the project. Once uploaded, these files are chunked and embedded, and their content is automatically included in RAG searches alongside any files uploaded in the current chat session.
+
+**Uploading a file:**
+1. Open the project settings (⋯ → **Settings** on the project row in the sidebar).
+2. In the **Project files** section (only visible when editing an existing project), click **+ Upload file**.
+3. Select one or more files (`.txt`, `.md`, `.pdf`, `.docx`, `.json`, `.csv`).
+4. The file is chunked and saved to the project cache on the server. A status message confirms when the upload is done.
+
+**Removing a file:**
+- Click the **✕** button next to the filename in the project files list.
+- The file and its chunks are removed from the project cache. The deletion takes effect for all chats in the project immediately.
+
+**How project files are searched:**
+- At query time, chunks from your project's shared files are merged with any files you uploaded in the current chat session and ranked together by relevance.
+- The context note in the message shows the combined count, e.g. `Files: 5 chunk(s)`.
+- Project files are loaded when you open a project or restore a session in a project. They persist across chat sessions for the project lifetime.
+
+**Limits & notes:**
+- Each file upload is subject to the same 50 MB request size limit as per-chat file uploads.
+- Project files are deleted automatically when the project is deleted.
+- Files uploaded per-chat remain separate from project files and are never added to the project cache.
+
+#### Sidebar sections
+
+The sidebar is organised into three collapsible sections:
+
+| Section | Contents |
+|---------|----------|
+| **Pinned** | Pinned projects and pinned chats |
+| **Projects** | All your projects (shows up to 5; click "Show more" to see the rest) |
+| **Chats** | Ungrouped conversations (no project, or whose project was deleted) |
+
+Chats started outside a project, and chats whose project has been deleted, always
+appear in the **Chats** section.
+
 ### Chat history
 - Past conversations appear in the sidebar list (most recent first).
 - **Click** a session to reopen it.

@@ -99,9 +99,23 @@ routes = {
     '/memory/search': self._get_memory_search_handler,
     '/memory/read':   self._get_memory_read_handler,
     '/logs':          self._get_logs_handler,
-    '/chunk-cache':   self._get_chunk_cache_handler,
+    '/chunk-cache':   self._get_chunk_cache,         # also accepts ?projectId=
+    '/projects':      self._get_projects,            # Projects v1 (#27)
     '/mcp/vaults':    self._get_mcp_vaults,          # MCP bridge (#16 Ph2)
 }
+
+# do_POST example (simplified)
+routes = {
+    '/proxy':         self._proxy_api,
+    '/sessions':      self._post_new_chat_session,
+    '/chunk-cache':   self._post_chunk_cache,        # also accepts ?projectId=
+    '/projects':      self._post_projects,           # Projects v1 (#27)
+    '/memory/save':   self._post_memory_save,
+    ...
+}
+
+# do_PUT dispatches to self._put_projects()  for PUT /projects?id=<id>
+# do_DELETE dispatches to self._delete_projects() for DELETE /projects?id=<id>
 ```
 
 Unmatched paths fall through to `SimpleHTTPRequestHandler` (static file serving).
@@ -110,24 +124,32 @@ Unmatched paths fall through to `SimpleHTTPRequestHandler` (static file serving)
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/config` | Non-secret config + `has_api_key` / `has_context7` / `has_obsidian` flags |
+| `GET` | `/config` | Non-secret config + `has_api_key` / `has_context7` / `has_obsidian` / `has_projects` flags |
 | `GET` | `/models` | Proxied model list from upstream |
 | `GET` | `/sessions` | List archived chat sessions |
-| `GET` | `/memory/list` | List Obsidian memory notes |
-| `GET` | `/memory/search` | Full-text search across memory notes |
+| `GET` | `/memory/list` | List Obsidian memory notes (accepts `?projectId=` for project-scoped listing) |
+| `GET` | `/memory/search` | Full-text search across memory notes (accepts `?projectId=` for project-scoped search) |
 | `GET` | `/memory/read` | Read a single memory note |
 | `GET` | `/logs` | Tail the in-memory log buffer |
+| `GET` | `/logs/files` | List persisted log files; `?file=<name>` reads one (path-traversal guarded) |
 | `GET` | `/raw-responses` | List raw API response capture metadata (newest-first) |
 | `GET` | `/raw-responses?id=` | Read one full raw-response capture record |
 | `DELETE` | `/raw-responses` | Clear all raw-response capture records |
 | `DELETE` | `/raw-responses?id=` | Delete one raw-response capture record |
+| `GET` | `/projects` | List all projects |
+| `POST` | `/projects` | Create a new project (`{name, icon?, instructions?, memoryMode?}`) |
+| `PUT` | `/projects?id=<id>` | Update project name, icon, instructions, or pinned state (`memoryMode` immutable after creation) |
+| `DELETE` | `/projects?id=<id>` | Delete a project and cascade-delete its chunk cache; orphans chats to "Chats"; preserves Obsidian memory notes |
 | `POST` | `/proxy` | Proxy chat completions to upstream (streaming + non-streaming) |
 | `POST` | `/context7` | Proxy Context7 documentation queries |
-| `POST` | `/memory/save` | Save a new Obsidian memory note |
-| `POST` | `/sessions` | Archive current session; start a new chat |
-| `POST` | `/chunk-cache` | Store file chunks server-side |
+| `POST` | `/memory/save` | Save a new Obsidian memory note (accepts `projectId` in body for project-scoped save) |
+| `POST` | `/sessions` | Archive current session; start a new chat (stamps `projectId` on archived session) |
+| `GET` | `/chunk-cache` | List or retrieve file chunks (accepts `?projectId=` for project-scoped listing) |
+| `POST` | `/chunk-cache` | Store file chunks server-side (accepts `?projectId=` to scope to a project) |
+| `DELETE` | `/chunk-cache` | Clear chunk cache (accepts `?projectId=` to clear only project-scoped chunks) |
 | `DELETE` | `/sessions/{id}` | Delete an archived session |
-| `DELETE` | `/chunk-cache` | Clear chunk cache |
+| `POST` | `/import-session` | Import a previously exported session JSON (≤512 KB; turns validated) |
+| `POST` | `/extract-text` | Extract plain text from uploaded PDF or DOCX (server-side; `has_pdf` in `/config`) |
 | `GET` | `/mcp/vaults` | List Obsidian vaults known to the MCP bridge (`has_mcp_bridge` required) |
 | `POST` | `/mcp/tool` | Generic MCP tool passthrough — dispatches to any allowlisted tool |
 | `POST` | `/mcp/rename-tag` | Convenience endpoint: rename a tag across all vault notes |
@@ -147,13 +169,58 @@ and **never reach the browser**.
 | Store | Path | Format | Purpose |
 |-------|------|--------|---------|
 | Active chat | `chat_history.json` | JSON array | Current conversation (persists across page reloads) |
-| Archived sessions | `.chat_sessions/<id>.json` | JSON | Saved chat sessions |
-| File chunks | `.chunk_cache/` | JSON files | Per-file text chunks for RAG |
-| Obsidian memory | `<OBSIDIAN_VAULT_PATH>/<OBSIDIAN_MEMORY_SUBDIR>/memories/` | Markdown | Long-term memory notes with YAML frontmatter |
+| Archived sessions | `.chat_sessions/<id>.json` | JSON | Saved chat sessions; includes optional `projectId` field |
+| File chunks (global) | `.chunk_cache/` | JSON files | Per-file text chunks for RAG (ungrouped / legacy) |
+| Project file chunks | `.chunk_cache/projects/<projectId>/` | JSON files | Per-file text chunks scoped to a project |
+| Project metadata | `.projects/<projectId>.json` | JSON | `{id, name, icon, instructions, memoryMode, pinned, createdAt, updatedAt}` |
+| Obsidian memory (global) | `<OBSIDIAN_VAULT_PATH>/<OBSIDIAN_MEMORY_SUBDIR>/memories/` | Markdown | Long-term memory notes with YAML frontmatter |
+| Obsidian memory (project) | `<OBSIDIAN_VAULT_PATH>/<OBSIDIAN_MEMORY_SUBDIR>/projects/<projectId>/memories/` | Markdown | Project-scoped memory notes (used when `memoryMode='project-only'`) |
 | Raw API responses | `.raw_responses/<timestamp>_<uid>.json` | JSON | Full upstream response envelopes (opt-in; `CAPTURE_RAW_RESPONSES=true`) |
 | Server logs | `logs/<timestamp>-server.jsonl` | JSONL | Per-session structured log lines (opt-in; `PERSIST_LOGS=true`) |
 
-### 3e. Logging
+### 3e. Projects v1 — server-side helpers
+
+Projects v1 (backlog #27, Slices 1–4) added a layer of project-scoped state on top of
+the existing session/memory/chunk stores.
+
+**`_safe_project_id(raw_id)`** — validates and sanitises a project ID string. Returns
+`None` (→ HTTP 400) when the id is empty, contains path-traversal characters (`..`, `/`),
+or does not start with `project_`. All `/projects` endpoints and any path that builds a
+project-scoped filesystem path call this guard first.
+
+**`get_project_memory_dir(project_id)`** — returns the `Path` for a project's memory
+directory (`<vault>/<subdir>/projects/<id>/memories`). Creates the directory on first
+use. Returns `None` if the Obsidian vault is not configured.
+
+**`_project_memory_dirs(project_id)`** — reads the project JSON and returns the list of
+memory directories that apply for the given project:
+- `memoryMode = 'default'` (or key absent) → `[global_dir, project_dir]`
+- `memoryMode = 'project-only'` → `[project_dir]` only
+
+This list is used by `_memory_search()` and `_memory_list()` to scope their results.
+Global searches (`projectId` absent) never include project-only directories.
+
+**`composeSystemPrompt(project_id, per_chat_prompt, default_prompt)`** — builds the
+3-layer system prompt used by all send paths:
+1. **Project instructions** (from `.projects/<id>.json → instructions`) — always first.
+2. **Per-chat system prompt** — the session-level value, if set.
+3. **Default system prompt** — from `CONFIG['default_system_prompt']` if no per-chat
+   override.
+
+Layers 2 and 3 are mutually exclusive (per-chat takes precedence). The result is
+`project_instructions + "\n\n" + effective_chat_prompt` (or just the chat prompt when
+no project is active). Applied consistently across `sendMessage`, regenerate,
+edit-resend, and session restore paths.
+
+**Cascade-delete on project removal (`DELETE /projects?id=<id>`):**
+- Deletes `.projects/<id>.json`.
+- Removes `.chunk_cache/projects/<id>/` (project file chunks).
+- Orphans all sessions with `projectId == id` by nulling their field (chats remain,
+  appear under "Chats" in the sidebar).
+- Does **NOT** delete Obsidian memory notes (`<vault>/.../projects/<id>/memories/`) —
+  vault content is never destroyed.
+
+### 3f. Logging
 
 `add_log(level, component, message, details=None)` appends to an in-memory
 `server_logs` list (capped at `MAX_LOGS=1000`) and `print()`s to stdout.
@@ -166,6 +233,11 @@ server run). Files are rotated by mtime — the oldest are pruned when the count
 exceeds `LOG_FILE_MAX` (default 20). Write failures are swallowed so a logging
 disk error can never interrupt request handling. The `persist_logs` boolean is
 exposed via `GET /config` (never the raw flag value).
+
+**Log file viewer (#50):** `GET /logs/files` lists persisted log file names and
+metadata. `GET /logs/files?file=<name>` returns up to 500 entries from that file.
+All path resolution is traversal-guarded; only files inside the `logs/` directory
+are accessible.
 
 ---
 
@@ -214,6 +286,16 @@ sendMessage()
   execute each tool locally, append `role: 'tool'` results, call again. Terminates
   on `finish_reason === 'stop'` or when the tool loop limit is reached.
 
+**3-layer system prompt (`composeSystemPrompt`):** Before every API call, the messages
+array is prefixed with a composed system message built from three layers (in order):
+1. **Project instructions** — `currentProject.instructions` when a project is active.
+2. **Per-chat system prompt** — the session-level `systemPrompt` value.
+3. **Default system prompt** — `appConfig.default_system_prompt` as fallback.
+
+Project instructions are always prepended; layers 2 and 3 are mutually exclusive
+(per-chat wins). This composition is applied consistently in `sendMessage`,
+`regenerateLastResponse`, edit-resend, and `restoreSession`.
+
 ### 4d. RAG / file chunking
 
 Uploaded files are chunked by `chunkText()` (sliding-window, configurable size and
@@ -222,25 +304,81 @@ overlap) and stored server-side via `POST /chunk-cache`. At message-build time,
 `scoreChunkByKeywords()` (TF-style keyword overlap) and injects the top-N as
 `role: 'user'` context messages via `prepareContextMessages()`.
 
+**Project files (`projectChunks`):** When a project is active, the project's shared
+files are loaded into a separate `projectChunks` array (from
+`GET /chunk-cache?projectId=<id>`) on project open. At query time, `projectChunks`
+and per-chat `fileChunks` are merged before scoring — the model sees both. Project
+chunks persist across new chats within the same project; per-chat chunks reset on
+new chat / session restore. On project deletion, project file chunks are
+cascade-deleted from `.chunk_cache/projects/<id>/`.
+
 ### 4e. Obsidian memory integration
 
 - **Auto-recall** (opt-in toggle): `prepareContextMessages()` calls
-  `GET /memory/search` with the current user message; top-N matching notes are
-  injected as a system-level context block before the conversation. A
-  `Memory: N note(s)` segment is appended to the context note shown in the UI.
+  `GET /memory/search` (with `?projectId=<id>` when a project is active) with the
+  current user message; top-N matching notes are injected as a system-level context
+  block before the conversation. A `Memory: N note(s)` segment is appended to the
+  context note shown in the UI.
 - **Manual 💾 button**: `saveMemory()` posts the selected message text to
-  `POST /memory/save` with tag `manual`.
+  `POST /memory/save` (with `projectId` in the body when a project is active) with
+  tag `manual`.
 - **`save_memory` / `search_memory` tools**: the model can save/recall memories
-  autonomously when tools are enabled.
+  autonomously when tools are enabled; both pass `projectId` when a project is active.
 
-### 4f. Sessions
+**Project-scoped memory data flow:**
+
+```mermaid
+flowchart TD
+    A[Memory operation<br/>projectId present?] -->|No project| B[Global dir only<br/>&lt;vault&gt;/memories/]
+    A -->|Project active| C{memoryMode?}
+    C -->|'default'| D[Dual-read<br/>global + project dirs]
+    C -->|'project-only'| E[Project dir only<br/>&lt;vault&gt;/projects/&lt;id&gt;/memories/]
+    D -->|search/list| F[Deduplicate by path<br/>return merged results]
+    D -->|save| G[Write to global dir]
+    E -->|search/list| H[Return project results only]
+    E -->|save| I[Write to project dir]
+    B -->|search/list/save| J[Read/write global dir]
+
+    style D fill:#e8f4fd
+    style E fill:#fef9e7
+    style C fill:#f8f9fa
+```
+
+- **Default mode** — the project can access memories from outside chats, and vice
+  versa. `_memory_search` and `_memory_list` merge results from both the global
+  directory and the project directory (deduplicating by absolute path). New saves
+  go to the global directory.
+- **Project-only mode** — the project can only access its own memories; its memories
+  are hidden from outside chats. `_memory_search` and `_memory_list` only scan the
+  project directory. Global searches (no `projectId`) never include project-only
+  directories. New saves go to the project directory.
+- **`memoryMode` is immutable after creation** — the server rejects any PUT request
+  that attempts to change `memoryMode`.
+- **Memory notes are never deleted** — project deletion does not remove
+  `<vault>/.../projects/<id>/memories/`; vault content is preserved.
+
+### 4f. Sessions & Projects sidebar
 
 - **`archiveCurrentSession()`** — POSTs `POST /sessions` to archive the current
-  `chat_history.json` snapshot with a title/timestamp; clears the active chat.
+  `chat_history.json` snapshot with a title/timestamp and the current
+  `currentProjectId`; clears the active chat. The `projectId` field is stamped
+  both here and in `_post_new_chat_session` on the Python side to ensure no
+  project membership is silently dropped.
 - **`restoreSession(id)`** — loads a saved session JSON, rebuilds
-  `conversationHistory` and re-renders `chatDisplayHistory`.
-- **`showSessionsList()`** — fetches `GET /sessions` and renders the sidebar
-  history list.
+  `conversationHistory` and re-renders `chatDisplayHistory`. Restores
+  `currentProjectId` and loads `projectChunks` if the session belongs to a project.
+- **`showSessionsList()`** — fetches `GET /sessions` + `GET /projects`, then
+  renders the sidebar as three collapsible sections:
+  - **Pinned** — projects with `pinned: true`.
+  - **Projects** — all non-pinned projects (collapsible `<details>`).
+  - **Chats** — sessions with no `projectId` (legacy and newly-created ungrouped chats).
+
+**`currentProjectId`** is a module-level variable in `app.js` that tracks the active
+project for new chats, archives, memory calls, and chunk lookups. Set when the user
+opens a project; cleared when starting a global chat.
+
+**Legacy migration:** Sessions with no `projectId` field are treated as `null` and
+appear under the "Chats" section — backward-compatible with all pre-Projects sessions.
 
 ### 4g. Settings persistence
 
@@ -270,7 +408,7 @@ stream completion.
 | Concern | Mechanism |
 |---------|-----------|
 | API key secrecy | Key stays in `server.py`; injected as `Authorization` header server-side; `/config` returns only `has_api_key` bool |
-| Path traversal | All filesystem endpoints (`/memory/*`, `/sessions`, `/chunk-cache`) validate that the resolved path stays within the intended root folder |
+| Path traversal | All filesystem endpoints (`/memory/*`, `/sessions`, `/chunk-cache`, `/projects`, `/logs/files`) validate that the resolved path stays within the intended root folder; `_safe_project_id()` guards all project-id-derived paths against `..` and `/` injection |
 | SSRF | `is_safe_upstream_url()` rejects non-`http(s)` schemes and private/loopback ranges before any upstream fetch |
 | Secret scanning | `scripts/security-scan.sh` runs `gitleaks` on every non-trivial change |
 | SAST | `bandit` scans `server.py` in the same script |

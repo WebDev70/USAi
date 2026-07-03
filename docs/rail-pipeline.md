@@ -171,7 +171,9 @@ Product Owner (Definition of Ready)
   cross-cutting (apply inside every role): DevSecOps · IaC · Observability
 ```
 
-### Sequential roles
+### Sequential roles (per-item)
+
+The sequential roles run for **every backlog item** in order:
 
 | # | Role | Responsibility |
 |---|------|----------------|
@@ -181,6 +183,24 @@ Product Owner (Definition of Ready)
 | 3 | **Full Test Suite** | Write/maintain tests (TDD: Red → Green → Refactor) and run the suite + coverage gates. |
 | 4 | **QA Review** | Automated pass/fail gates (see below). Each harness runs these differently — see the tooling docs. |
 | 5 | **Continuous Improvement** | Reflect after each cycle; **propose** new checks/rules/tests + backlog items; **record a learning note** to Obsidian. |
+
+### Cadence roles (per-sprint or on-demand)
+
+Cadence roles operate at the **project level**, not the per-item level. They run after
+a sprint closes or when explicitly invoked, and feed findings back into `backlog.md`
+and the self-improvement log.
+
+| Role | Cadence | Invocation | Responsibility |
+|------|---------|------------|----------------|
+| **Governance Board** (SBA · SA · SE · SPMS) | Every sprint close + on demand | `/govern` | Four-role macro-assessment: business alignment, architecture fitness, engineering quality, process maturity. See [`docs/governance.md`](governance.md). |
+| **Senior Housekeeping & Hygiene Steward (SHK)** | Every sprint close + on demand | `/govern` (auto) or `/housekeep` (standalone) | Repo & artifact hygiene sweep: spec/backlog reconciliation, dead-code audit, log/cache bloat, doc-consistency drift, dependency freshness, vault memory hygiene. SHK also contributes a *per-item leave-no-trace gate* (`§6h` in `/review`) that runs inside every RAIL item loop. See [`docs/governance.md`](governance.md) §5. |
+
+> **Why separate cadence roles?** The sequential roles (0–5) run on a single spec at
+> a time and are too narrow to catch project-level drift (accumulated stale specs,
+> orphaned scratch files, CHANGELOG orphans, etc.). Cadence roles have the full
+> project history in scope and run on a cadence where accumulated drift is visible.
+> The SHK leave-no-trace gate bridges the two: it is lightweight enough to run
+> per-item while the deep sweep stays at sprint cadence.
 
 ### Model tiers (guided)
 

@@ -1,6 +1,6 @@
 # Spec: Reasoning Proxy Integration Test (#11d)
 
-**Status:** Ready
+**Status:** Done
 **Type:** chore
 **Created:** 2026-06-26
 **Author:** Cline / user
@@ -36,16 +36,16 @@ As a developer maintaining the USAi proxy I want a regression test that confirms
 the proxy does not strip or mangle reasoning fields so that future refactors of the
 streaming relay cannot silently break reasoning-capable model support.
 
-- [ ] **AC-1:** A fake upstream emitting SSE chunks with `delta.reasoning` →
+- [x] **AC-1:** A fake upstream emitting SSE chunks with `delta.reasoning` →
   the relayed stream (received by the test client) contains those exact
   `delta.reasoning` values intact.
-- [ ] **AC-2:** A fake upstream emitting SSE chunks with `delta.reasoning_content`
+- [x] **AC-2:** A fake upstream emitting SSE chunks with `delta.reasoning_content`
   (alternate field name used by some providers) → the relayed stream contains
   those `delta.reasoning_content` values intact.
-- [ ] **AC-3:** A fake upstream that also includes `delta.content` alongside
+- [x] **AC-3:** A fake upstream that also includes `delta.content` alongside
   `delta.reasoning` → both fields are present in the relayed stream, confirming
   co-presence is preserved.
-- [ ] **AC-4:** The test is self-contained (no network, no third-party deps —
+- [x] **AC-4:** The test is self-contained (no network, no third-party deps —
   stdlib only) and follows the class/setup/teardown pattern of
   `ProxyStreamingTests` in `test_server_proxy.py`.
 
@@ -141,8 +141,8 @@ wired) → wire handler → run (Green) → refactor if needed.
 
 ## 6. Docs to update
 
-- [ ] `CHANGELOG.md` — add entry under `[Unreleased]`
-- [ ] `backlog.md` — mark `#11d` done
+- [x] `CHANGELOG.md` — add entry under `[Unreleased]`
+- [x] `backlog.md` — mark `#11d` done
 - [ ] `docs/USER_GUIDE.md` — no user-facing change
 - [ ] `README.md` — no setup/config change
 - [ ] `AGENTS.md` / `CONTINUE.md` — no convention change
@@ -163,9 +163,9 @@ wired) → wire handler → run (Green) → refactor if needed.
 
 ## 8. Review checklist (filled by `/review`)
 
-- [ ] Implementation matches spec §3–5 exactly
-- [ ] `./run-tests.sh --coverage` passes (server.py ≥ 90%, JS branch ≥ 70%)
-- [ ] `./scripts/security-scan.sh` clean
-- [ ] Docs updated per §6
-- [ ] Acceptance criteria AC-1…AC-4 all verified
-- [ ] Memory note written to `Cline/memories/`
+- [x] Implementation matches spec §3–5 exactly
+- [x] `./run-tests.sh --coverage` passes (server.py ≥ 90%, JS branch ≥ 70%)
+- [x] `./scripts/security-scan.sh` clean
+- [x] Docs updated per §6
+- [x] Acceptance criteria AC-1…AC-4 all verified
+- [x] Memory note written to `Cline/memories/`

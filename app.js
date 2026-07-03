@@ -414,8 +414,78 @@ let toolsEnabled = false;
 let memoryEnabled = false;
 let memoryAutoRecall = false;
 let currentSessionId = null;
+// Tracks which project (workspace) the user is currently working in.
+// Stamped onto every archived session so chats can be grouped by project.
+let currentProjectId = null;
+// Tracks the project instructions for the currently open project (AC-4 Slice 2).
+// Set by openProject() and restoreSession(); cleared to '' when no project is active.
+let currentProjectInstructions = '';
 // Tracks the in-flight request so the user can cancel it via the Stop button.
 let activeAbortController = null;
+
+// ─── Project shared chunks (Slice 4) ─────────────────────────────────────────
+// Loaded when a project is opened or a session is restored. Never written by
+// the per-chat upload flow so per-chat and project files stay isolated (AC-3).
+const projectChunks = []; // { fileName, chunkId, text, embedding? }
+
+// loadProjectChunks: fetch the project's chunk cache from the server and fill
+// projectChunks. Clears the array first so stale chunks never bleed between
+// projects. Called by openProject() and restoreSession(). Non-fatal — any
+// network/parse error leaves projectChunks empty.
+async function loadProjectChunks(projectId) {
+  projectChunks.length = 0;
+  if (!projectId) return;
+  try {
+    const r = await loggedFetch(`/chunk-cache?projectId=${encodeURIComponent(projectId)}`);
+    if (!r.ok) return;
+    const files = await r.json(); // [{filename, chunkCount}]
+    for (const f of files) {
+      const detail = await loggedFetch(
+        `/chunk-cache?projectId=${encodeURIComponent(projectId)}&file=${encodeURIComponent(f.filename)}`
+      );
+      if (!detail.ok) continue;
+      const d = await detail.json();
+      for (const c of (d.chunks || [])) {
+        projectChunks.push({ fileName: f.filename, ...c });
+      }
+    }
+    logger.info('cache', `Loaded ${projectChunks.length} project chunks for project "${projectId}"`);
+  } catch (e) {
+    logger.warn('cache', 'loadProjectChunks failed (non-fatal)', { error: e?.message });
+  }
+}
+
+// uploadProjectFile: chunk a File object and POST it to the project cache.
+async function uploadProjectFile(projectId, file) {
+  const text = await file.text();
+  const chunks = chunkText(text, chunkLineSize);
+  const chunkObjs = chunks.map((t, i) => ({ fileName: file.name, chunkId: i, text: t, embedding: null }));
+  const resp = await loggedFetch(`/chunk-cache?projectId=${encodeURIComponent(projectId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: file.name, chunks: chunkObjs }),
+  });
+  if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
+  // Refresh local projectChunks after upload.
+  await loadProjectChunks(projectId);
+  return chunkObjs.length;
+}
+
+// deleteProjectFile: remove a single file from the project's chunk cache.
+async function deleteProjectFile(projectId, filename) {
+  const resp = await loggedFetch(
+    `/chunk-cache?projectId=${encodeURIComponent(projectId)}&file=${encodeURIComponent(filename)}`,
+    { method: 'DELETE' }
+  );
+  if (!resp.ok) throw new Error(`Delete failed: ${resp.status}`);
+  await loadProjectChunks(projectId);
+}
+
+// listProjectFiles: return the cached-file listing for a project.
+async function listProjectFiles(projectId) {
+  const r = await loggedFetch(`/chunk-cache?projectId=${encodeURIComponent(projectId)}`);
+  return r.ok ? await r.json() : [];
+}
 
 // ─── UI settings persistence ─────────────────────────────────────────────────
 // Save/restore user-facing controls to localStorage so they survive reloads.
@@ -1100,11 +1170,16 @@ function showPendingImages() {
 }
 
 async function saveChunkCache() {
-  if (!uploadedFiles.length) return;
+if (!uploadedFiles.length) return;
+  // Append ?projectId when a project is active so chunks are stored under the
+  // project's own cache directory (PCJ-1 / Slice 4).
+  const cacheSuffix = currentProjectId
+    ? '?projectId=' + encodeURIComponent(currentProjectId)
+    : '';
   for (const filename of uploadedFiles) {
     const chunks = fileChunks.filter(c => c.fileName === filename);
     try {
-      const resp = await loggedFetch('/chunk-cache', {
+      const resp = await loggedFetch('/chunk-cache' + cacheSuffix, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename, chunks }),
@@ -1124,7 +1199,11 @@ async function saveChunkCache() {
 
 async function deleteChunkCache(filename) {
   try {
-    await loggedFetch('/chunk-cache?file=' + encodeURIComponent(filename), { method: 'DELETE' });
+    // Include projectId so the delete targets the right cache directory (PCJ-2).
+    const pid = currentProjectId
+      ? '&projectId=' + encodeURIComponent(currentProjectId)
+      : '';
+    await loggedFetch('/chunk-cache?file=' + encodeURIComponent(filename) + pid, { method: 'DELETE' });
     logger.info('cache', `Deleted cache for "${filename}"`);
   } catch (err) {
     logger.warn('cache', `Error deleting cache for "${filename}"`, { error: err?.message });
@@ -1134,7 +1213,11 @@ async function deleteChunkCache(filename) {
 
 async function restoreFromCache(filename) {
   try {
-    const resp = await loggedFetch('/chunk-cache?file=' + encodeURIComponent(filename));
+    // Include projectId so restore reads from the right cache directory (PCJ-3).
+    const pid = currentProjectId
+      ? '&projectId=' + encodeURIComponent(currentProjectId)
+      : '';
+    const resp = await loggedFetch('/chunk-cache?file=' + encodeURIComponent(filename) + pid);
     if (!resp.ok) {
       logger.warn('cache', `Cache not found for "${filename}"`);
       return;
@@ -1163,15 +1246,18 @@ async function archiveCurrentSession() {
   const title = raw.slice(0, 50).trim() + (raw.length > 50 ? '\u2026' : '');
   const id = currentSessionId || `session_${Date.now()}`;
   try {
+    const body = {
+      id,
+      title,
+      turns: chatDisplayHistory.slice(-200),
+      createdAt: chatDisplayHistory[0]?.timestamp || new Date().toISOString(),
+    };
+    // Stamp the current project so sessions can be grouped by project (AC-4).
+    if (currentProjectId) body.projectId = currentProjectId;
     await loggedFetch('/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id,
-        title,
-        turns: chatDisplayHistory.slice(-200),
-        createdAt: chatDisplayHistory[0]?.timestamp || new Date().toISOString(),
-      }),
+      body: JSON.stringify(body),
     });
     currentSessionId = id;
     await showSessionsList();
@@ -1180,24 +1266,210 @@ async function archiveCurrentSession() {
   }
 }
 
+// ─── Projects CRUD helpers ───────────────────────────────────────────────────
+
+async function loadProjects() {
+  try {
+    const resp = await loggedFetch('/projects');
+    return resp.ok ? await resp.json() : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+async function createProject(name, memoryMode, instructions = '') {
+  // Creates a project; returns the new project object or null on failure.
+  try {
+    const resp = await loggedFetch('/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, memoryMode: memoryMode || 'default', instructions }),
+    });
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch (_) {
+    return null;
+  }
+}
+
+async function updateProject(id, updates) {
+  // Updates name and/or pinned on a project. memoryMode changes are server-ignored.
+  try {
+    const resp = await loggedFetch(`/projects/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    return resp.ok ? await resp.json() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function deleteProject(id) {
+  // Deletes project and orphans its sessions to "Chats". Returns ok bool.
+  try {
+    const resp = await loggedFetch(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return resp.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+function openCreateProjectModal() {
+  // Show the create-project modal; resolve on confirm with {name, memoryMode, instructions}.
+  const modal = document.getElementById('createProjectModal');
+  if (!modal) return;
+  const nameInput = modal.querySelector('#projectNameInput');
+  const modeSelect = modal.querySelector('#projectMemoryMode');
+  const instTextarea = modal.querySelector('#projectInstructionsInput');
+  const instCounter = modal.querySelector('#projectInstructionsCounter');
+  const instRow = modal.querySelector('.project-modal-instructions-row');
+  nameInput.value = '';
+  if (modeSelect) modeSelect.value = 'default';
+  if (instTextarea) instTextarea.value = '';
+  if (instCounter) instCounter.textContent = '0 / 8192';
+  if (instRow) instRow.style.display = '';
+  modal.removeAttribute('hidden');
+  nameInput.focus();
+}
+
+function closeCreateProjectModal() {
+  const modal = document.getElementById('createProjectModal');
+  if (modal) modal.setAttribute('hidden', '');
+}
+
+async function openProject(projectId) {
+  // Set currentProjectId and start a new chat within this project.
+  currentProjectId = projectId;
+  // AC-7 (Slice 2): load project instructions so they prepend every message.
+  try {
+    const r = await loggedFetch(`/projects/${encodeURIComponent(projectId)}`);
+    currentProjectInstructions = r.ok ? ((await r.json()).instructions || '') : '';
+  } catch (_) {
+    currentProjectInstructions = '';
+  }
+  // Load project-shared chunks into projectChunks array (AC-3 / Slice 4).
+  await loadProjectChunks(projectId);
+  // Archive existing work first so we don't lose it.
+  if (chatDisplayHistory.length) await archiveCurrentSession();
+  // Clear the canvas for the new project chat.
+  document.getElementById('conversation').innerHTML = '';
+  conversationHistory.length = 0;
+  chatDisplayHistory.length = 0;
+  currentSessionId = null;
+  document.querySelector('.main-content').classList.remove('in-conversation');
+  await showSessionsList();
+}
+
+// ─── Sectioned sidebar (Pinned / Projects / Chats) ───────────────────────────
+
 async function showSessionsList() {
   const el = document.getElementById('chatSessionsList');
   if (!el) return;
   try {
-    const resp = await loggedFetch('/sessions');
-    const sessions = resp.ok ? await resp.json() : [];
-    if (!sessions.length) {
-      el.innerHTML = '<p class="sessions-empty">No saved chats yet</p>';
-      return;
+    const [sessions, projects] = await Promise.all([
+      loggedFetch('/sessions').then(r => r.ok ? r.json() : []).catch(() => []),
+      loadProjects(),
+    ]);
+
+    const pinnedProjects = projects.filter(p => p.pinned);
+    const unpinnedProjects = projects.filter(p => !p.pinned);
+    // Sessions with no projectId, or whose projectId is not in the current
+    // project list (orphaned) appear in the "Chats" section.
+    const projectIds = new Set(projects.map(p => p.id));
+    const chatSessions = sessions.filter(s => !s.projectId || !projectIds.has(s.projectId));
+
+    let html = '';
+
+    // ── Pinned section (shown only when there are pinned projects) ─────────
+    if (pinnedProjects.length) {
+      html += `<section class="sidebar-section" id="sidebar-pinned" aria-label="Pinned projects">
+        <h3 class="sidebar-section-heading">Pinned</h3>
+        ${pinnedProjects.map(p => _renderProjectItem(p)).join('')}
+      </section>`;
     }
-    el.innerHTML = sessions.map(s => {
-      const isActive = s.id === currentSessionId;
-      return `<div class="session-item${isActive ? ' active' : ''}" data-id="${escapeHtml(s.id)}" title="${escapeHtml(s.title)}">
-        <span class="session-title">${escapeHtml(s.title)}</span>
-        <span class="session-meta">${s.messageCount} msg</span>
-        <button class="session-delete" data-id="${escapeHtml(s.id)}" title="Delete">✕</button>
-      </div>`;
-    }).join('');
+
+    // ── Projects section ───────────────────────────────────────────────────
+    const MAX_PROJECTS_VISIBLE = 5;
+    const projectsOverflow = unpinnedProjects.length > MAX_PROJECTS_VISIBLE;
+    const visibleProjects = projectsOverflow
+      ? unpinnedProjects.slice(0, MAX_PROJECTS_VISIBLE)
+      : unpinnedProjects;
+
+    html += `<section class="sidebar-section" id="sidebar-projects" aria-label="Projects">
+      <details class="sidebar-projects-details" open>
+        <summary class="sidebar-section-heading sidebar-section-summary">
+          Projects
+          <button class="new-project-btn sidebar-icon-btn" type="button" title="New project" aria-label="New project">＋</button>
+        </summary>
+        <div class="sidebar-projects-list">
+          ${visibleProjects.map(p => _renderProjectItem(p)).join('')}
+          ${projectsOverflow
+            ? `<button class="show-more-btn" type="button" data-full-count="${unpinnedProjects.length}">Show more (${unpinnedProjects.length - MAX_PROJECTS_VISIBLE} more)</button>`
+            : ''}
+          ${unpinnedProjects.length === 0 ? '<p class="sessions-empty sidebar-empty-hint">No projects yet</p>' : ''}
+        </div>
+      </details>
+    </section>`;
+
+    // ── Chats section ──────────────────────────────────────────────────────
+    html += `<section class="sidebar-section" id="sidebar-chats" aria-label="Chats">
+      <h3 class="sidebar-section-heading">Chats</h3>
+      ${chatSessions.length
+        ? chatSessions.map(s => _renderSessionItem(s)).join('')
+        : '<p class="sessions-empty">No saved chats yet</p>'}
+    </section>`;
+
+    el.innerHTML = html;
+
+    // ── Bind project item events ───────────────────────────────────────────
+    el.querySelectorAll('.project-item').forEach(item => {
+      item.addEventListener('click', e => {
+        if (e.target.closest('.project-menu-btn') || e.target.closest('.project-ctx-menu')) return;
+        openProject(item.dataset.id);
+      });
+    });
+    el.querySelectorAll('.project-menu-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        _showProjectContextMenu(btn, btn.dataset.id, btn.dataset.name, btn.dataset.pinned === 'true');
+      });
+    });
+
+    // ── Bind New Project button ────────────────────────────────────────────
+    const newProjBtn = el.querySelector('.new-project-btn');
+    if (newProjBtn) {
+      newProjBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        openCreateProjectModal();
+      });
+    }
+
+    // ── Show more projects ─────────────────────────────────────────────────
+    const showMoreBtn = el.querySelector('.show-more-btn');
+    if (showMoreBtn) {
+      showMoreBtn.addEventListener('click', async () => {
+        // Expand to show all unpinned projects
+        const listEl = el.querySelector('.sidebar-projects-list');
+        if (!listEl) return;
+        listEl.innerHTML = unpinnedProjects.map(p => _renderProjectItem(p)).join('');
+        listEl.querySelectorAll('.project-item').forEach(item => {
+          item.addEventListener('click', e => {
+            if (e.target.closest('.project-menu-btn') || e.target.closest('.project-ctx-menu')) return;
+            openProject(item.dataset.id);
+          });
+        });
+        listEl.querySelectorAll('.project-menu-btn').forEach(btn => {
+          btn.addEventListener('click', ev => {
+            ev.stopPropagation();
+            _showProjectContextMenu(btn, btn.dataset.id, btn.dataset.name, btn.dataset.pinned === 'true');
+          });
+        });
+      });
+    }
+
+    // ── Bind session item events ───────────────────────────────────────────
     el.querySelectorAll('.session-item').forEach(item => {
       item.addEventListener('click', e => {
         if (e.target.classList.contains('session-delete')) return;
@@ -1212,9 +1484,118 @@ async function showSessionsList() {
         showSessionsList();
       });
     });
+
   } catch (err) {
     logger.warn('history', 'Could not load sessions list', { error: err?.message });
   }
+}
+
+function _renderProjectItem(p) {
+  const isActive = p.id === currentProjectId;
+  return `<div class="project-item${isActive ? ' active' : ''}" data-id="${escapeHtml(p.id)}" role="listitem" title="${escapeHtml(p.name)}">
+    <span class="project-icon" aria-hidden="true">📁</span>
+    <span class="project-name">${escapeHtml(p.name)}</span>
+    <button class="project-menu-btn sidebar-icon-btn" type="button"
+      data-id="${escapeHtml(p.id)}"
+      data-name="${escapeHtml(p.name)}"
+      data-pinned="${p.pinned ? 'true' : 'false'}"
+      title="Project options" aria-label="Project options for ${escapeHtml(p.name)}">⋯</button>
+  </div>`;
+}
+
+function _renderSessionItem(s) {
+  const isActive = s.id === currentSessionId;
+  return `<div class="session-item${isActive ? ' active' : ''}" data-id="${escapeHtml(s.id)}" title="${escapeHtml(s.title)}" role="listitem">
+    <span class="session-title">${escapeHtml(s.title)}</span>
+    <span class="session-meta">${s.messageCount || ''}</span>
+    <button class="session-delete" data-id="${escapeHtml(s.id)}" title="Delete" aria-label="Delete chat">✕</button>
+  </div>`;
+}
+
+function _showProjectContextMenu(triggerEl, projectId, projectName, isPinned) {
+  // Remove any existing open context menus first.
+  document.querySelectorAll('.project-ctx-menu').forEach(m => m.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'project-ctx-menu';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = `
+    <button class="ctx-menu-item" data-action="rename" role="menuitem">✎ Rename</button>
+    <button class="ctx-menu-item" data-action="pin" role="menuitem">${isPinned ? '⬆ Unpin' : '📌 Pin'}</button>
+    <button class="ctx-menu-item ctx-menu-item--danger" data-action="delete" role="menuitem">🗑 Delete</button>
+  `;
+
+  // Position near the trigger button
+  const rect = triggerEl.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.left = `${Math.max(0, rect.right - 160)}px`;
+  document.body.appendChild(menu);
+
+  // Close on outside click
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('mousedown', closeMenu);
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', closeMenu), 0);
+
+  // Handle actions
+  menu.querySelectorAll('.ctx-menu-item').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      menu.remove();
+      document.removeEventListener('mousedown', closeMenu);
+      const action = btn.dataset.action;
+      if (action === 'rename') {
+        _showProjectRenameModal(projectId, projectName);
+      } else if (action === 'pin') {
+        await updateProject(projectId, { pinned: !isPinned });
+        await showSessionsList();
+      } else if (action === 'delete') {
+        if (!confirm(`Delete project "${projectName}"? Its chats will be moved to Chats.`)) return;
+        if (currentProjectId === projectId) currentProjectId = null;
+        await deleteProject(projectId);
+        await showSessionsList();
+      }
+    });
+  });
+}
+
+function _showProjectRenameModal(projectId, currentName) {
+  // Re-use the create project modal for rename (simpler than a second modal).
+  const modal = document.getElementById('createProjectModal');
+  if (!modal) return;
+  const title = modal.querySelector('#createProjectTitle');
+  const nameInput = modal.querySelector('#projectNameInput');
+  const modeRow = modal.querySelector('.project-modal-mode-row');
+  const saveBtn = modal.querySelector('#createProjectSaveBtn');
+
+  // Switch to rename mode
+  if (title) title.textContent = 'Rename project';
+  if (modeRow) modeRow.style.display = 'none';
+  nameInput.value = currentName;
+  modal.removeAttribute('hidden');
+  nameInput.focus();
+  nameInput.select();
+
+  // Override the save handler for this call
+  const originalHandler = saveBtn._projectSaveHandler;
+  if (originalHandler) saveBtn.removeEventListener('click', originalHandler);
+  const renameHandler = async () => {
+    const newName = nameInput.value.trim();
+    if (!newName) return;
+    saveBtn.removeEventListener('click', renameHandler);
+    closeCreateProjectModal();
+    // Reset modal back to create mode
+    if (title) title.textContent = 'New project';
+    if (modeRow) modeRow.style.display = '';
+    await updateProject(projectId, { name: newName });
+    await showSessionsList();
+    // Re-attach original create handler
+    if (originalHandler) saveBtn.addEventListener('click', originalHandler);
+  };
+  saveBtn.addEventListener('click', renameHandler);
 }
 
 async function restoreSession(id) {
@@ -1254,6 +1635,18 @@ async function restoreSession(id) {
       chatDisplayHistory.push(turn);
     }
     currentSessionId = id;
+    // Restore currentProjectId from the session's stored projectId (AC-4).
+    currentProjectId = data.projectId || null;
+    // AC-8 (Slice 2): reload project instructions for the restored project so
+    // sendMessage() prepends them correctly after a session-restore.
+    if (currentProjectId) {
+      try {
+        const pr = await loggedFetch(`/projects/${encodeURIComponent(currentProjectId)}`);
+        currentProjectInstructions = pr.ok ? ((await pr.json()).instructions || '') : '';
+      } catch (_) { currentProjectInstructions = ''; }
+    } else {
+      currentProjectInstructions = '';
+    }
     conversation.scrollTop = conversation.scrollHeight;
 
     // Update active highlight
@@ -1321,7 +1714,11 @@ async function showCachedFilesPanel() {
   const el = document.getElementById('cachedFilesPanel');
   if (!el) return;
   try {
-    const resp = await loggedFetch('/chunk-cache');
+    // Include projectId so we list only the files cached for this project (PCJ-4).
+    const pid = currentProjectId
+      ? '?projectId=' + encodeURIComponent(currentProjectId)
+      : '';
+    const resp = await loggedFetch('/chunk-cache' + pid);
     const entries = resp.ok ? await resp.json() : [];
     if (!entries.length) {
       el.innerHTML = '';
@@ -1386,11 +1783,12 @@ async function embedTexts(texts, fetchFn) {
 // re-rank the results by cosine similarity to the query embedding. Falls back
 // gracefully to the keyword-ranked order on any error.
 // Injectable fetchFn allows full isolation in tests (no network needed).
-async function embedMemorySearch(query, k = 5, fetchFn) {
+async function embedMemorySearch(query, k = 5, fetchFn, projectId) {
   const fetcher = fetchFn || fetch;
 
   // 1. Always fetch keyword-ranked results first
-  const searchResp = await fetcher(`/memory/search?q=${encodeURIComponent(query)}&k=${k}`);
+  const projectParam = projectId ? `&projectId=${encodeURIComponent(projectId)}` : '';
+  const searchResp = await fetcher(`/memory/search?q=${encodeURIComponent(query)}&k=${k}${projectParam}`);
   const searchData = await searchResp.json();
   if (!searchResp.ok) throw new Error(`/memory/search returned ${searchResp.status}`);
   const results = (searchData.results || []).slice();
@@ -1521,7 +1919,8 @@ let semanticSearchEnabled = false;
 // getRelevantChunks: async so the semantic path can await embedTexts.
 // Injectable chunksArr / fetchFn / semanticFlag for unit-testing without a DOM.
 async function getRelevantChunks(query, topK = 5, chunksArr, fetchFn, semanticFlag) {
-  const chunks = chunksArr ?? fileChunks;
+  // Merge per-chat fileChunks + project-shared projectChunks (AC-4 Slice 4).
+  const chunks = chunksArr ?? [...fileChunks, ...projectChunks];
   const useSemantic = (semanticFlag !== undefined) ? semanticFlag : semanticSearchEnabled;
   if (!chunks.length) return [];
 
@@ -1547,7 +1946,7 @@ async function getRelevantChunks(query, topK = 5, chunksArr, fetchFn, semanticFl
     }
   }
 
-  // Keyword fallback
+  // Keyword fallback (merges per-chat fileChunks + project-shared projectChunks)
   const scored = chunks.map(chunk => ({
     ...chunk,
     score: scoreChunkByKeywords(chunk.text, query),
@@ -1744,12 +2143,14 @@ function addCopyButton(bubble) {
 
 // Persist arbitrary text to the Obsidian vault via the /memory/save endpoint.
 // Returns the parsed response ({ ok, path, title }) or { error }.
-async function saveMemory(title, content, tags = []) {
+async function saveMemory(title, content, tags = [], projectId = null) {
   try {
+    const body = { title, content, tags };
+    if (projectId) body.projectId = projectId;
     const resp = await loggedFetch('/memory/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, content, tags }),
+      body: JSON.stringify(body),
     });
     const data = await resp.json();
     if (!resp.ok) return { error: data?.error || `HTTP ${resp.status}` };
@@ -2175,8 +2576,8 @@ async function prepareContextMessages(inputs) {
     }
   }
 
-  // 2. File Chunks
-  if (fileChunks.length > 0) {
+  // 2. File Chunks (per-chat + project-shared — AC-4)
+  if (fileChunks.length + projectChunks.length > 0) {
     const relevantChunks = await getRelevantChunks(inputs.content, topChunksPerQuery);
     if (relevantChunks.length > 0) {
       const method = 'keyword matching';
@@ -2555,7 +2956,9 @@ async function sendMessage() {
   
   // 2. Build final message payload
   const messages = [];
-  if (inputs.systemPrompt) messages.push({ role: 'system', content: inputs.systemPrompt });
+  // AC-6: compose 3-layer system prompt (project instructions + per-chat prompt)
+  const effectiveSystemPrompt = composeSystemPrompt(currentProjectInstructions, inputs.systemPrompt);
+  if (effectiveSystemPrompt) messages.push({ role: 'system', content: effectiveSystemPrompt });
   messages.push(...conversationHistory); // Add prior turns
   messages.push(...contextMessages);     // Add file/plugin context
 
@@ -3169,6 +3572,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadChatHistory();
 });
 
+// ─── 3-layer system prompt composition (Slice 2) ─────────────────────────────
+// Pure helper: join non-empty layers with '\n\n'. No side-effects so it is
+// trivially unit-testable. Called in sendMessage() to build the effective
+// system prompt for every API request (first send, regenerate, edit-resend).
+function composeSystemPrompt(projectInstructions, perChatPrompt) {
+  const layers = [projectInstructions, perChatPrompt].filter(s => s && s.trim());
+  return layers.join('\n\n');
+}
+
 // ─── Prompt Templates (#12) ───────────────────────────────────────────────────
 // Built-in library of reusable system prompts. User-saved templates are persisted
 // to localStorage under PROMPT_TEMPLATES_KEY as Array<{id, name, text}>.
@@ -3380,7 +3792,7 @@ if (typeof module !== 'undefined' && module.exports) {
     appConfig,
     // Test shim: embedMemorySearch that uses an injectable fetch AND the module's
     // appConfig so tests can toggle appConfig.has_embeddings freely.
-    _embedMemorySearchTest: (query, k, fetchFn) => embedMemorySearch(query, k, fetchFn),
+    _embedMemorySearchTest: (query, k, fetchFn, projectId) => embedMemorySearch(query, k, fetchFn, projectId),
     // Prompt Templates helpers (injectable localStorage for tests)
     loadPromptTemplates,
     applyTemplate,
@@ -3425,6 +3837,8 @@ if (typeof module !== 'undefined' && module.exports) {
         Object.assign(appConfig, _origCfg);
       }
     },
+    // Memory save helper
+    saveMemory,
     // MCP bridge helpers exposed for unit testing
     callMcpTool,
     MCP_TOOLS,
@@ -3432,6 +3846,20 @@ if (typeof module !== 'undefined' && module.exports) {
     // Auto Model Router (#19) — pure classifier + tier map
     routeModel,
     TIER_MAP,
+    // 3-layer system prompt composition (Slice 2)
+    composeSystemPrompt,
+    // Expose currentProjectInstructions state for tests
+    get currentProjectInstructions() { return currentProjectInstructions; },
+    set currentProjectInstructions(v) { currentProjectInstructions = v; },
+    // Slice 4 — Project shared chunks
+    loadProjectChunks,
+    uploadProjectFile,
+    deleteProjectFile,
+    listProjectFiles,
+    get projectChunks() { return projectChunks; },
+    getRelevantChunks,
+    _getRelevantChunksTest: (chunks, query, topK, fetchFn, semanticFlag) =>
+      getRelevantChunks(query, topK, chunks, fetchFn, semanticFlag),
   };
 }
 

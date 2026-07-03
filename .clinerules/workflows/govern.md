@@ -7,8 +7,9 @@
 
 **Mode:** ACT MODE (or PLAN MODE for report preview before filing)
 
-**Purpose:** Run the four Governance Board roles across the **entire USAi Chat
-project** — codebase, docuWhatmentation, backlog, pipeline artifacts, and Scrum notes —
+**Purpose:** Run the five Governance Board roles across the **entire USAi Chat
+project** — codebase, documentation, backlog, pipeline artifacts, Scrum notes, and
+repo hygiene —
 to produce a dated governance report with classified findings (BLOCKING / ADVISORY /
 INNOVATION). Findings flow into `backlog.md` and the self-improvement log.
 
@@ -237,9 +238,46 @@ Walk through each item in the rubric. Score 1–5 and record a brief finding for
 
 ---
 
+## Role 5 — Senior Housekeeping & Hygiene Steward (SHK)
+
+**Charter:** Is the repo and artifact set clean, consistent, and free of accumulated drift?
+
+Run the full `/housekeep` sweep (`.clinerules/workflows/housekeep.md`) in its
+entirety. The steps are fully defined there; this section summarises the rubric
+scores and integration with the governance report.
+
+### SHK-1: Spec/backlog reconciliation
+- For every `[x]` Done backlog item: does the linked spec file have `Status: Done`?
+- Are there orphaned spec files with no matching backlog entry?
+
+### SHK-2: Backlog Done-pile hygiene
+- Every `[x]` Done entry has date, one-line outcome, and spec link?
+- If Done items > 50: archival to `backlog-archive.md` proposed?
+
+### SHK-3: Dead-code and scratch-file cleanliness
+- Inline `TODO`/`FIXME`/`XXX`/`HACK` comments tracked in backlog?
+- No committed scratch/temp files (`implementation_plan.md`, `*.tmp`, `*.bak`)?
+
+### SHK-4: Doc-consistency and CSS-v-bump freshness
+- `./scripts/doc-consistency-check.sh` passes?
+- `styles.css?v=N` in `index.html` matches last CSS edit?
+- `CHANGELOG.md [Unreleased]` non-empty if code changed?
+- `.env.example` keys match `.env` keys?
+
+### SHK-5: Dependency and vault hygiene
+- `./scripts/dev-deps-check.sh` clean? All `requirements*.txt` entries still used?
+- No duplicate same-date memory notes in `Cline/memories/`?
+- No secrets in vault memory notes (re-run security-scan memory block)?
+
+**SHK output:** Score table + punch-list of BLOCKING / ADVISORY / CLEANUP findings.
+**Mandatory:** at least one tracked `backlog.md` cleanup item proposed when any
+finding is ADVISORY or higher.
+
+---
+
 ## Synthesis — compile the governance report
 
-After all four roles complete their review, compile the findings into a governance report:
+After all five roles complete their review, compile the findings into a governance report:
 
 ### Report structure
 
@@ -248,7 +286,7 @@ After all four roles complete their review, compile the findings into a governan
 
 **Sprint:** Sprint NN (if applicable)
 **Triggered by:** Sprint close | On demand
-**Auditors:** SBA · SA · SE · SPMS
+**Auditors:** SBA · SA · SE · SPMS · SHK
 
 ## Executive Summary
 One paragraph: overall health, top 3 findings, recommended next actions.
@@ -260,6 +298,7 @@ One paragraph: overall health, top 3 findings, recommended next actions.
 | SA   | . | . | . | . | . |  .  |
 | SE   | . | . | . | . | . |  .  |
 | SPMS | . | . | . | . | . |  .  |
+| SHK  | . | . | . | . | . |  .  |
 
 ## 🚨 Blocking Findings
 (Must be resolved before new feature work)

@@ -103,6 +103,7 @@ handing off to the next.
 | 📝 **Docs in sync** | CHANGELOG every substantive change; `USER_GUIDE.md` for user-facing; README for setup/config; **backlog lifecycle updated** (see "Backlog lifecycle" section below). |
 | 🧠 **Memory** | Recall at task start from all three vault subfolders. Record session note to `Cline/memories/YYYY-MM-DD-HHMMSS-<title>.md` at task end. |
 | 🎨 **CSS cache bust** | Any `styles.css` edit → bump `?v=N` in `index.html`. |
+| 🧹 **Housekeeping** | Per-item: leave-no-trace gate runs in every `/loop` Done criteria check and `/review §6h`. Sprint-close: SHK (Senior Housekeeping & Hygiene Steward) runs automatically as the 5th role in `/govern`. On-demand standalone sweep: `/housekeep` (`.clinerules/workflows/housekeep.md`). See `docs/governance.md` §5 for the full SHK charter and checklist. |
 
 ---
 

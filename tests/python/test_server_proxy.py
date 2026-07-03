@@ -120,7 +120,42 @@ class ProxyAndContext7Tests(unittest.TestCase):
     def url(self, p):
         return f'http://127.0.0.1:{self._app_port}{p}'
 
-    def test_proxy_injects_server_api_key_when_client_sends_none(self):
+    def test_proxy_non_streaming_capture_via_fake_upstream(self):
+        """Cover non-streaming capture path (lines 512–528) with a 200 OK upstream.
+
+        Uses the _FakeUpstreamHandler (which returns HTTP 200 non-streaming JSON)
+        with capture enabled, so the if CONFIG.get('capture_raw_responses') block
+        and its inner try/except are exercised via the normal proxy code path.
+        """
+        import tempfile, shutil
+        saved_raw = server.RAW_RESPONSES_DIR
+        raw_tmp = tempfile.mkdtemp()
+        server.RAW_RESPONSES_DIR = Path(raw_tmp)
+        server.RAW_RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
+        saved_cap = server.CONFIG.get('capture_raw_responses')
+        server.CONFIG['capture_raw_responses'] = True
+        server.CONFIG['raw_responses_max'] = 200
+        try:
+            # Non-streaming POST to the proxy (stream key absent → wants_stream=False)
+            status, body = _request('POST', self.url('/api/v1/chat/completions'),
+                                    {'messages': [], 'model': 'cap-model'})
+            self.assertEqual(status, 200)
+            files = list(Path(raw_tmp).glob('*.json'))
+            self.assertEqual(len(files), 1,
+                             'Non-streaming proxy capture must write exactly one file')
+            record = json.loads(files[0].read_text(encoding='utf-8'))
+            self.assertFalse(record.get('streamed'),
+                             'Non-streaming capture must have streamed=false')
+            self.assertEqual(record.get('model'), 'cap-model')
+        finally:
+            server.RAW_RESPONSES_DIR = saved_raw
+            if saved_cap is None:
+                server.CONFIG.pop('capture_raw_responses', None)
+            else:
+                server.CONFIG['capture_raw_responses'] = saved_cap
+            shutil.rmtree(raw_tmp, ignore_errors=True)
+
+
         status, body = _request('GET', self.url('/api/v1/models'))
         self.assertEqual(status, 200)
         self.assertTrue(body['ok'])
@@ -262,6 +297,31 @@ class ProxyUpstreamErrorTests(unittest.TestCase):
 
     def url(self, p):
         return f'http://127.0.0.1:{self._port}{p}'
+
+    def test_non_streaming_proxy_capture_writes_file_when_enabled(self):
+        """RC: non-streaming capture path (lines 512–528) — POST w/ capture on writes a file."""
+        import tempfile, shutil
+        from pathlib import Path
+        saved_raw = server.RAW_RESPONSES_DIR
+        raw_tmp = tempfile.mkdtemp()
+        server.RAW_RESPONSES_DIR = Path(raw_tmp)
+        server.RAW_RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
+        saved_cap = server.CONFIG.get('capture_raw_responses')
+        server.CONFIG['capture_raw_responses'] = True
+        server.CONFIG['raw_responses_max'] = 200
+        try:
+            # Send a non-streaming POST — upstream returns HTTP 500 (via _ErrorUpstreamHandler)
+            # → HTTPError branch. Also test capture_raw_responses on HTTPError path.
+            _request('POST', self.url('/api/v1/chat/completions'),
+                     body={'stream': False, 'messages': [], 'model': 'cap-test'})
+            # At least one file should exist (either non-stream or HTTPError capture).
+            files = list(Path(raw_tmp).glob('*.json'))
+            self.assertGreater(len(files), 0,
+                               'Capture must write at least one file when enabled')
+        finally:
+            server.RAW_RESPONSES_DIR = saved_raw
+            server.CONFIG['capture_raw_responses'] = saved_cap if saved_cap is not None else False
+            shutil.rmtree(raw_tmp, ignore_errors=True)
 
     def test_proxy_relays_upstream_error_status(self):
         # Upstream returns 500 → proxy relays the 500 (HTTPError branch).
@@ -494,6 +554,463 @@ class ProxyIncrementalStreamingTests(unittest.TestCase):
             gap, 0.4,
             f'first→last chunk gap was only {gap:.3f}s — the proxy appears to be '
             f'buffering the stream instead of relaying chunks as they arrive.')
+
+
+class _ReasoningStreamUpstreamHandler(BaseHTTPRequestHandler):
+    """Emulates an SSE streaming upstream that emits reasoning fields.
+
+    Sends three SSE data frames covering all four #11d assertions:
+      - Frame 1: delta.reasoning              (AC-1, T-11d-1)
+      - Frame 2: delta.reasoning_content + delta.content co-present
+                                              (AC-2, AC-3, T-11d-2/3)
+      - Frame 3: plain delta.content only
+      - Final:   [DONE] sentinel              (T-11d-4)
+
+    Uses HTTP/1.0-style framing (no Content-Length, connection-close)
+    matching _StreamUpstreamHandler so the proxy's SSE relay branch is
+    exercised.
+    """
+
+    def log_message(self, *args):  # silence
+        pass
+
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length', 0))
+        if length:
+            self.rfile.read(length)
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.end_headers()
+        frames = [
+            # Frame 1 — delta.reasoning only (AC-1)
+            json.dumps({'id': '1', 'choices': [
+                {'delta': {'reasoning': 'Think step 1'}}]}),
+            # Frame 2 — delta.reasoning_content + delta.content (AC-2, AC-3)
+            json.dumps({'id': '2', 'choices': [
+                {'delta': {'reasoning_content': 'Think step 2',
+                           'content': 'Answer'}}]}),
+            # Frame 3 — plain delta.content, no reasoning fields
+            json.dumps({'id': '3', 'choices': [
+                {'delta': {'content': ' more'}}]}),
+        ]
+        for frame in frames:
+            self.wfile.write(f'data: {frame}\n\n'.encode('utf-8'))
+            self.wfile.flush()
+            # Brief pause mirrors _StreamUpstreamHandler: avoids a race where
+            # the connection closes before all bytes are delivered to the relay.
+            time.sleep(0.02)
+        self.wfile.write(b'data: [DONE]\n\n')
+        self.wfile.flush()
+        time.sleep(0.02)
+
+
+class ProxyStreamingCaptureTests(unittest.TestCase):
+    """#48b — Streaming SSE raw-response capture.
+
+    Verifies that _proxy_api accumulates SSE chunks into a capture file when
+    CAPTURE_RAW_RESPONSES=true, without affecting relay latency or correctness.
+    Uses _StreamUpstreamHandler (already defined) as the fake upstream.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._saved_config = dict(server.CONFIG)
+        cls._saved_raw_dir = server.RAW_RESPONSES_DIR
+
+        # Isolated temp dir — no interference with real .raw_responses/.
+        cls._raw_tmp = tempfile.mkdtemp()
+        server.RAW_RESPONSES_DIR = Path(cls._raw_tmp)
+        server.RAW_RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
+
+        cls._up = ThreadingHTTPServer(('127.0.0.1', 0), _StreamUpstreamHandler)
+        cls._up_port = cls._up.server_address[1]
+        cls._up_thread = threading.Thread(
+            target=cls._up.serve_forever, daemon=True)
+        cls._up_thread.start()
+
+        server.CONFIG = dict(cls._saved_config)
+        server.CONFIG.update({
+            'api_key': 'k',
+            'base_url': f'http://127.0.0.1:{cls._up_port}',
+            '_test_allow_loopback': True,
+            'capture_raw_responses': True,
+            'raw_responses_max': 200,
+        })
+
+        cls._app = ThreadingHTTPServer(
+            ('127.0.0.1', 0), server.EnvConfigHTTPRequestHandler)
+        cls._port = cls._app.server_address[1]
+        cls._thread = threading.Thread(
+            target=cls._app.serve_forever, daemon=True)
+        cls._thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._app.shutdown(); cls._app.server_close()
+        cls._up.shutdown(); cls._up.server_close()
+        server.CONFIG = cls._saved_config
+        server.RAW_RESPONSES_DIR = cls._saved_raw_dir
+        import shutil
+        shutil.rmtree(cls._raw_tmp, ignore_errors=True)
+
+    def _do_stream_request(self):
+        """Send streaming POST to proxy and drain until [DONE]. Returns raw bytes."""
+        import socket
+        body = json.dumps(
+            {'stream': True, 'messages': [], 'model': 'test-model'}
+        ).encode('utf-8')
+        request = (
+            f'POST /api/v1/chat/completions HTTP/1.1\r\n'
+            f'Host: 127.0.0.1:{self._port}\r\n'
+            f'Content-Type: application/json\r\n'
+            f'Content-Length: {len(body)}\r\n'
+            f'Connection: close\r\n\r\n'
+        ).encode('utf-8') + body
+
+        s = socket.create_connection(('127.0.0.1', self._port), timeout=10)
+        s.sendall(request)
+        s.settimeout(10)
+        received = b''
+        while True:
+            try:
+                data = s.recv(4096)
+            except socket.timeout:
+                break
+            if not data:
+                break
+            received += data
+            if b'[DONE]' in received:
+                break
+        s.close()
+        return received
+
+    def _capture_files(self):
+        return sorted(Path(self._raw_tmp).glob('*.json'))
+
+    def test_rcs1_streaming_capture_creates_file_with_streamed_true(self):
+        """RCS-1: capture-on + streaming → one .json written; streamed=true; SSE bytes present."""
+        for f in self._capture_files():
+            f.unlink()
+        received = self._do_stream_request()
+        time.sleep(0.1)  # allow post-loop capture to write
+
+        files = self._capture_files()
+        self.assertEqual(len(files), 1,
+                         msg='RCS-1: expected exactly 1 capture file after streaming request')
+        record = json.loads(files[0].read_text(encoding='utf-8'))
+        self.assertTrue(record.get('streamed'),
+                        msg='RCS-1: streamed field must be true for streaming capture')
+        raw_content = record.get('raw', '')
+        raw_str = raw_content if isinstance(raw_content, str) else json.dumps(raw_content)
+        self.assertTrue(
+            'chunk' in raw_str or 'DONE' in raw_str,
+            msg='RCS-1: raw field must contain SSE frame content',
+        )
+        self.assertIn(b'[DONE]', received,
+                      msg='RCS-1: relay must still deliver [DONE] to the client')
+
+    def test_rcs2_streaming_capture_metadata_correct(self):
+        """RCS-2: stored record has correct status, path, and model."""
+        for f in self._capture_files():
+            f.unlink()
+        self._do_stream_request()
+        time.sleep(0.1)
+
+        files = self._capture_files()
+        self.assertEqual(len(files), 1, msg='RCS-2: expected one capture file')
+        record = json.loads(files[0].read_text(encoding='utf-8'))
+        self.assertEqual(record.get('status'), 200, msg='RCS-2: status must be 200')
+        self.assertIn('/api/', record.get('path', ''),
+                      msg='RCS-2: path must contain the API path')
+        self.assertEqual(record.get('model'), 'test-model',
+                         msg='RCS-2: model must match request body model field')
+
+    def test_rcs3_capture_off_no_files_written(self):
+        """RCS-3: capture off → streaming relay works but zero files written."""
+        for f in self._capture_files():
+            f.unlink()
+        saved = server.CONFIG.get('capture_raw_responses')
+        server.CONFIG['capture_raw_responses'] = False
+        try:
+            received = self._do_stream_request()
+            time.sleep(0.1)
+            self.assertEqual(len(self._capture_files()), 0,
+                             msg='RCS-3: no capture files when capture is off')
+            self.assertIn(b'[DONE]', received,
+                          msg='RCS-3: relay must still deliver [DONE] when capture is off')
+        finally:
+            server.CONFIG['capture_raw_responses'] = saved
+
+    def test_rcs4_non_streaming_capture_still_sets_streamed_false(self):
+        """RCS-4: regression — non-streaming capture retains streamed=false (default kwarg)."""
+        for f in self._capture_files():
+            f.unlink()
+        from datetime import datetime
+        payload = json.dumps({'id': 'x', 'choices': []}).encode('utf-8')
+        # Call helper without streamed= kwarg → must default to False.
+        server._capture_raw_response(
+            {'timestamp': datetime.now().isoformat(), 'method': 'POST',
+             'path': '/api/v1/chat/completions', 'status': 200, 'model': 'gpt-4'},
+            payload,
+        )
+        files = self._capture_files()
+        self.assertEqual(len(files), 1, msg='RCS-4: helper must write exactly one file')
+        record = json.loads(files[0].read_text(encoding='utf-8'))
+        self.assertFalse(record.get('streamed'),
+                         msg='RCS-4: streamed must be false without streamed kwarg')
+
+    def test_rcs5_streaming_capture_visible_in_list_and_read_endpoints(self):
+        """RCS-5: GET /raw-responses lists the capture; GET ?id= returns streamed=true."""
+        for f in self._capture_files():
+            f.unlink()
+        self._do_stream_request()
+        time.sleep(0.1)
+
+        files = self._capture_files()
+        self.assertEqual(len(files), 1, msg='RCS-5: expected one capture file')
+        capture_id = files[0].name
+
+        status, body = _request('GET', f'http://127.0.0.1:{self._port}/raw-responses')
+        self.assertEqual(status, 200, msg='RCS-5: GET /raw-responses must return 200')
+        # _request returns (status, parsed_json) — body is already a list here.
+        listing = body if isinstance(body, list) else json.loads(body)
+        self.assertIn(capture_id, [item['id'] for item in listing],
+                      msg='RCS-5: streaming capture must appear in /raw-responses list')
+
+        status2, body2 = _request(
+            'GET', f'http://127.0.0.1:{self._port}/raw-responses?id={capture_id}')
+        self.assertEqual(status2, 200, msg='RCS-5: GET /raw-responses?id= must return 200')
+        # _request returns (status, parsed_json) — body2 is already a dict here.
+        record = body2 if isinstance(body2, dict) else json.loads(body2)
+        self.assertTrue(record.get('streamed'),
+                        msg='RCS-5: full record streamed field must be true')
+
+    def test_rcs6_streaming_capture_exception_is_non_fatal(self):
+        """RCS-6: if _capture_raw_response raises inside the streaming capture block,
+        the exception is swallowed (lines 502–503) and a warn log is emitted.
+        Proxy behaviour / relay must be completely unaffected.
+        """
+        import unittest.mock as mock
+        for f in self._capture_files():
+            f.unlink()
+
+        warn_calls = []
+        orig_add_log = server.add_log
+
+        def patched_add_log(level, component, msg, *args, **kwargs):
+            if level == 'warn' and 'capture' in component:
+                warn_calls.append(msg)
+            return orig_add_log(level, component, msg, *args, **kwargs)
+
+        # Note: the capture block runs on the server's request-handler thread.
+        # _do_stream_request() returns as soon as the client sees [DONE], which may
+        # be before the server thread has finished the post-loop capture call.
+        # We therefore keep the patch active for a sleep after the request completes
+        # so the server thread's capture call is covered by the mock.
+        with mock.patch.object(server, '_capture_raw_response',
+                               side_effect=RuntimeError('simulated capture failure')), \
+             mock.patch.object(server, 'add_log', side_effect=patched_add_log):
+            received = self._do_stream_request()
+            time.sleep(0.3)  # wait inside the patch for the server thread to capture
+
+        # No capture file should exist (helper raised before writing).
+        self.assertEqual(len(self._capture_files()), 0,
+                         msg='RCS-6: no capture file when helper raises')
+        # The relay must still have completed normally.
+        self.assertIn(b'[DONE]', received,
+                      msg='RCS-6: relay must still deliver [DONE] when capture raises')
+        # A warn-level capture log must have been emitted.
+        self.assertTrue(any('capture' in w.lower() or 'failed' in w.lower()
+                            for w in warn_calls),
+                        msg='RCS-6: expected a warn log about capture failure')
+
+    def test_disconnect_triggers_partial_capture(self):
+        """RCS-7: client disconnects after first chunk; partial bytes are still
+        written to the capture store (best-effort).
+
+        Strategy: connect raw socket, receive the first HTTP chunk, then abruptly
+        close the socket.  The proxy's relay loop will see BrokenPipeError on the
+        next wfile.write; it should fall through to the post-loop capture block and
+        write whatever was buffered so far.
+
+        Uses _SlowStreamUpstreamHandler (0.3s between chunks) so the upstream is
+        still live when the client disconnects — giving the proxy at least one chunk
+        in its buffer.
+        """
+        import socket
+        import shutil
+        # Point the class app server at the slow upstream temporarily.
+        # We can't reuse _up (it's _StreamUpstreamHandler); we stand up a fresh pair.
+        saved_raw = server.RAW_RESPONSES_DIR
+        raw_tmp = tempfile.mkdtemp()
+        server.RAW_RESPONSES_DIR = Path(raw_tmp)
+        server.RAW_RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
+
+        up = ThreadingHTTPServer(('127.0.0.1', 0), _SlowStreamUpstreamHandler)
+        up_port = up.server_address[1]
+        up_thread = threading.Thread(target=up.serve_forever, daemon=True)
+        up_thread.start()
+
+        saved_config = dict(server.CONFIG)
+        server.CONFIG = dict(saved_config)
+        server.CONFIG.update({
+            'api_key': 'k',
+            'base_url': f'http://127.0.0.1:{up_port}',
+            '_test_allow_loopback': True,
+            'capture_raw_responses': True,
+            'raw_responses_max': 200,
+        })
+        app = ThreadingHTTPServer(('127.0.0.1', 0), server.EnvConfigHTTPRequestHandler)
+        app_port = app.server_address[1]
+        app_thread = threading.Thread(target=app.serve_forever, daemon=True)
+        app_thread.start()
+
+        try:
+            body = json.dumps(
+                {'stream': True, 'messages': [], 'model': 'dc-test'}
+            ).encode('utf-8')
+            req = (
+                f'POST /api/v1/chat/completions HTTP/1.1\r\n'
+                f'Host: 127.0.0.1:{app_port}\r\n'
+                f'Content-Type: application/json\r\n'
+                f'Content-Length: {len(body)}\r\n'
+                f'Connection: close\r\n\r\n'
+            ).encode('utf-8') + body
+
+            s = socket.create_connection(('127.0.0.1', app_port), timeout=5)
+            s.sendall(req)
+            s.settimeout(2)
+
+            # Read until we see the first chunk arrive, then abruptly close.
+            buf = b''
+            while True:
+                try:
+                    data = s.recv(512)
+                except socket.timeout:
+                    break
+                if not data:
+                    break
+                buf += data
+                # As soon as we have the HTTP headers + first data bytes, disconnect.
+                if b'data: chunk0' in buf:
+                    break
+            s.close()  # ← abrupt close triggers BrokenPipeError in proxy relay loop
+
+            # Give the proxy time to detect the disconnect and write the partial capture.
+            time.sleep(0.8)
+
+            files = sorted(Path(raw_tmp).glob('*.json'))
+            self.assertGreater(
+                len(files), 0,
+                msg='RCS-7: partial capture file must be written after client disconnect',
+            )
+            if files:
+                record = json.loads(files[0].read_text(encoding='utf-8'))
+                self.assertTrue(record.get('streamed'),
+                                msg='RCS-7: partial capture must have streamed=true')
+        finally:
+            app.shutdown(); app.server_close()
+            up.shutdown(); up.server_close()
+            server.CONFIG = saved_config
+            server.RAW_RESPONSES_DIR = saved_raw
+            shutil.rmtree(raw_tmp, ignore_errors=True)
+
+
+class ProxyReasoningStreamTests(unittest.TestCase):
+    """#11d — Proxy verbatim-relay contract for reasoning fields.
+
+    Verifies that _proxy_api's SSE relay branch passes delta.reasoning and
+    delta.reasoning_content through unchanged so reasoning-capable models
+    (OpenAI o-series, Claude extended thinking, etc.) keep working after
+    any future proxy refactor.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._saved_config = dict(server.CONFIG)
+        cls._up = ThreadingHTTPServer(
+            ('127.0.0.1', 0), _ReasoningStreamUpstreamHandler)
+        cls._up_port = cls._up.server_address[1]
+        cls._up_thread = threading.Thread(
+            target=cls._up.serve_forever, daemon=True)
+        cls._up_thread.start()
+        server.CONFIG = dict(cls._saved_config)
+        server.CONFIG.update({
+            'api_key': 'k',
+            'base_url': f'http://127.0.0.1:{cls._up_port}',
+            '_test_allow_loopback': True,
+        })
+        cls._app = ThreadingHTTPServer(
+            ('127.0.0.1', 0), server.EnvConfigHTTPRequestHandler)
+        cls._port = cls._app.server_address[1]
+        cls._thread = threading.Thread(
+            target=cls._app.serve_forever, daemon=True)
+        cls._thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._app.shutdown(); cls._app.server_close()
+        cls._up.shutdown(); cls._up.server_close()
+        server.CONFIG = cls._saved_config
+
+    def test_reasoning_fields_relayed_verbatim(self):
+        """T-11d-1…4: proxy relays delta.reasoning, delta.reasoning_content,
+        co-present delta.content, and [DONE] sentinel all unchanged.
+
+        Uses a raw socket (not urlopen) — urlopen may buffer chunked SSE
+        responses and race on connection-close framing (same reason as
+        ProxyStreamingTests).
+        """
+        import socket
+        body = json.dumps({'stream': True, 'messages': []}).encode('utf-8')
+        request = (
+            f'POST /api/v1/chat/completions HTTP/1.1\r\n'
+            f'Host: 127.0.0.1:{self._port}\r\n'
+            f'Content-Type: application/json\r\n'
+            f'Content-Length: {len(body)}\r\n'
+            f'Connection: close\r\n\r\n'
+        ).encode('utf-8') + body
+
+        s = socket.create_connection(('127.0.0.1', self._port), timeout=10)
+        s.sendall(request)
+        s.settimeout(10)
+        received = b''
+        while True:
+            try:
+                data = s.recv(4096)
+            except socket.timeout:
+                break
+            if not data:
+                break
+            received += data
+            if b'[DONE]' in received:
+                break
+        s.close()
+
+        head = received.split(b'\r\n\r\n', 1)[0].lower()
+
+        # Status + Content-Type
+        self.assertIn(b'http/1.1 200', head,
+                      msg='Proxy must return HTTP/1.1 200 for streaming response')
+        self.assertIn(b'text/event-stream', head,
+                      msg='Proxy must relay Content-Type: text/event-stream')
+
+        # T-11d-1: delta.reasoning relayed verbatim (AC-1)
+        self.assertIn(b'"reasoning": "Think step 1"', received,
+                      msg='T-11d-1: delta.reasoning field not relayed by proxy')
+
+        # T-11d-2: delta.reasoning_content relayed verbatim (AC-2)
+        self.assertIn(b'"reasoning_content": "Think step 2"', received,
+                      msg='T-11d-2: delta.reasoning_content field not relayed by proxy')
+
+        # T-11d-3: delta.content co-present with reasoning_content (AC-3)
+        self.assertIn(b'"content": "Answer"', received,
+                      msg='T-11d-3: delta.content dropped when co-emitted with '
+                          'reasoning_content')
+
+        # T-11d-4: [DONE] sentinel relayed (stream completeness)
+        self.assertIn(b'[DONE]', received,
+                      msg='T-11d-4: [DONE] sentinel not relayed by proxy')
 
 
 class _MalformedJsonUpstreamHandler(BaseHTTPRequestHandler):

@@ -10,7 +10,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **52**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **55**.
 
 ---
 
@@ -89,13 +89,32 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 - [x] **44. Add `obsidian_mcp_path`/`obsidian_node_path` assertions to `LoadConfigTests`** *(XS)* — Done (2026-06-26): Added 2 assertions to `test_reads_env_and_applies_defaults` verifying both CONFIG keys load with correct defaults (`''` and `'node'`). Resolves ADVISORY-04 from 2026-06-26 governance audit.
        Spec: N/A (governance advisory — direct fix).
 
-- [ ] **45. Evaluate `server.py` module split at ~1,500 lines** *(M — future)* — 💡 INNOV-01
-  - `server.py` is 1,182 lines / 38 functions and growing. When it approaches
-    ~1,500 lines, evaluate splitting into `server.py` (core HTTP scaffold) +
-    `mcp_bridge.py` (MCP bridge handlers) + `memory_handlers.py` (Obsidian memory
-    endpoints). This would improve test isolation and readability.
-  - Defer until the threshold is reached; no action needed now.
-  - Governance: 2026-06-26 audit INNOV-01.
+- [x] **54. Update `docs/ARCHITECTURE.md` for Projects v1** *(S)* — Done (2026-07-02): Added `/projects` CRUD + project-scoped `/memory/*` + `/chunk-cache?projectId` endpoint rows; new §3e (server helpers: `_safe_project_id`, `get_project_memory_dir`, `_project_memory_dirs`, `composeSystemPrompt`, cascade-delete); §4c 3-layer prompt path; §4d `projectChunks` RAG merge; §4e project-scoped memory data flow + Mermaid diagram; §4f `currentProjectId` + sectioned sidebar; §5 security table; §3a routes dict. Spec: `implementation_plan.md`.
+  - `docs/ARCHITECTURE.md` is missing 10+ endpoints and features added by Projects v1 slices 1–4:
+    `/projects` CRUD (GET/POST/PUT/DELETE), `instructions` field, `/project-files/<id>` CRUD,
+    `projectId` param on `/memory/search`/`/memory/list`/`/memory/save`,
+    `composeSystemPrompt` 3-layer prompt path, `get_project_memory_dir`/`_project_memory_dirs`
+    helpers, `loadProjectFiles`/`projectChunks` RAG merge, and cascade-delete on project delete.
+  - Also add prose + Mermaid description of project-scoped memory data flow
+    (Default dual-read vs. Project-only isolation) to §Memory Integration (INNOV-02).
+  - **Required before next sprint** (Governance BLOCKING-01, 2026-07-01 audit).
+  - Files: `docs/ARCHITECTURE.md`, `CHANGELOG.md`.
+
+- [x] **55. Create `sprint-10.md` retroactively** *(XS)* — Done (2026-07-02): Created `Cline/scrum/sprints/sprint-10.md` (Auto Model Router #19 + model-id bugfix; Goal, Backlog, Review, Retro sections; retroactive note). Sprint index already had correct row. Spec: `implementation_plan.md`.
+  - `Cline/scrum/sprints/sprint-10.md` was never created. Sprint 10 shipped auto model
+    router (#19) and the model-id bugfix. Create a brief, accurate sprint note to close
+    the gap in the sprint audit trail.
+  - Files: `Cline/scrum/sprints/sprint-10.md` (new — Obsidian vault).
+
+- [ ] **45. `server.py` module split — threshold exceeded, schedule Sprint 16** *(M)* — 🚨 BLOCKING-02 (2026-07-01 governance audit)
+  - `server.py` is **1,871 lines** (threshold was 1,500 — exceeded by 24%).
+    Split into: `server.py` (core HTTP scaffold, config, routing) +
+    `projects_handlers.py` (all `/projects` + `/project-files` handlers) +
+    `memory_handlers.py` (all `/memory/*` + `/mcp/*` handlers) +
+    `proxy_handlers.py` (`/proxy`, `/embeddings`, `/context7`, `/extract-text`).
+    Run `/spec` before implementation. Improves test isolation and readability.
+  - **Escalated:** deferred → Sprint 16 primary tech-debt item.
+  - Governance: 2026-06-26 INNOV-01 → escalated to BLOCKING-02 at 2026-07-01 audit.
 
 - [x] **47. RAIL hardening Phase 2** *(M, 7 phases)* — Done (2026-06-27): Ph1 §6e cross-ref fix + §6f shift-left gate added to `review.md`; Ph2 prevention-rule recall receipts in `build.md` + `spec.md`; Ph3 spec-amendment protocol + `## Spec changelog` template section in `build.md`/`spec.md`; Ph5 clean-state guarantee in `loop.md` escalation block; Ph6 coverage ratchet self-advancement rule in `loop.md` + SE-4 in `govern.md`; Ph7 mutation-test cadence wired into `loop.md` + SE-2 in `govern.md`; bonus: `getEnabledTools` duplication fixed in `.clinerules/rail-pipeline.md` — `doc-consistency-check.sh` exits 0.
        Spec: docs/specs/rail-hardening-phase2.md
@@ -112,8 +131,10 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 - [x] **52. RAIL Log Analysis — Closing the Runtime→QA Loop** *(M)* — Done (2026-06-28): `scripts/analyze_logs.py` + `analyze-logs.sh` (stdlib Python, secret scrubbing, latency outlier detection, 5000-line cap); `/review` §6g advisory log gate (never blocks PASS); `/build` pre-flight step 3b log recall (informational); `/govern` SE-5 log-trend audit (recurring component errors → BLOCKING); `observability.md` extended (write AND analyze); `docs/rail-pipeline.md` §5 entry #11; `docs/USER_GUIDE.md` log analysis subsection; 8 tests AL-1…AL-8 green.
        Spec: docs/specs/rail-log-analysis.md
 
-- [ ] **48b. Raw API response capture (streaming SSE v2)** *(S)* — Accumulate SSE byte chunks during relay; write completed stream to `.raw_responses/` with `streamed: true`; must be zero-latency-impact and best-effort on client disconnect.
-       Depends on: #48 (done). Spec: TBD.
+- [x] **48b. Raw API response capture (streaming SSE v2)** *(S)* — Done (2026-06-29): `_capture_raw_response` gains `streamed=False` kwarg; `_proxy_api` streaming branch accumulates SSE chunks into a `bytearray` (zero overhead when capture off) and writes capture file after relay ends; best-effort partial capture on client disconnect. 5 new proxy tests (RCS-1…RCS-5) + 2 additional coverage tests for non-streaming path. `server.py` 90% line / 88.8% branch ✅.
+       Depends on: #48 (done). Spec: docs/specs/raw-response-capture-streaming.md
+
+- [x] **53. Projects CRUD coverage — push server.py from 88.8% → 90% line** *(S)* — Done (2026-06-30): New test classes in `tests/python/test_server_branches.py`: `ProjectsCRUDTests` (17 HTTP integration tests for `GET/POST/PUT/DELETE /projects`); `ProjectsDirectUnitTests` (4 targeted unit tests for hard-to-reach exception-handler branches: `_safe_project_id('')` → None, corrupt JSON silently skipped, malformed PUT body → 400, corrupt session JSON during delete scan silently ignored); `RawResponsesPathTraversalDeleteTests` (DELETE `/raw-responses?id=<valid>` present/absent). Total tests raised 144 → 193. `server.py` now **90% line** ✅. Pre-existing `ProxySsrfGuardTests` errors (2 ERRORs) and `test_reasoning_fields_relayed_verbatim` FAIL confirmed pre-existing on HEAD before this change. CHANGELOG + backlog updated.
 
 - [x] **46. Shift-left governance: add SBA/SA-lite checks to `/spec`** *(S)* — Done (2026-06-27):
   Added **Step 2b** to `.clinerules/workflows/spec.md` with three advisory checks
@@ -362,7 +383,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     - [x] **#11a** — Streaming SSE relay: `extractReasoningText()` + collapsible 💭 Thinking block in `app.js`/`styles.css`. Done (2026-06-26).
     - [x] **#11b** — Non-streaming path: reasoning block shown on completed non-stream responses. Done (2026-06-26).
     - [x] **#11c** — Persist + session restore: `persistExchange()` stores `reasoning` field; `restoreReasoningForTurn()` re-attaches 💭 block across `restoreSession()`, `loadChatHistory()`, `rerenderConversation()`. 77/77 JS tests ✅. Done (2026-06-26).
-    - [x] **#11d** — Python proxy integration test: `ProxyReasoningStreamTests` in `tests/python/test_server_proxy.py` verifies the proxy relays `reasoning`/`reasoning_content` fields verbatim in SSE frames (T-11d-1…4). Done (2026-06-26). Spec: `docs/specs/reasoning-proxy-integration-test.md`.
+    - [x] **#11d** — Python proxy integration test: `ProxyReasoningStreamTests` + `_ReasoningStreamUpstreamHandler` in `tests/python/test_server_proxy.py` verifies the proxy relays `reasoning`/`reasoning_content` fields verbatim in SSE frames (T-11d-1…4). Done (2026-06-29). Spec: `docs/specs/reasoning-proxy-integration-test.md`.
     - [x] **#11e** — (included in earlier phases). Done (2026-06-26).
 
 - [x] **12. Prompt templates / saved system prompts** *(S)* — Done (2026-06-26): Built-in + user-saveable prompt template library shipped; Templates button in UI, apply/save/delete/persist with `localStorage`; 12 PT-* tests (PT-1…PT-12); JS branch 70.95% ✅.
@@ -380,7 +401,8 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 - [ ] **15. Voice input / TTS output** *(L)*
 
-- [ ] **27. Projects (ChatGPT-style workspaces) — group chats + shared instructions, files & memory scope** *(L)*
+- [x] **27. Projects (ChatGPT-style workspaces) — Slice 1: CRUD + sidebar sections + `currentProjectId` plumbing** *(L)* — Done (2026-06-30): `/projects` GET/POST/PUT/DELETE; `_safe_project_id()` traversal guard; `_post_new_chat_session` stamps `projectId`; `currentProjectId` state in `app.js`; sectioned/collapsible sidebar (Pinned/Projects/Chats); create/rename/pin/delete project wiring; `has_projects` in `/config`; 16 integration tests + 6 JS tests green; security scan clean; USER_GUIDE §8 updated.
+       Spec: docs/specs/projects-workspaces-slice1.md
   - Mirror chatgpt.com **Projects**: a named workspace that keeps **chats,
     files, custom instructions, and a memory scope** in one place. Detailed
     planning + a full critical quality review are captured in the Obsidian note
@@ -467,11 +489,15 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     - **Slice 1 — Projects as folders + sidebar sections + `currentProjectId`
       plumbing:** project CRUD + pin; `projectId` stamped on both archive paths;
       sectioned/collapsible sidebar (Pinned/Projects/Chats); legacy migration.
-    - **Slice 2 — Project instructions:** 3-layer system-prompt concatenation,
-      applied in message-build + regenerate/edit/restore.
-    - **Slice 3 — Memory modes:** Default (dual-read global+project) vs
-      Project-only (isolated + excluded from global), immutable, server-enforced.
-    - **Slice 4 (defer):** Project files (shared knowledge) via `projectChunks`.
+    - **[x] Slice 2 — Project instructions:** 3-layer system-prompt concatenation,
+      applied in message-build + regenerate/edit/restore. — Done (2026-06-30): `composeSystemPrompt` helper prepends project instructions to per-chat prompt in all send paths; instructions field added to project CRUD; UI textarea with 8 KB cap; 12 new tests.
+      Spec: docs/specs/projects-workspaces-slice2.md
+     - **[x] Slice 3 — Memory modes:** Default (dual-read global+project) vs
+       Project-only (isolated + excluded from global), immutable, server-enforced.
+       Done (2026-07-01): `get_project_memory_dir`, `_project_memory_dirs`, scoped
+       search/list/save; app.js forwards `projectId`; 8 tests MM-3…MM-8.
+       Spec: docs/specs/projects-workspaces-slice3.md
+     - **[x] Slice 4 — Project files:** shared knowledge per project via `projectChunks`; `.chunk_cache/projects/<id>/`; Settings modal upload/list/delete UI; merge with per-chat chunks at RAG time; cascade delete on project delete. Done (2026-07-01): 7 Python tests PF-1..PF-7 + 4 JS tests PCJ-1..PCJ-4; styles.css?v=29; index.html project files section; all 7 ACs met. Completes Projects v1. Spec: docs/specs/projects-workspaces-slice4.md
     - **Defer (polish):** Share project, emoji/icon picker, "Project home" view.
 
   - **Test plan (TDD-first):** projectId stamping on both archive paths; 3-layer

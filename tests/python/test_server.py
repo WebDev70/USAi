@@ -353,5 +353,59 @@ class IsSafeUpstreamUrlTests(unittest.TestCase):
         self._unsafe('https://localhost:8080/api')
 
 
+# ── Slice 3: get_project_memory_dir (MM-1, MM-2, MM-2b, MM-2c) ───────────────
+
+class GetProjectMemoryDirTests(unittest.TestCase):
+    """get_project_memory_dir() must resolve
+    <vault>/<subdir>/projects/<id>/memories and refuse path-traversal ids.
+    It reads the module-level CONFIG, so each test patches CONFIG and restores it.
+    """
+
+    def setUp(self):
+        import shutil as _shutil
+        self._shutil = _shutil
+        self._saved_config = dict(server.CONFIG)
+        self._tmpdir = tempfile.mkdtemp()
+        server.CONFIG['obsidian_vault_path'] = self._tmpdir
+        server.CONFIG['obsidian_memory_subdir'] = 'USAi'
+
+    def tearDown(self):
+        server.CONFIG.clear()
+        server.CONFIG.update(self._saved_config)
+        self._shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    # MM-1 ─────────────────────────────────────────────────────────────────────
+    def test_mm1_returns_path_ending_in_projects_id_memories(self):
+        """MM-1: get_project_memory_dir returns a Path whose suffix is
+        projects/<id>/memories and which lives inside the vault root."""
+        result = server.get_project_memory_dir('proj_abc')
+        self.assertIsNotNone(result, 'should return a Path, not None')
+        # The last three parts must be 'projects', 'proj_abc', 'memories'
+        self.assertEqual(result.parts[-1], 'memories')
+        self.assertEqual(result.parts[-2], 'proj_abc')
+        self.assertEqual(result.parts[-3], 'projects')
+        # Must remain inside the vault root
+        vault = Path(self._tmpdir).resolve()
+        self.assertTrue(
+            str(result).startswith(str(vault)),
+            f'project memory dir {result} must be inside vault {vault}',
+        )
+
+    # MM-2 ─────────────────────────────────────────────────────────────────────
+    def test_mm2_traversal_id_returns_none(self):
+        """MM-2: path-traversal ids are rejected."""
+        self.assertIsNone(server.get_project_memory_dir('../traversal'))
+
+    # MM-2b ────────────────────────────────────────────────────────────────────
+    def test_mm2b_empty_string_returns_none(self):
+        """MM-2b: empty string is rejected."""
+        self.assertIsNone(server.get_project_memory_dir(''))
+
+    # MM-2c ────────────────────────────────────────────────────────────────────
+    def test_mm2c_none_returns_none(self):
+        """MM-2c: None is rejected."""
+        self.assertIsNone(server.get_project_memory_dir(None))
+
+
 if __name__ == '__main__':
     unittest.main()

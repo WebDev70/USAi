@@ -263,6 +263,54 @@ body {
   padding: 1rem 0;
 }
 
+/* ── Sectioned sidebar (Projects — Slice 1) ─────────────────────────────── */
+.sidebar-section-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  padding: 8px 12px 4px;
+  user-select: none;
+}
+
+.sidebar-section-group {
+  margin-bottom: 4px;
+}
+
+.sidebar-section-group summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+}
+
+.sidebar-section-group summary::-webkit-details-marker { display: none; }
+.sidebar-section-group summary::before {
+  content: '▶';
+  font-size: 0.6rem;
+  transition: transform 0.15s;
+}
+.sidebar-section-group[open] summary::before { transform: rotate(90deg); }
+
+.sidebar-show-more {
+  font-size: 0.75rem;
+  color: var(--color-accent);
+  background: none;
+  border: none;
+  padding: 2px 12px 6px;
+  cursor: pointer;
+}
+.sidebar-show-more:hover { text-decoration: underline; }
+
 .session-item {
   display: flex;
   flex-direction: column;
@@ -1779,3 +1827,328 @@ body.dark-mode .markdown-body .md-pre {
   .input-area { padding: 8px 14px 16px; }
   .empty-chat-greeting { font-size: 1.4rem; }
 }
+
+/* ── Projects / Sidebar sections (v27) ─────────────────────────────────────── */
+
+.sidebar-section {
+  margin-bottom: 4px;
+}
+
+.sidebar-section-heading {
+  font-size: 0.70rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  padding: 6px 12px 4px;
+  margin: 0;
+  user-select: none;
+}
+
+/* Projects section uses a <details> for collapsibility */
+.sidebar-projects-details {
+  /* Reset details browser defaults */
+}
+.sidebar-projects-details > summary {
+  list-style: none;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sidebar-projects-details > summary::-webkit-details-marker { display: none; }
+
+.sidebar-section-summary {
+  /* inherits .sidebar-section-heading sizing */
+}
+
+.sidebar-projects-list {
+  /* container for project items */
+}
+
+.sidebar-empty-hint {
+  padding-left: 14px;
+  padding-right: 12px;
+  font-style: italic;
+}
+
+.sidebar-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: 2px 5px;
+  border-radius: var(--radius-xs);
+  font-size: 0.9rem;
+  line-height: 1;
+  transition: background var(--transition), color var(--transition);
+}
+.sidebar-icon-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+/* New project ＋ button: sits flush right in the Projects summary row */
+.new-project-btn {
+  margin-right: 4px;
+  font-size: 1.0rem;
+  opacity: 0.8;
+}
+.new-project-btn:hover {
+  opacity: 1;
+  color: var(--color-accent);
+}
+
+/* ── Project items ────────────────────────────────────────────────────────── */
+
+.project-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 14px;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  margin: 0 4px;
+  transition: background var(--transition);
+  position: relative;
+  min-height: 32px;
+}
+.project-item:hover {
+  background: var(--color-bg-hover);
+}
+.project-item.active {
+  background: var(--color-accent-soft);
+}
+.project-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: var(--color-accent);
+  border-radius: 0 2px 2px 0;
+}
+
+.project-icon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.project-name {
+  flex: 1 1 auto;
+  font-size: 0.83rem;
+  font-weight: 500;
+  color: var(--color-sidebar-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-menu-btn {
+  opacity: 0;
+  transition: opacity var(--transition);
+  font-size: 1.1rem;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+.project-item:hover .project-menu-btn,
+.project-item:focus-within .project-menu-btn {
+  opacity: 1;
+}
+
+.show-more-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-accent);
+  font-size: 0.75rem;
+  padding: 4px 14px;
+  text-align: left;
+}
+.show-more-btn:hover {
+  text-decoration: underline;
+}
+
+/* ── Project context menu (fixed-position dropdown) ──────────────────────── */
+
+.project-ctx-menu {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 4px 0;
+  min-width: 160px;
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.ctx-menu-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.83rem;
+  color: var(--color-text-primary);
+  padding: 7px 16px;
+  text-align: left;
+  transition: background var(--transition);
+}
+.ctx-menu-item:hover {
+  background: var(--color-bg-hover);
+}
+.ctx-menu-item--danger {
+  color: #dc2626;
+}
+.ctx-menu-item--danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+/* ── Create / Rename Project Modal ──────────────────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 900;
+}
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.modal-box {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xl);
+  padding: 24px 28px;
+  width: min(380px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.modal-label {
+  font-size: 0.80rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.modal-input,
+.modal-select {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 0.875rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.modal-input:focus,
+.modal-select:focus {
+  border-color: var(--color-accent);
+  box-shadow: var(--focus-ring);
+}
+
+.project-modal-mode-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.modal-btn {
+  padding: 8px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.modal-btn:hover {
+  background: var(--color-bg-hover);
+}
+.modal-btn--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+.modal-btn--primary:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+/* Project instructions textarea + helper text inside the modal */
+.modal-label-hint {
+  font-size: 0.78rem;
+  opacity: 0.6;
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.modal-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color var(--transition);
+  margin-top: 4px;
+}
+.modal-textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.modal-char-counter {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  text-align: right;
+  margin-top: 2px;
+}
+.modal-char-counter.over-limit {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.project-modal-instructions-row {
+  margin-top: 10px;
+}
+
+/* ─── Project files section (Slice 4) ─────────────────────── */
+.project-files-section { margin-top: 1rem; }
+.project-files-list { list-style: none; padding: 0; margin: 0.4rem 0; }
+.project-files-list li { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; font-size: 0.85rem; }
+.project-files-list li .pf-delete-btn { background: none; border: none; color: var(--color-text-secondary); cursor: pointer; font-size: 0.8rem; padding: 0.1rem 0.3rem; }
+.project-files-list li .pf-delete-btn:hover { color: var(--color-danger, #ef4444); }
+.project-files-status { font-size: 0.8rem; color: var(--color-text-secondary); min-height: 1.2em; display: block; margin-top: 0.3rem; }

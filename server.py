@@ -14,11 +14,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 ENV_FILE = PROJECT_ROOT / '.env'
 CACHE_DIR = PROJECT_ROOT / '.chunk_cache'
 CACHE_DIR.mkdir(exist_ok=True)
+# Per-project chunk cache: .chunk_cache/projects/<project_id>/
+PROJECT_CACHE_DIR = CACHE_DIR / 'projects'
+PROJECT_CACHE_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = PROJECT_ROOT / 'chat_history.json'
 SESSIONS_DIR = PROJECT_ROOT / '.chat_sessions'
 SESSIONS_DIR.mkdir(exist_ok=True)
 RAW_RESPONSES_DIR = PROJECT_ROOT / '.raw_responses'
 RAW_RESPONSES_DIR.mkdir(exist_ok=True)
+PROJECTS_DIR = PROJECT_ROOT / '.projects'
+PROJECTS_DIR.mkdir(exist_ok=True)
 LOGS_DIR = PROJECT_ROOT / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 # Per-session log file stamp: set once at import so every add_log() call within
@@ -95,6 +100,32 @@ def get_memory_dir():
     except ValueError:
         return None
     return memory_dir
+
+
+def get_project_memory_dir(project_id):
+    """Resolve the absolute path to a project-scoped memory folder.
+
+    Path: <vault>/<subdir>/projects/<safe_id>/memories
+    Returns None if vault is unconfigured, project_id fails the slug guard,
+    or the vault root does not exist.
+    """
+    import re as _re
+    if not project_id or not _re.match(r'^[A-Za-z0-9_-]+$', str(project_id)):
+        return None
+    base = get_memory_dir()  # resolves <vault>/<subdir>/memories
+    if base is None:
+        return None
+    vault = Path(os.path.expanduser(
+        (CONFIG.get('obsidian_vault_path') or '').strip())).resolve()
+    # Project memories live at <vault>/<subdir>/projects/<id>/memories
+    subdir = (CONFIG.get('obsidian_memory_subdir') or 'USAi').strip()
+    proj_dir = (vault / subdir / 'projects' / str(project_id) / 'memories').resolve()
+    # Traversal guard: must remain inside the vault
+    try:
+        proj_dir.relative_to(vault)
+    except ValueError:
+        return None
+    return proj_dir
 
 
 def _slugify(text, max_len=60):
@@ -317,12 +348,14 @@ def _persist_log(entry):
         pass
 
 
-def _capture_raw_response(meta, raw_bytes):
-    """Write one raw-response record to RAW_RESPONSES_DIR (opt-in, non-streaming only).
+def _capture_raw_response(meta, raw_bytes, *, streamed=False):
+    """Write one raw-response record to RAW_RESPONSES_DIR (opt-in).
 
     meta: dict containing timestamp, method, path, status, model (str or None).
     raw_bytes: the upstream response body bytes — stored verbatim (parsed as JSON
     when possible; falls back to a UTF-8 string on decode error).
+    streamed: True when capturing a completed SSE stream; False (default) for
+    non-streaming responses.
 
     Callers must wrap this in try/except — a capture failure must never break the
     proxy response that is already being sent to the client.
@@ -348,7 +381,7 @@ def _capture_raw_response(meta, raw_bytes):
         'method': meta['method'],
         'path': meta['path'],
         'status': meta['status'],
-        'streamed': False,
+        'streamed': streamed,
         'model': meta.get('model'),
         'raw': raw_parsed,
     }
@@ -463,22 +496,43 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
                     # to `resp.read` if `.raw` is unavailable.
                     raw = getattr(getattr(resp, 'fp', None), 'raw', None)
                     read_chunk = raw.read if raw is not None else resp.read
+                    # v2: accumulate bytes for streaming capture (zero cost when off).
+                    # Only allocate the buffer if capture is enabled — the relay loop
+                    # is otherwise byte-for-byte identical to before.
+                    capture_buf = bytearray() if CONFIG.get('capture_raw_responses') else None
                     try:
                         while True:
                             chunk = read_chunk(8192)
                             if not chunk:
                                 break
                             # HTTP/1.1 chunked framing: <hex-length>\r\n<data>\r\n
+                            # Relay first — client never waits for capture I/O.
                             self.wfile.write(f'{len(chunk):X}\r\n'.encode('ascii'))
                             self.wfile.write(chunk)
                             self.wfile.write(b'\r\n')
                             self.wfile.flush()
+                            if capture_buf is not None:
+                                capture_buf += chunk
                         # Final zero-length chunk terminates the response body.
                         self.wfile.write(b'0\r\n\r\n')
                         self.wfile.flush()
                     except (BrokenPipeError, ConnectionResetError):
-                        # Client disconnected mid-stream; nothing more to do
+                        # Client disconnected mid-stream; fall through to capture
+                        # whatever bytes were buffered (best-effort partial capture).
                         pass
+                    # Write streaming capture (best-effort, non-fatal).
+                    if capture_buf is not None:
+                        try:
+                            _capture_raw_response(
+                                {'timestamp': datetime.now().isoformat(),
+                                 'method': method, 'path': self.path,
+                                 'status': resp.status, 'model': req_model},
+                                bytes(capture_buf),
+                                streamed=True,
+                            )
+                        except Exception as cap_err:  # nosec — never break the proxy
+                            add_log('warn', 'capture',
+                                    f'Streaming capture failed (non-fatal): {cap_err}')
                     return
 
                 response_body = resp.read()
@@ -540,12 +594,34 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({'error': str(err)}).encode('utf-8'))
 
+    def _resolve_chunk_cache_dir(self, params):
+        """Return (cache_dir: Path | None, error_code: int | None).
+
+        When ?projectId=<id> is present the per-project sub-directory is returned
+        after validating the id with _safe_project_id.  Returns (None, 400) when
+        the id is a traversal attempt.  Falls back to the global CACHE_DIR when
+        no projectId param is supplied.
+        """
+        project_id = params.get('projectId', [None])[0]
+        if project_id:
+            safe_id = self._safe_project_id(project_id)
+            if safe_id is None:
+                return None, 400
+            proj_dir: Path = PROJECT_CACHE_DIR / safe_id
+            proj_dir.mkdir(parents=True, exist_ok=True)
+            return proj_dir, None
+        return CACHE_DIR, None
+
     def _get_chunk_cache(self):
         params = parse_qs(urlparse(self.path).query)
+        cache_dir, err = self._resolve_chunk_cache_dir(params)
+        if err:
+            self._json_response(400, {'error': 'Invalid project id'})
+            return
         filename = params.get('file', [None])[0]
         if filename:
             safe_name = Path(filename).name
-            cache_file = CACHE_DIR / (safe_name + '.json')
+            cache_file = cache_dir / (safe_name + '.json')
             if cache_file.exists():
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
@@ -558,7 +634,7 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
         else:
             entries = []
-            for p in sorted(CACHE_DIR.glob('*.json')):
+            for p in sorted(cache_dir.glob('*.json')):
                 try:
                     meta = json.loads(p.read_text(encoding='utf-8'))
                     entries.append({
@@ -696,6 +772,8 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             # Boolean: whether JSONL log file persistence is enabled (#49).
             # Never expose the flag value itself — only the derived boolean.
             'persist_logs': bool(CONFIG.get('persist_logs')),
+            # Projects feature is always available (files stored in .projects/).
+            'has_projects': True,
         }
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
@@ -775,18 +853,57 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _memory_search(self):
-        """GET /memory/search?q=...&k=5 — keyword search over memory notes.
+    def _project_memory_dirs(self, project_id):
+        """Return (dirs, mode) for a project_id.
 
-        Scores each note by counts of the query terms (in body and, weighted
-        higher, in the title/tags), and returns the top-k with short snippets.
+        dirs  — list[Path] of memory directories to search/write (may be empty).
+        mode  — 'default' | 'project-only'.
+
+        Falls back to ([global_dir], 'default') if project not found or vault
+        not configured.  Always graceful — never raises.
         """
-        memory_dir = get_memory_dir()
-        if memory_dir is None:
+        global_dir = get_memory_dir()
+        proj_dir = get_project_memory_dir(project_id) if project_id else None
+
+        if not project_id or proj_dir is None:
+            return ([global_dir] if global_dir else [], 'default')
+
+        safe_id = self._safe_project_id(project_id)
+        if safe_id is None:
+            return ([global_dir] if global_dir else [], 'default')
+        proj_file = PROJECTS_DIR / f'{safe_id}.json'
+        try:
+            with open(proj_file, encoding='utf-8') as fh:
+                project = json.load(fh)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return ([global_dir] if global_dir else [], 'default')
+
+        mode = (project.get('memoryMode') or 'default').strip()
+        if mode == 'project-only':
+            return ([proj_dir], 'project-only')
+        # default: global first, project second (merged by score)
+        dirs = []
+        if global_dir:
+            dirs.append(global_dir)
+        dirs.append(proj_dir)
+        return (dirs, 'default')
+
+    def _memory_search(self):
+        """GET /memory/search?q=...&k=5[&projectId=...] — keyword search.
+
+        Scores each note by query-term frequency (title-weighted), returns top-k.
+        When projectId is supplied, the scope is determined by memoryMode:
+        - default       → both global dir + project dir (merged by score, deduped)
+        - project-only  → project dir only
+        No projectId → global dir only (legacy behaviour, AC-6 global isolation).
+        """
+        global_dir = get_memory_dir()
+        if global_dir is None:
             self._json_response(400, {'error': 'Obsidian vault not configured'})
             return
         params = parse_qs(urlparse(self.path).query)
         query = (params.get('q', [''])[0] or '').strip()
+        project_id = (params.get('projectId', [''])[0] or '').strip() or None
         try:
             k = max(1, min(20, int(params.get('k', ['5'])[0])))
         except ValueError:
@@ -795,23 +912,31 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             self._json_response(400, {'error': 'missing query'})
             return
 
+        dirs, _mode = self._project_memory_dirs(project_id)
+
         terms = [t for t in query.lower().split() if t]
+        seen_paths = set()  # dedup by absolute path
         results = []
-        if memory_dir.exists():
-            for p in memory_dir.glob('*.md'):
+        for mem_dir in dirs:
+            if not mem_dir or not mem_dir.exists():
+                continue
+            for p in mem_dir.glob('*.md'):
+                abs_path = str(p.resolve())
+                if abs_path in seen_paths:
+                    continue
+                seen_paths.add(abs_path)
                 try:
                     text = p.read_text(encoding='utf-8')
                 except Exception:
                     continue
                 lower = text.lower()
-                title_region = lower[:200]  # frontmatter + first heading area
+                title_region = lower[:200]
                 score = 0
                 for term in terms:
                     score += lower.count(term)
-                    score += title_region.count(term) * 3  # weight title/tags
+                    score += title_region.count(term) * 3
                 if score <= 0:
                     continue
-                # Build a snippet around the first matching term.
                 idx = next((lower.find(t) for t in terms if lower.find(t) >= 0), 0)
                 start = max(0, idx - 80)
                 snippet = text[start:start + 280].replace('\n', ' ').strip()
@@ -828,53 +953,84 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             'ok': True,
             'query': query,
             'results': results,
-            # Let the frontend know whether /embeddings re-ranking is available.
             'embed_available': bool(CONFIG.get('embed_model')),
         })
 
     def _memory_list(self):
-        """GET /memory/list — list saved memory notes (newest first)."""
-        memory_dir = get_memory_dir()
-        if memory_dir is None:
+        """GET /memory/list[?projectId=...] — list memory notes newest-first.
+
+        Scope follows memoryMode for the given project (same rules as search).
+        No projectId → global dir only.
+        """
+        global_dir = get_memory_dir()
+        if global_dir is None:
             self._json_response(400, {'error': 'Obsidian vault not configured'})
             return
+        params = parse_qs(urlparse(self.path).query)
+        project_id = (params.get('projectId', [''])[0] or '').strip() or None
+        dirs, _mode = self._project_memory_dirs(project_id)
+
+        seen_paths = set()
         items = []
-        if memory_dir.exists():
-            for p in sorted(memory_dir.glob('*.md'),
+        for mem_dir in dirs:
+            if not mem_dir or not mem_dir.exists():
+                continue
+            for p in sorted(mem_dir.glob('*.md'),
                             key=lambda x: x.stat().st_mtime, reverse=True):
+                abs_path = str(p.resolve())
+                if abs_path in seen_paths:
+                    continue
+                seen_paths.add(abs_path)
                 items.append({
                     'path': p.name,
                     'modified': datetime.fromtimestamp(p.stat().st_mtime).isoformat(),
                     'size': p.stat().st_size,
                 })
+        # Re-sort merged list newest-first
+        items.sort(key=lambda x: x['modified'], reverse=True)
         self._json_response(200, {'ok': True, 'items': items})
 
     def _memory_read(self):
-        """GET /memory/read?path=note.md — read a single memory note."""
-        memory_dir = get_memory_dir()
-        if memory_dir is None:
+        """GET /memory/read?path=note.md[&projectId=...] — read a memory note.
+
+        Searches each directory in scope (per project mode) in order; returns
+        the first match.  Falls back to 404 if not found in any dir.
+        """
+        global_dir = get_memory_dir()
+        if global_dir is None:
             self._json_response(400, {'error': 'Obsidian vault not configured'})
             return
-        rel = parse_qs(urlparse(self.path).query).get('path', [''])[0]
-        target = _resolve_memory_file(memory_dir, rel)
-        if target is None or not target.exists():
-            self._json_response(404, {'error': 'memory not found'})
-            return
-        try:
-            content = target.read_text(encoding='utf-8')
-        except Exception as err:
-            self._json_response(500, {'error': str(err)})
-            return
-        self._json_response(200, {'ok': True, 'path': target.name, 'content': content})
+        params = parse_qs(urlparse(self.path).query)
+        rel = params.get('path', [''])[0]
+        project_id = (params.get('projectId', [''])[0] or '').strip() or None
+        dirs, _mode = self._project_memory_dirs(project_id)
+
+        for mem_dir in dirs:
+            if not mem_dir:
+                continue
+            target = _resolve_memory_file(mem_dir, rel)
+            if target is not None and target.exists():
+                try:
+                    content = target.read_text(encoding='utf-8')
+                except Exception as err:
+                    self._json_response(500, {'error': str(err)})
+                    return
+                self._json_response(200, {'ok': True, 'path': target.name, 'content': content})
+                return
+        self._json_response(404, {'error': 'memory not found'})
 
     def _memory_save(self):
         """POST /memory/save — create a timestamped, tagged memory note.
 
-        Body: { title, content, tags?: string[] }. Writes are create-only and
-        strictly confined to the memory folder.
+        Body: { title, content, tags?: string[], projectId?: string }.
+        Save target:
+        - No projectId  → global dir (legacy behaviour).
+        - projectId + default mode → project dir (AC-4).
+        - projectId + project-only → project dir (AC-5).
+        Writes are create-only and strictly confined to the chosen memory dir.
         """
-        memory_dir = get_memory_dir()
-        if memory_dir is None:
+        global_dir = get_memory_dir()
+        if global_dir is None:
             self._json_response(400, {'error': 'Obsidian vault not configured'})
             return
         try:
@@ -900,17 +1056,28 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         if 'usai-memory' not in tags:
             tags.append('usai-memory')
 
+        # Resolve save target directory.
+        project_id = (data.get('projectId') or '').strip() or None
+        if project_id:
+            dirs, _mode = self._project_memory_dirs(project_id)
+            # For save: always write to the project dir (first non-global dir),
+            # regardless of mode.  For default mode, dirs = [global, proj_dir];
+            # for project-only, dirs = [proj_dir].  We want the project dir.
+            proj_dir = get_project_memory_dir(project_id)
+            save_dir = proj_dir if proj_dir else global_dir
+        else:
+            save_dir = global_dir
+
         now = datetime.now()
         stamp = now.strftime('%Y-%m-%d-%H%M%S')
         filename = f'{stamp}-{_slugify(title)}.md'
 
-        memory_dir.mkdir(parents=True, exist_ok=True)
-        target = _resolve_memory_file(memory_dir, filename)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        target = _resolve_memory_file(save_dir, filename)
         if target is None:
             self._json_response(400, {'error': 'invalid path'})
             return
 
-        # YAML frontmatter so Obsidian indexes tags/created; body is the memory.
         yaml_tags = '[' + ', '.join(tags) + ']'
         note = (
             '---\n'
@@ -1046,6 +1213,7 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             '/raw-responses': self._get_raw_responses,
             '/logs': self._get_logs,
             '/logs/files': self._get_log_files,
+            '/projects': self._get_projects,
         }
 
         handler = routes.get(request_path)
@@ -1224,6 +1392,13 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({'error': str(err)}).encode('utf-8'))
 
     def _post_chunk_cache(self):
+        # Resolve target dir (project-scoped or global) before reading body so
+        # we can return 400 on a bad projectId without consuming the body.
+        params = parse_qs(urlparse(self.path).query)
+        cache_dir, err = self._resolve_chunk_cache_dir(params)
+        if err:
+            self._json_response(400, {'error': 'Invalid project id'})
+            return
         try:
             content_length = int(self.headers.get('Content-Length', 0))
             if content_length > 50 * 1024 * 1024:  # 50 MB max
@@ -1236,7 +1411,7 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             data = json.loads(body)
             filename = Path(data.get('filename', 'unknown')).name  # prevent path traversal
             data['savedAt'] = datetime.now().isoformat()
-            cache_file = CACHE_DIR / (filename + '.json')
+            cache_file = cache_dir / (filename + '.json')
             cache_file.write_text(json.dumps(data), encoding='utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -1346,6 +1521,7 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
             '/mcp/tool': self._post_mcp_tool,
             '/mcp/rename-tag': self._post_mcp_rename_tag,
             '/mcp/move-note': self._post_mcp_move_note,
+            '/projects': self._post_projects,
         }
 
         handler = routes.get(request_path)
@@ -1362,25 +1538,32 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
+    def do_PUT(self):
+        request_path = self.path.split('?', 1)[0]
+        # /projects/<id>
+        if request_path.startswith('/projects/'):
+            project_id = request_path[len('/projects/'):]
+            self._put_project(project_id)
+            return
+        self.send_response(404)
+        self.end_headers()
+
     def _delete_chunk_cache(self):
         params = parse_qs(urlparse(self.path).query)
+        cache_dir, err = self._resolve_chunk_cache_dir(params)
+        if err or cache_dir is None:
+            self._json_response(400, {'error': 'Invalid project id'})
+            return
         filename = params.get('file', [None])[0]
         if filename:
             safe_name = Path(filename).name
-            cache_file = CACHE_DIR / (safe_name + '.json')
+            cache_file = cache_dir / (safe_name + '.json')
             if cache_file.exists():
                 cache_file.unlink()
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'ok': True}).encode('utf-8'))
         else:
-            for p in CACHE_DIR.glob('*.json'):
+            for p in cache_dir.glob('*.json'):
                 p.unlink()
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'ok': True}).encode('utf-8'))
+        self._json_response(200, {'ok': True})
 
     def _delete_sessions(self):
         params = parse_qs(urlparse(self.path).query)
@@ -1423,6 +1606,23 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         self._json_response(200, {'ok': True})
 
     def _post_new_chat_session(self):
+        """POST /new-chat-session — archive the current chat_history.json into a session file.
+
+        Accepts an optional JSON body with { projectId } to stamp the archived session.
+        """
+        # Read optional body (projectId).
+        project_id = None
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 0:
+                body_raw = self.rfile.read(content_length).decode('utf-8')
+                body_data = json.loads(body_raw)
+                pid = (body_data.get('projectId') or '').strip()
+                if pid:
+                    project_id = pid
+        except Exception:
+            pass
+
         archived_id = None
         if HISTORY_FILE.exists():
             try:
@@ -1440,6 +1640,8 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
                         'createdAt': turns[0].get('timestamp', datetime.now().isoformat()),
                         'updatedAt': datetime.now().isoformat(),
                     }
+                    if project_id:
+                        session_data['projectId'] = project_id
                     (SESSIONS_DIR / (session_id + '.json')).write_text(
                         json.dumps(session_data), encoding='utf-8'
                     )
@@ -1452,6 +1654,163 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({'ok': True, 'archivedId': archived_id}).encode('utf-8'))
 
+    # ── Projects CRUD (#projects-slice1) ──────────────────────────────────────
+
+    def _safe_project_id(self, raw_id):
+        """Validate a project id from the URL path.
+
+        Returns the sanitised id string, or None if it looks like a traversal
+        attempt (contains '/', '\\', or starts with '.').
+        """
+        if not raw_id:
+            return None
+        if '/' in raw_id or '\\' in raw_id or raw_id.startswith('.'):
+            return None
+        return Path(raw_id).name
+
+    def _get_projects(self):
+        """GET /projects — list all projects sorted by createdAt descending."""
+        projects = []
+        for p in PROJECTS_DIR.glob('*.json'):
+            try:
+                data = json.loads(p.read_text(encoding='utf-8'))
+                projects.append(data)
+            except Exception:
+                pass
+        # Sort newest-first by createdAt; fall back to file mtime.
+        projects.sort(
+            key=lambda x: x.get('createdAt', ''),
+            reverse=True,
+        )
+        self._json_response(200, projects)
+
+    # Maximum byte length for project instructions (8 KiB).
+    _INSTRUCTIONS_MAX = 8192
+
+    def _post_projects(self):
+        """POST /projects — create a new project.
+
+        Body: { name, memoryMode?, instructions? }
+        Returns 201 + {id, name, memoryMode, pinned, instructions, createdAt}.
+        Returns 400 if name is missing/blank or instructions exceed 8 KiB.
+        """
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 64 * 1024:  # 64 KB max
+                self._json_response(413, {'error': 'Payload too large'})
+                return
+            body = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(body)
+        except Exception as err:
+            self._json_response(400, {'error': str(err)})
+            return
+
+        name = (data.get('name') or '').strip()
+        if not name:
+            self._json_response(400, {'error': 'name is required'})
+            return
+
+        instructions = (data.get('instructions') or '').strip()
+        if len(instructions.encode('utf-8')) > self._INSTRUCTIONS_MAX:
+            self._json_response(400, {'error': 'instructions too long'})
+            return
+
+        memory_mode = (data.get('memoryMode') or 'default').strip()
+        now = datetime.now().isoformat()
+        project_id = f"project_{int(datetime.now().timestamp() * 1000)}"
+        project = {
+            'id': project_id,
+            'name': name,
+            'memoryMode': memory_mode,
+            'pinned': False,
+            'instructions': instructions,
+            'createdAt': now,
+            'updatedAt': now,
+        }
+        (PROJECTS_DIR / f'{project_id}.json').write_text(
+            json.dumps(project), encoding='utf-8'
+        )
+        add_log('info', 'projects', f'Created project "{name}" ({project_id})')
+        self._json_response(201, project)
+
+    def _put_project(self, project_id):
+        """PUT /projects/<id> — update name and/or pinned.
+
+        memoryMode is immutable after creation and is silently ignored.
+        Returns 400 on traversal attempt, 404 if not found.
+        """
+        safe_id = self._safe_project_id(project_id)
+        if safe_id is None:
+            self._json_response(400, {'error': 'Invalid project id'})
+            return
+        proj_file = PROJECTS_DIR / f'{safe_id}.json'
+        if not proj_file.exists():
+            self._json_response(404, {'error': 'Project not found'})
+            return
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 64 * 1024:
+                self._json_response(413, {'error': 'Payload too large'})
+                return
+            body = self.rfile.read(content_length).decode('utf-8')
+            updates = json.loads(body)
+        except Exception as err:
+            self._json_response(400, {'error': str(err)})
+            return
+
+        project = json.loads(proj_file.read_text(encoding='utf-8'))
+        if 'name' in updates:
+            name = (updates['name'] or '').strip()
+            if name:
+                project['name'] = name
+        if 'pinned' in updates:
+            project['pinned'] = bool(updates['pinned'])
+        if 'instructions' in updates:
+            inst = (updates['instructions'] or '').strip()
+            if len(inst.encode('utf-8')) > self._INSTRUCTIONS_MAX:
+                self._json_response(400, {'error': 'instructions too long'})
+                return
+            project['instructions'] = inst
+        # memoryMode is intentionally NOT updated here — it is immutable.
+        project['updatedAt'] = datetime.now().isoformat()
+        proj_file.write_text(json.dumps(project), encoding='utf-8')
+        add_log('info', 'projects', f'Updated project {safe_id}')
+        self._json_response(200, project)
+
+    def _delete_project(self, project_id):
+        """DELETE /projects/<id> — delete project file; clear projectId from sessions.
+
+        Sessions that referenced the deleted project are retained but have their
+        projectId field set to None so they become "uncategorised".
+        Returns 400 on traversal, 200 even when not found (idempotent).
+        """
+        safe_id = self._safe_project_id(project_id)
+        if safe_id is None:
+            self._json_response(400, {'error': 'Invalid project id'})
+            return
+        proj_file = PROJECTS_DIR / f'{safe_id}.json'
+        if proj_file.exists():
+            proj_file.unlink()
+            add_log('info', 'projects', f'Deleted project {safe_id}')
+
+        # Scan all sessions and clear projectId where it matches.
+        for sess_path in SESSIONS_DIR.glob('*.json'):
+            try:
+                sess_data = json.loads(sess_path.read_text(encoding='utf-8'))
+                if sess_data.get('projectId') == safe_id:
+                    sess_data['projectId'] = None
+                    sess_path.write_text(json.dumps(sess_data), encoding='utf-8')
+            except Exception:
+                pass
+
+        # Remove per-project chunk-cache directory (PF-6).
+        import shutil as _shutil
+        proj_cache_dir = PROJECT_CACHE_DIR / safe_id
+        if proj_cache_dir.exists():
+            _shutil.rmtree(proj_cache_dir, ignore_errors=True)
+
+        self._json_response(200, {'ok': True})
+
     def do_DELETE(self):
         request_path = self.path.split('?', 1)[0]
         routes = {
@@ -1463,6 +1822,12 @@ class EnvConfigHTTPRequestHandler(SimpleHTTPRequestHandler):
         handler = routes.get(request_path)
         if handler:
             handler()
+            return
+
+        # /projects/<id>
+        if request_path.startswith('/projects/'):
+            project_id = request_path[len('/projects/'):]
+            self._delete_project(project_id)
             return
 
         self.send_response(404)

@@ -1,5 +1,136 @@
 ## [Unreleased]
 
+### Process / Tooling
+- **RAIL pipeline — SHK (Senior Housekeeping & Hygiene Steward) role added** — Closed the housekeeping gap in the RAIL pipeline by adding a dedicated Housekeeping SME role at three levels of the process:
+  - **Per-item (lightweight):** `/review §6h` leave-no-trace gate added to `review.md` — checks spec Status header, scratch files, untracked TODOs, and CHANGELOG freshness after every build.
+  - **Per-item (Done criteria):** `/loop` Done checklist extended with the leave-no-trace gate; `definition-of-done.md` (vault) updated with a new **Housekeeping** section.
+  - **Sprint-close (full sweep):** SHK added as Role 5 in `/govern` (after SBA/SA/SE/SPMS); `scrum-artifacts.md` sprint-close step updated to reference all five roles; `govern.md` Synthesis report template updated with SHK score row.
+  - **On-demand:** New standalone `/housekeep` workflow created at `.clinerules/workflows/housekeep.md` — 9-step sweep covering spec/backlog reconciliation, Done-pile hygiene, dead-code/scratch-file audit, log/cache bloat, doc-consistency drift, dependency freshness, and vault memory hygiene.
+  - **Always-on non-negotiable:** 🧹 Housekeeping row added to `.clinerules/rail-pipeline.md` always-on table with cross-references to all three levels.
+
+### Docs
+- **`docs/ARCHITECTURE.md`** — Updated for Projects v1 (#27 Slices 1–4): added `/projects` CRUD + `/chunk-cache?projectId` + project-scoped `/memory/*` endpoint rows to §3b catalog; expanded §3a routes dict; new §3d persistence rows for `.projects/` metadata and project-scoped chunk/memory paths; new §3e section documenting `_safe_project_id`, `get_project_memory_dir`, `_project_memory_dirs`, `composeSystemPrompt` 3-layer prompt path, and cascade-delete; §4c extended with 3-layer system-prompt composition; §4d updated for `projectChunks` merge and cascade-delete; §4e expanded with project-scoped memory data flow + Mermaid diagram (Default dual-read vs Project-only isolation); §4f updated for `currentProjectId`, sectioned sidebar (Pinned/Projects/Chats), and legacy migration; §5 security table updated for `/projects` and `/logs/files` path-traversal guards. Resolves BLOCKING-01 from 2026-07-01 governance audit. (#54)
+
+### Fixed
+- **`docs/USER_GUIDE.md`** — Filled missing content in the "Project files" subsection (§8): accepted file types now listed (`.txt`, `.md`, `.pdf`, `.docx`, `.json`, `.csv`); "How project files are searched" bullets replaced with plain-English descriptions; context-note example (`Files: 5 chunk(s)`) added. No code changes.
+
+### Added
+- **Projects — Slice 4: Project Files (shared knowledge)** — Upload files to a project so every chat searches them via RAG, without re-uploading per session. `POST/GET/DELETE /chunk-cache?projectId=<id>` endpoints; `projectChunks` array merged at query time; "Project files" section in the project Settings modal; cascade-delete on project removal. 7 Python integration tests (PF-1..PF-7) + 4 JS unit tests (PCJ-1..PCJ-4). Completes Projects v1. (#27 Slice 4)
+
+
+### Added (2026-07-01 — #55 Slice 3 Memory Modes: project-scoped memory dirs)
+
+- **`server.py`** — Project-scoped memory directories:
+  - `get_project_memory_dir(project_id)` — returns `<vault>/<subdir>/projects/<id>/memories` Path.
+  - `_project_memory_dirs(project_id)` — reads the project JSON, determines `memoryMode`
+    (`'default'` → `[global, project]`; `'project-only'` → `[project]`); missing key treated as `'default'`.
+  - `_memory_search()` — applies `_project_memory_dirs` scoping; deduplicates results by absolute path.
+  - `_memory_list()` — applies `_project_memory_dirs` scoping.
+  - `_memory_save()` — when `projectId` supplied, writes note to project dir instead of global dir.
+- **`app.js`** — Forwards `projectId` into memory API calls:
+  - `embedMemorySearch(query)` — appends `&projectId=<currentProjectId>` when a project is open.
+  - `saveMemory(title, content, tags)` — adds `projectId` to POST body when a project is open.
+  - `prepareContextMessages()` — passes `projectId` to `embedMemorySearch`.
+- **`tests/python/test_server_http.py`** — `ProjectsSlice3MemoryModeTests` class (8 tests MM-3…MM-8):
+  - MM-3: default-mode search merges global + project dirs.
+  - MM-4: project-only search excludes global dir.
+  - MM-5: global search never surfaces project-only notes.
+  - MM-6: save with projectId writes to project dir only.
+  - MM-7: list (project-only mode) returns only project-dir notes.
+  - MM-8: project JSON missing `memoryMode` key is treated as `'default'`.
+  Spec: `docs/specs/projects-workspaces-slice3.md`.
+
+### Added (2026-06-30 — #54 Slice 2 Project instructions: 3-layer system-prompt concat)
+
+- **`server.py`** — Project instructions field:
+  - `_post_projects()`: accepts optional `instructions` string (max 8 192 bytes); stored in `.projects/<id>.json`. Returns 400 `{'error': 'instructions too long'}` when cap exceeded.
+  - `_put_project(id)`: allows updating `instructions` (same 8 KB cap); `memoryMode` remains immutable.
+  - Legacy project JSON files without `instructions` field load without error; field defaults to `''`.
+- **`app.js`** — 3-layer system-prompt composition:
+  - `currentProjectInstructions` module-level variable — mirrors the open project's instructions string.
+  - `composeSystemPrompt(projectInstructions, perChatPrompt)` — pure exported helper; concatenates non-empty layers with `'\n\n'`; returns single layer without extra whitespace; returns `''` if both empty.
+  - `sendMessage()` uses `composeSystemPrompt(currentProjectInstructions, inputs.systemPrompt)` — regenerate and edit-resend inherit it automatically.
+  - `openProject()` populates `currentProjectInstructions` from the project record.
+  - `restoreSession()` fetches the project record to re-populate `currentProjectInstructions`; clears to `''` when session has no project.
+  - New-chat / no-project flow resets `currentProjectInstructions` to `''`.
+- **`index.html`** — Instructions `<textarea>` (optional) with 8 192-char counter in Create Project modal; `styles.css?v=28`.
+- **`styles.css`** — New v28 classes: `.modal-textarea`, `.modal-char-counter`, `.modal-label-hint`, `.over-limit`.
+- **`tests/python/test_server_http.py`** — Three new project-instructions tests PR-9…PR-11: create with instructions (201 + field in response), update instructions (200 + persisted), instructions > 8 192 bytes → 400.
+- **`tests/python/test_server.py`** — PR-12: legacy project JSON without `instructions` field loads as `''` without error.
+- **`tests/js/app.test.mjs`** — Eight new tests PJ-7…PJ-14: `composeSystemPrompt` four edge cases, `currentProjectInstructions` getter/setter export, `sendMessage` uses composed prompt, `openProject` populates instructions, `restoreSession` populates instructions.
+  Spec: `docs/specs/projects-workspaces-slice2.md`.
+
+### Added (2026-06-30 — #27 Slice 1 Projects CRUD + sidebar sections + `currentProjectId` plumbing)
+
+- **`server.py`** — Projects CRUD API (`/projects` GET/POST/PUT/DELETE):
+  - `_post_project()`: creates `.projects/<id>.json` with server-generated `project_<epoch-ms>` id.
+  - `_get_projects()`: lists all projects sorted by `createdAt` desc.
+  - `_put_project(id)`: updates `name`/`pinned`; silently ignores any `memoryMode` change (immutable after creation).
+  - `_delete_project(id)`: removes project file + sweeps `.chat_sessions/` to clear `projectId` on orphaned sessions; does NOT delete sessions or vault notes.
+  - `_safe_project_id()`: path-traversal guard (pattern `project_<digits>` only; rejects `../`, embedded `/`, etc.) → 400.
+  - `_post_new_chat_session()`: now stamps `projectId` from request body onto the archived session JSON.
+  - `has_projects: true` added to `/config` response.
+- **`app.js`** — Projects frontend:
+  - `currentProjectId` module-level state variable.
+  - `archiveCurrentSession()`: stamps `projectId` onto POST `/sessions` body.
+  - `showSessionsList()`: rewritten into three collapsible sections — **Pinned**, **Projects** (≤5 shown with "Show more"), and **Chats**.
+  - `createProject()`, `openProject()`, `updateProject()`, `deleteProject()`: full CRUD wiring.
+  - `_renderProjectItem()`: project row with folder icon + ⋯ context menu (Rename / Pin / Delete).
+  - `restoreSession()`: re-populates `currentProjectId` from session's `projectId` field.
+  - `New Chat` handler resets `currentProjectId` to `null`.
+- **`index.html`** — Create/Rename Project modal (`#createProjectModal`) with name input + memory-mode selector; modal script block wires save/cancel/rename flows. `styles.css?v=27`.
+- **`styles.css`** — New v27 classes: `sidebar-section-heading`, `project-item`, `project-name`, `project-icon`, `project-menu-btn`, `show-more-btn`, `project-ctx-menu`, `ctx-menu-item`, `modal-overlay`, `modal-box`, `modal-btn`, `modal-btn--primary`, etc.
+- **`tests/python/test_server_http.py`** — `ProjectsCRUDTests`: 16 integration tests (PR-1…PR-8 + extended set) covering create, list, put, delete, orphan-on-delete, traversal guard, 404, 413, idempotent delete.
+- **`tests/js/app.test.mjs`** — 6 new JS unit tests PJ-1…PJ-6: `currentProjectId` export, `archiveCurrentSession` stamps `projectId`, session restore re-populates `currentProjectId`, `has_projects` in config, new-chat resets `currentProjectId`, `has_projects` in `/config` response.
+  Spec: `docs/specs/projects-workspaces-slice1.md`.
+
+### Added (2026-06-30 — #53 Projects CRUD coverage: branch tests to push server.py to 90%)
+
+- **`tests/python/test_server_branches.py`** — New test classes:
+  - `ProjectsCRUDTests`: 17 HTTP integration tests covering `GET/POST/PUT/DELETE /projects`
+    including traversal guards, 413 too-large, 404 not-found, idempotent delete, and
+    session `projectId` clear-on-delete.
+  - `ProjectsDirectUnitTests`: 4 targeted unit tests for hard-to-reach exception-handler
+    branches: `_safe_project_id('')` → None (line 1522); corrupt JSON in projects dir
+    silently skipped (lines 1534–1535); malformed PUT body → 400 (lines 1604–1606);
+    corrupt session JSON during delete scan silently ignored (lines 1644–1645).
+  - `RawResponsesPathTraversalDeleteTests`: covers DELETE `/raw-responses?id=<valid>`
+    with file present/absent (lines 1454–1458).
+  - Total new tests: 193 (was 144). `server.py` now **90% line / 28% branch** ✅.
+
+### Added (2026-06-29 — #48b follow-up: disconnect partial capture + exception non-fatal tests)
+
+- **`tests/python/test_server_proxy.py`** — Two new tests in `ProxyStreamingCaptureTests`:
+  - `test_disconnect_triggers_partial_capture` (RCS-7): client abruptly closes socket
+    after first SSE chunk (using `_SlowStreamUpstreamHandler`); proxy must write a partial
+    capture file with `streamed=true`. Covers lines 488–491 (the `except BrokenPipeError`
+    best-effort path).
+  - `test_rcs6_streaming_capture_exception_is_non_fatal` (RCS-6): patches
+    `_capture_raw_response` to raise `RuntimeError`; verifies the exception is swallowed
+    (lines 502–503), a `warn` log is emitted, relay still delivers `[DONE]`, and no
+    capture file is written. Key fix: kept the mock active for 0.3s *inside* the `with`
+    block after the request returns (race: the client sees `[DONE]` before the server
+    thread completes the post-loop capture call).
+  - Lines 488–491 and 502–503 are now covered. `server.py` stays at **90% line / 88.8% branch** ✅.
+
+### Added (2026-06-29 — #48b Raw API response capture, streaming SSE v2)
+
+
+  `_proxy_api` streaming branch accumulates SSE chunks into a `bytearray` (only when
+  `CAPTURE_RAW_RESPONSES=true`) and writes a capture file after the stream ends.
+  Zero relay-latency impact: chunks are flushed to the client *before* being appended
+  to the buffer. Best-effort partial capture on client disconnect.
+  Spec: `docs/specs/raw-response-capture-streaming.md`.
+- **`tests/python/test_server_proxy.py`** — New `ProxyStreamingCaptureTests` class
+  (RCS-1…RCS-5): streaming capture creates file with `streamed=true`; metadata correct;
+  capture-off writes nothing; non-streaming capture regression (`streamed=false`); list/read
+  endpoints surface streaming captures. Also added `test_proxy_non_streaming_capture_via_fake_upstream`
+  to `ProxyAndContext7Tests` and `test_non_streaming_proxy_capture_writes_file_when_enabled`
+  to `ProxyUpstreamErrorTests` to cover the non-streaming capture code path end-to-end.
+  Coverage: `server.py` **90% line / 88.8% branch** (gates ≥ 90% / ≥ 80% ✅).
+
+### Fixed (2026-06-29 — #11d reasoning proxy integration test, genuinely implemented)
+
 ### Added (2026-06-28 — RAIL log analysis, closing the runtime→QA loop, #52)
 
 - **`scripts/analyze_logs.py`** (new): stdlib Python log analyzer. Reads all

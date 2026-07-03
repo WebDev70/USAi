@@ -156,6 +156,22 @@ Confirm the spec's §4b table is filled:
 - If a ⚠️ finding has no deferral backlog item: emit as an **advisory GAP** (non-blocking):
   `ADVISORY [process]: §4b G-N finding recorded but no deferral backlog item named.`
 
+### 6h. Leave-no-trace gate (housekeeping — lightweight)
+
+A per-item subset of the SHK sweep. Run these four checks for the item just built:
+
+| Check | Pass condition | Action if failing |
+|-------|---------------|-------------------|
+| **Spec status header** | The spec for this item has `Status: Done` if the backlog item is `[x]` | Emit `GAP [housekeeping]: spec Status not updated to Done` |
+| **Scratch files** | No new scratch/temp files committed (`implementation_plan.md` in root, `*.tmp`, `*.bak`, stray `wip-*.md`) | Emit `GAP [housekeeping]: committed scratch file — remove or move to docs/specs/` |
+| **Untracked inline TODOs** | Any new `TODO`/`FIXME`/`HACK` comments added by this build are either (a) tracked in `backlog.md` or (b) removed | Emit `ADVISORY [housekeeping]: untracked TODO/FIXME in <file>:<line> — add backlog item or resolve` |
+| **CHANGELOG freshness** | `CHANGELOG.md [Unreleased]` has at least one entry referencing this item | Emit `GAP [housekeeping]: CHANGELOG not updated for this item` |
+
+**Advisory findings do not convert PASS to FAIL.** GAP findings do.
+
+> This is the *lightweight per-item* gate. The full 7-step SHK sweep runs at sprint
+> close via `/govern` (Role 5) or on demand via `/housekeep`.
+
 ### 6g. Runtime log review (advisory)
 
 Run the log analyzer if `PERSIST_LOGS` is enabled:

@@ -24,6 +24,7 @@ four critical dimensions:
 | **Architecture fitness & technical standards** | Senior Architect |
 | **Engineering quality & innovation practices** | Senior Engineer |
 | **Process maturity & methodology health** | Senior Process Management Specialist |
+| **Repo & artifact hygiene** | Senior Housekeeping & Hygiene Steward |
 
 The Board:
 - Reviews the **entire project** (codebase, docs, backlog, pipeline, artifacts) — not just the latest change.
@@ -33,7 +34,7 @@ The Board:
 
 ---
 
-## The four senior advisory roles
+## The five senior advisory roles
 
 ### 1. Senior Business Analyst (SBA)
 
@@ -137,6 +138,39 @@ improve quality assurance.
 
 ---
 
+### 5. Senior Housekeeping & Hygiene Steward (SHK)
+
+**Charter:** Ensure the repository, documentation artifacts, and Obsidian vault remain
+clean, consistent, and free of accumulated drift between sprints. SHK is the only
+Governance Board member that **must always propose at least one tracked backlog cleanup
+item** when any finding is ADVISORY or higher — so findings never evaporate.
+
+**Scope of review:**
+- `docs/specs/` vs `backlog.md` — for every spec whose backlog item is `[x]` Done, is the spec's own `Status:` header also `Done`? Are there orphaned spec files with no backlog entry?
+- `backlog.md` Done-pile hygiene — does every `[x]` entry have a `Done (YYYY-MM-DD)` date, one-line outcome, and spec link? When Done items exceed 50, is archival to `backlog-archive.md` warranted?
+- Dead code & scratch files — are there `TODO`/`FIXME`/`XXX`/`HACK` comments in `server.py`, `app.js`, or `scripts/`? Are there committed scratch or temp files (`*.tmp`, `*.bak`, `.DS_Store`, stray `implementation_plan.md`, stray `wip-*.md`)?
+- Log & cache bloat — size and age of `logs/*.jsonl`, `.chat_sessions/`, `.chunk_cache/`; recommend pruning when any store exceeds 50 MB or contains entries older than 30 days.
+- Doc-consistency drift — does `./scripts/doc-consistency-check.sh` pass? Is `styles.css?v=N` in `index.html` current with the last CSS edit? Is `CHANGELOG.md [Unreleased]` non-empty when code changed since the last release tag? Does `.env.example` match `.env` keys?
+- Dependency freshness — does `./scripts/dev-deps-check.sh` surface outdated pins? Are all entries in `requirements*.txt` still imported in `server.py`?
+- Vault memory hygiene — are there duplicate same-date session memory notes that should have been appended? Any secrets in notes (re-runs the security-scan memory block)?
+
+**Rubric (score each 1–5):**
+1. Spec/backlog reconciliation (all Done backlog items have matching `Status: Done` in spec)
+2. Backlog archive hygiene (all `[x]` entries have date/outcome/spec link; archival proposed if >50)
+3. Dead-code & scratch-file cleanliness (no committed temp files; no unlinked TODOs)
+4. Doc-consistency & CSS-v-bump freshness (doc-consistency-check passes; no stale `?v=N`)
+5. Dependency & vault hygiene (deps fresh and fully used; no duplicate/secret-contaminated notes)
+
+**Output:** Punch-list of findings classified BLOCKING / ADVISORY / CLEANUP + **at least one tracked `backlog.md` cleanup item** when any finding is ADVISORY or higher.
+
+**Distinction from other roles:**
+- SE (Role 3) reads logs for *errors*; SHK checks log *size and age*.
+- SA (Role 2) checks dependency *security*; SHK checks dependency *freshness and usage*.
+- SPMS (Role 4) checks scrum *artifact completeness*; SHK checks *artifact drift and vault hygiene*.
+- SHK is the only role with a *leave-no-trace per-item gate* that also runs inside `/loop` and `/review` for each backlog item (see `§6h` in `.clinerules/workflows/review.md`).
+
+---
+
 ## Governance cadence
 
 | Trigger | When | Who initiates |
@@ -211,7 +245,7 @@ The two levels of governance operate at complementary scopes:
              ┌─────────────────────────────────────┐
              │        GOVERNANCE BOARD             │
              │  (periodic, whole-project review)   │
-             │  SBA · SA · SE · SPMS               │
+             │  SBA · SA · SE · SPMS · SHK         │
              └──────────────┬──────────────────────┘
                             │ findings → backlog.md + self-improvement
                             ↓

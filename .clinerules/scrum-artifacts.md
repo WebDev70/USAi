@@ -79,11 +79,16 @@ When all sprint items are complete (or sprint cadence expires):
    velocity, top retro item.
 5. **Trigger Governance Board audit.** Announce:
    > "Sprint NN is closed. Triggering Governance Board sprint-close audit (`/govern`)."
-   Then run the `/govern` workflow (`.clinerules/workflows/govern.md`) — all four
-   roles (SBA · SA · SE · SPMS) across the whole project. File the report to
+   Then run the `/govern` workflow (`.clinerules/workflows/govern.md`) — all **five**
+   roles (SBA · SA · SE · SPMS · SHK) across the whole project. File the report to
    `Cline/scrum/governance/YYYY-MM-DD-HHMMSS-governance-report.md`.
    Append the governance summary to the sprint note. Present BLOCKING/ADVISORY/
    INNOVATION findings to the user for confirmation before any backlog changes.
+
+   > **SHK note:** The Senior Housekeeping & Hygiene Steward (Role 5 in `/govern`)
+   > runs the full `/housekeep` sweep automatically as part of this audit. Any
+   > BLOCKING or ADVISORY housekeeping findings must be resolved (or tracked in
+   > `backlog.md` as cleanup items) before starting the next sprint.
 
 ---
 

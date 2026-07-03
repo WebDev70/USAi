@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Rona's USAi Chat Dashboard</title>
+    <title>Ron's USAi Chat Dashboard</title>
     <link rel="icon" href="data:,">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-    <link rel="stylesheet" href="styles.css?v=25">
+    <link rel="stylesheet" href="styles.css?v=29">
 
   </head>
   <body>
@@ -258,6 +258,88 @@
         </div>
       </main>
 
+    <!-- Create / Rename Project Modal -->
+    <div id="createProjectModal" class="modal-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="createProjectTitle">
+      <div class="modal-box">
+        <h2 id="createProjectTitle" class="modal-title">New project</h2>
+        <label for="projectNameInput" class="modal-label">Name</label>
+        <input id="projectNameInput" type="text" class="modal-input" placeholder="e.g. Q3 Research" maxlength="80" autocomplete="off" />
+        <div class="project-modal-mode-row">
+          <label for="projectMemoryMode" class="modal-label">Memory mode</label>
+          <select id="projectMemoryMode" class="modal-select">
+            <option value="default">Default</option>
+            <option value="isolated">Isolated</option>
+          </select>
+        </div>
+        <div class="project-modal-instructions-row">
+          <label for="projectInstructionsInput" class="modal-label">Project instructions <span class="modal-label-hint">(optional — prepended to every system prompt)</span></label>
+          <textarea id="projectInstructionsInput" class="modal-textarea" rows="4" maxlength="8192" placeholder="e.g. Always reply in French. Be concise."></textarea>
+          <div id="projectInstructionsCounter" class="modal-char-counter" aria-live="polite">0 / 8192</div>
+        </div>
+        <div class="project-files-section" id="projectFilesSection" hidden>
+          <label class="modal-label">Project files
+            <span class="modal-label-hint">(shared across all chats in this project)</span>
+          </label>
+          <ul id="projectFilesList" class="project-files-list" aria-label="Uploaded project files"></ul>
+          <label class="modal-btn modal-btn--sm" for="projectFileUploadInput" id="projectFileUploadBtn">
+            + Upload file
+            <input id="projectFileUploadInput" type="file" hidden multiple accept=".txt,.md,.pdf,.docx,.json,.csv" />
+          </label>
+          <span id="projectFileUploadStatus" class="project-files-status" aria-live="polite"></span>
+        </div>
+        <div class="modal-actions">
+          <button id="createProjectSaveBtn" class="modal-btn modal-btn--primary" type="button">Create</button>
+          <button id="createProjectCancelBtn" class="modal-btn" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <script src="app.js"></script>
+    <script>
+      // Wire up the Create Project modal save/cancel handlers after app.js runs.
+      (function () {
+        const modal = document.getElementById('createProjectModal');
+        const saveBtn = document.getElementById('createProjectSaveBtn');
+        const cancelBtn = document.getElementById('createProjectCancelBtn');
+        const nameInput = document.getElementById('projectNameInput');
+        const modeSelect = document.getElementById('projectMemoryMode');
+
+        function handleCreate() {
+          const name = nameInput.value.trim();
+          if (!name) { nameInput.focus(); return; }
+          const mode = modeSelect ? modeSelect.value : 'default';
+          const instEl = modal.querySelector('#projectInstructionsInput');
+          const instructions = instEl ? instEl.value.trim() : '';
+          modal.setAttribute('hidden', '');
+          // createProject and showSessionsList are defined in app.js
+          createProject(name, mode, instructions).then(proj => {
+            if (proj) showSessionsList();
+          });
+        }
+
+        // Store so _showProjectRenameModal can temporarily override it.
+        saveBtn._projectSaveHandler = handleCreate;
+        saveBtn.addEventListener('click', handleCreate);
+        cancelBtn.addEventListener('click', () => modal.setAttribute('hidden', ''));
+        modal.addEventListener('click', e => {
+          if (e.target === modal) modal.setAttribute('hidden', '');
+        });
+        nameInput.addEventListener('keydown', e => {
+          if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); }
+          if (e.key === 'Escape') modal.setAttribute('hidden', '');
+        });
+
+        // Char counter for instructions textarea
+        const instTextarea = document.getElementById('projectInstructionsInput');
+        const instCounter = document.getElementById('projectInstructionsCounter');
+        if (instTextarea && instCounter) {
+          instTextarea.addEventListener('input', () => {
+            const len = instTextarea.value.length;
+            instCounter.textContent = len + ' / 8192';
+            instCounter.classList.toggle('over-limit', len > 8192);
+          });
+        }
+      })();
+    </script>
   </body>
 </html>
