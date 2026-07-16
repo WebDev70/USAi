@@ -10,7 +10,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **55**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **60**.
 
 ---
 
@@ -106,15 +106,8 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
     the gap in the sprint audit trail.
   - Files: `Cline/scrum/sprints/sprint-10.md` (new — Obsidian vault).
 
-- [ ] **45. `server.py` module split — threshold exceeded, schedule Sprint 16** *(M)* — 🚨 BLOCKING-02 (2026-07-01 governance audit)
-  - `server.py` is **1,871 lines** (threshold was 1,500 — exceeded by 24%).
-    Split into: `server.py` (core HTTP scaffold, config, routing) +
-    `projects_handlers.py` (all `/projects` + `/project-files` handlers) +
-    `memory_handlers.py` (all `/memory/*` + `/mcp/*` handlers) +
-    `proxy_handlers.py` (`/proxy`, `/embeddings`, `/context7`, `/extract-text`).
-    Run `/spec` before implementation. Improves test isolation and readability.
-  - **Escalated:** deferred → Sprint 16 primary tech-debt item.
-  - Governance: 2026-06-26 INNOV-01 → escalated to BLOCKING-02 at 2026-07-01 audit.
+- [x] **45. `server.py` module split** *(M)* — Done (2026-07-04); circular-import fix (2026-07-05): Split 1,871-line `server.py` (BLOCKING-02) into 6 focused modules using mixin classes with ZERO behavior changes. All 315 tests pass. Coverage: line 92.6% (≥90%), branch 87.5% (≥80%). Security scan: exit 0. All 6 files under 1,500 lines. `run-tests.sh` syntax gate + `scripts/security-scan.sh` bandit updated to cover all handler modules. BLOCKING-02 resolved. **2026-07-05 follow-up:** Fixed circular-import startup crash — each handler file had a top-level `import server as _server` that hit Python's partially-initialized module error; replaced with a lazy `_ServerProxy` wrapper in all 5 handler files. Added `tests/python/test_server_startup.py` subprocess regression test (316 tests total). `server.py` `__main__` now reads `HOST`/`PORT` env vars.
+       Spec: docs/specs/server-module-split.md
 
 - [x] **47. RAIL hardening Phase 2** *(M, 7 phases)* — Done (2026-06-27): Ph1 §6e cross-ref fix + §6f shift-left gate added to `review.md`; Ph2 prevention-rule recall receipts in `build.md` + `spec.md`; Ph3 spec-amendment protocol + `## Spec changelog` template section in `build.md`/`spec.md`; Ph5 clean-state guarantee in `loop.md` escalation block; Ph6 coverage ratchet self-advancement rule in `loop.md` + SE-4 in `govern.md`; Ph7 mutation-test cadence wired into `loop.md` + SE-2 in `govern.md`; bonus: `getEnabledTools` duplication fixed in `.clinerules/rail-pipeline.md` — `doc-consistency-check.sh` exits 0.
        Spec: docs/specs/rail-hardening-phase2.md
@@ -517,8 +510,8 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 > Use higher-reasoning models only where they pay off, and cheap/fast models for
 > routine work. Two separate efforts — one for the Continue dev workflow, one for
 > the USAi web app. **Prereq for both:** confirm the exact model IDs the gateway
-> accepts for each tier (candidates from `index.html`: high=`claude_opus_4`,
-> medium=`claude_sonnet_4`, low=`claude_3_haiku`).
+> accepts for each tier (candidates from `index.html`: high=`claude_4_8_opus`,
+> medium=`claude_4_6_sonnet`, low=`claude_4_5_haiku`).
 >
 > Reality check (from Continue docs / Context7): Continue assigns models to fixed
 > **roles** (`chat`/`edit`/`apply`/`autocomplete`/`embed`/`rerank`), **not** to our
@@ -841,6 +834,17 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 ---
 
 ## Future / deferred
+
+- [x] **56. Frontend/backend directory reorg** *(M)* — Done (2026-07-06): Moved Python backend files (`server.py`, `proxy_handlers.py`, `memory_handlers.py`, `session_handlers.py`, `mcp_handlers.py`, `projects_handlers.py`) into `backend/`, frontend assets (`index.html`, `app.js`, `styles.css`) into `frontend/`, and tests into `backend/tests/python/` and `frontend/tests/js/` respectively. `backend/server.py` resolves `STATIC_DIR` relative to `REPO_ROOT`; all patched files: `run-tests.sh`, `.coveragerc`, `Dockerfile`, `Makefile`, `scripts/security-scan.sh`, `scripts/cli-check.sh`. 316 tests pass; security scan clean; `GET /` returns HTTP 200. Pre-existing test failures (SSRF SSL + project sort) confirmed on HEAD~1. Spec: `implementation_plan.md`.
+
+- [x] **58. Doc-drift guards: extend doc-consistency-check.sh with stale-path, role-count, and mandatory-gate guards** *(S)* — Done (2026-07-15): Three guards added (stale-path, role-count consistency, mandatory-gate); 7 new regression tests green; doc-consistency-check.sh exits 0 on actual repo. Spec: docs/specs/doc-drift-guards.md
+
+- [x] **59. Referenced-path existence guard (deferred from #58)** *(S)* — Done (2026-07-15): Guard 4 added to doc-consistency-check.sh; detects stale backend/frontend/scripts/ path refs in .clinerules/ and docs/tooling/ markdown; 3 regression tests (T-14a/b/c); stale sme-backend.md ref fixed.
+      Spec: docs/specs/ref-path-existence-guard.md
+
+
+- [~] **60. UX & UI SME — elevate Front-End Design axis with explicit two-discipline split** *(S)* — spec: docs/specs/ux-ui-sme-role.md
+- [ ] **57. Multi-server MCP connectors** *(L)* — Generalize `mcp_handlers.py` into a configurable connector registry that supports multiple named MCP servers, per-server tool allowlists, and CRUD management endpoints. Builds on the isolation achieved by #45.
 
 - [x] **29. Startup API key auth probe warning**
   - Fire a non-blocking probe at server startup that emits a loud `[WARNING]`

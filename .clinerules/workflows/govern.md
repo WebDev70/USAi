@@ -142,7 +142,7 @@ Walk through each item in the rubric. Score 1–5 and record a brief finding for
   - Inconsistent naming conventions
 
 ### SE-2: Test quality
-- Open `tests/python/` and `tests/js/`. Scan for:
+- Open `backend/tests/python/` and `frontend/tests/js/`. Scan for:
   - Tests with no assertions or trivially passing assertions
   - Missing tests for recently added endpoints/helpers (cross-check with CHANGELOG)
   - Tests that test implementation detail rather than behavior

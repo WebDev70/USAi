@@ -19,7 +19,7 @@
 set -euo pipefail
 
 PY="${PYTHON:-python3}"
-PATHS_TO_MUTATE="${MUTMUT_PATHS:-server.py}"
+PATHS_TO_MUTATE="${MUTMUT_PATHS:-backend/server.py}"
 
 echo "══ Mutation audit: mutmut → ${PATHS_TO_MUTATE} ═══════════════════════════"
 

@@ -38,8 +38,8 @@ Goal
 /spec    (PLAN MODE — interview → write docs/specs/<feature>.md)
   ↓
 /loop    (ACT MODE  — iterates /build → /review until clean)
-  ├─ /build   (implement spec: Roles 1–4: Planner, SME, Tester, Security)
-  └─ /review  (compare vs spec, run gates: Role 5 Reviewer — repeat if failing)
+  ├─ /build   (Roles 1–4: Planner → Architect → Developer → Tester)
+  └─ /review  (Roles 5–6: Security → Reviewer/QA — repeat if failing)
   ↓
 Done (tests green, security scan clean, docs updated, memory note written)
 ```
@@ -50,7 +50,7 @@ Done (tests green, security scan clean, docs updated, memory note written)
 |----------|------|--------------|
 | **`/spec`** | PLAN MODE | Interviews the user, captures requirements, produces a `docs/specs/<feature>.md` with goal, acceptance criteria, affected files, test plan, and risks. Serves as the Definition of Ready. |
 | **`/build`** | ACT MODE | Executes the spec TDD-style: plan → Red → Green → Refactor → security check. |
-| **`/review`** | ACT MODE | Compares the implementation against the spec, runs `./run-tests.sh --coverage` and `./scripts/security-scan.sh`, reports a gap list. Returns to `/build` if anything fails. |
+| **`/review`** | ACT MODE | Compares the implementation against the spec, runs `./scripts/cli-check.sh --review` (tests + security + doc-consistency + AI review), `./scripts/spec-check.sh`, reports a gap list. Returns to `/build` if anything fails. |
 | **`/loop`** | ACT MODE | Calls `/build` then `/review`; repeats until `/review` passes with zero gaps. |
 | **`/self-improve`** | Either | Post-cycle retro: identifies patterns, proposes new rules/checks/tests, records a learning note to Obsidian. |
 
@@ -59,14 +59,23 @@ Done (tests green, security scan clean, docs updated, memory note written)
 Cline's equivalent of Continue's `/check` is the **`/review`** workflow, which runs:
 
 ```bash
-./run-tests.sh --coverage          # syntax gates + JS + Python + coverage enforcement
-./scripts/security-scan.sh         # gitleaks + bandit + pip-audit
-#./scripts/cli-check.sh --review    # optional: cn review with all check files as rules
+# Primary gate — runs tests + coverage + security + doc-consistency + AI review
+./scripts/cli-check.sh --review
+
+# Spec↔build compliance (run with the current spec path)
+./scripts/spec-check.sh docs/specs/<feature>.md
 ```
+
+`./scripts/cli-check.sh --review` internally runs:
+1. `./run-tests.sh --coverage` — syntax gates + JS + Python + coverage thresholds
+2. `./scripts/security-scan.sh --strict` — gitleaks + bandit + pip-audit
+3. `./scripts/doc-consistency-check.sh` — convention-duplication guard
+4. `cn review` — AI review with all `.continue/checks/*.md` criteria as rules
 
 Pass criteria (same as the shared RAIL Definition of Done):
 - Tests green + coverage gates met
 - Security scan clean
+- Spec compliance (`spec-check.sh`) confirmed
 - Docs updated (CHANGELOG, USER_GUIDE, README as applicable)
 - Acceptance criteria met (features)
 - Memory note queued

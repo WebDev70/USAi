@@ -93,26 +93,54 @@ stop and explain the conflict to the user — do not work around it silently.
 
 Follow **Red → Green → Refactor** strictly:
 
-### 3a. RED — write failing tests first
+### 3a. Create the session memory note (required before Red receipt)
+
+Before writing any tests or code, open (or create) **the single session memory
+note** for this build:
+
+```
+<OBSIDIAN_VAULT_PATH>/Cline/memories/YYYY-MM-DD-HHMMSS-<feature>.md
+```
+
+Use the current timestamp. Add the YAML frontmatter:
+
+```markdown
+---
+title: "RAIL build: <feature name>"
+created: YYYY-MM-DD
+tags: [usai-chat, conversation-log, rail-loop, <topic-tags>]
+source: cline
+---
+```
+
+This is the **one file** used throughout the whole `/build` → `/review` → `/loop`
+cycle. The Red receipt (below) is appended here. The `/loop` Continuous Improvement
+role **appends to this same file** at the end — it does not create a new note.
+
+### 3b. RED — write failing tests first
 
 From spec §5 (Test plan), write **all specified tests** before touching production
 code. Run them to confirm they fail for the *right* reason:
 
 ```bash
-node --test tests/js/              # JS tests
-.venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'  # Python tests
+# JS tests
+node --test frontend/tests/js/
+
+# Python tests
+PYTHONPATH="$(pwd)/backend" .venv/bin/python -m unittest discover \
+  -s backend/tests/python -p 'test_*.py'
 ```
 
 Confirm each new test fails before proceeding.
 
-**Red receipt (TDD evidence):** paste the failing-test output into the current
-session memory note in `Cline/memories/` *before* writing any production code.
-The memory note should record the exact error message and test names that are
-failing. This is the proof that tests were written first — it is required by the
-`/review` §6a TDD check. A build without a Red receipt is considered a TDD
-violation and will be flagged as a GAP.
+**Red receipt (TDD evidence):** append the failing-test output to the session
+memory note created in §3a, *before* writing any production code. The receipt
+should record the exact error message and test names that are failing. This is
+the proof that tests were written first — it is required by the `/review` §6a
+TDD check. A build without a Red receipt is considered a TDD violation and will
+be flagged as a GAP.
 
-### 3b. Runtime log recall (informational)
+### 3c. Runtime log recall (informational)
 
 Before touching any component files, run the log analyzer if `PERSIST_LOGS=true`:
 
@@ -125,7 +153,7 @@ Record any relevant errors in the session memory note as build context.
 **Informational only — never blocks the build.**
 If persistence is off or no files exist: skip ("log recall skipped").
 
-### 3c. GREEN — minimum code to pass
+### 3d. GREEN — minimum code to pass
 
 Write the minimum production code to make the failing tests pass without breaking
 existing ones. Implement only what spec §4 (Technical approach) describes.
@@ -133,20 +161,20 @@ existing ones. Implement only what spec §4 (Technical approach) describes.
 **Scope discipline:** if you notice a tempting improvement outside the spec, note it
 as a future backlog item — do not implement it now.
 
-After each file is edited, run the relevant tests:
+After each file is edited, run the relevant syntax gates:
 
 ```bash
-node --check app.js               # JS syntax gate
-python3 -m py_compile server.py   # Python syntax gate
+node --check frontend/app.js                   # JS syntax gate
+python3 -m py_compile backend/server.py        # Python syntax gate
 ```
 
-### 3c. REFACTOR — clean up under green
+### 3e. REFACTOR — clean up under green
 
 - Remove duplication, improve names, add *why* comments.
 - Re-run the full suite to confirm still green.
 - Do not change behavior during refactor.
 
-### 3d. Spec amendment protocol
+### 3f. Spec amendment protocol
 
 If during implementation you discover that the spec is **incorrect or incomplete**
 (the real code structure differs from §3/§4, or an AC is impossible as written):
@@ -162,7 +190,7 @@ If during implementation you discover that the spec is **incorrect or incomplete
 > **Never silently expand scope.** A spec amendment is for corrections only —
 > if it adds new features or changes acceptance criteria, that requires a new spec.
 
-### 3e. Docs in sync
+### 3g. Docs in sync
 
 Update docs **in the same turn** as the code change (per spec §6):
 - `CHANGELOG.md` — always, under `[Unreleased]`

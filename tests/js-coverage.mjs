@@ -25,7 +25,7 @@ const SENTINEL_FILE = '/tmp/usai-js-branch-pct';
 
 const MIN = Number(process.argv[2] ?? 70);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const jsDir = path.join(here, 'js');
+const jsDir = path.join(here, '..', 'frontend', 'tests', 'js');
 const files = readdirSync(jsDir)
   .filter((f) => f.endsWith('.test.mjs'))
   .map((f) => path.join(jsDir, f));

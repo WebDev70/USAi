@@ -1,305 +1,244 @@
-# Implementation Plan: RAIL Pipeline Gap Closure — All Five Dimensions
+# Implementation Plan
 
 [Overview]
-Close every identified gap in the RAIL pipeline across Agile/Scrum, DevSecOps, IaC, TDD, and CI/CD.
+Reorganize the monolithic flat repo root into `backend/` (Python) and `frontend/` (HTML/JS/CSS) subdirectories while preserving 100% of runtime behaviour and keeping all tests green.
 
-This plan addresses the full-breadth gap analysis of the USAi Chat RAIL pipeline conducted on 2026-07-02. The RAIL pipeline is mature (11 hardening phases shipped, Governance Board in place, CI exists) but has concrete gaps in five areas that leave some quality/security assertions as honor-system or local-only rather than machine-enforced in CI.
+Backlog item **#56 — Frontend/backend directory reorg** calls for a clean concern separation: Python backend files into `backend/`, frontend assets into `frontend/`. The prereq (#45 module split) is done. This is a **move-only** refactor — zero new features, zero behaviour changes, zero new runtime dependencies. The hard engineering constraint is that `server.py` currently conflates three distinct anchors into one (`PROJECT_ROOT = Path(__file__).parent`): (a) where `.env` and data dirs live, (b) which directory `SimpleHTTPRequestHandler` serves files from, and (c) where `requirements.txt` lives. After the move we split those into two explicit constants: `REPO_ROOT = Path(__file__).resolve().parent.parent` for data/config (stays at repo root so no existing user data is orphaned), and `STATIC_DIR = REPO_ROOT / 'frontend'` for static-file serving. All other handler modules, tests, and tooling files get path-corrected to match the new layout.
 
-**Scope:** Dev/CI tooling only — no changes to runtime `requirements.txt` or shipped `app.js`/`server.py` beyond new Python stdlib test assertions. Every new gate has a local `make` target so CI ≡ Makefile parity is maintained. The implementation is organised into five phases; each phase is independently shippable.
-
-**Phases:**
-- Phase 1 (CI/CD): Ratchet gate in CI, Dependabot, CodeQL, Docker build job, pre-commit parity job, branch-protection doc.
-- Phase 2 (DevSecOps): `.gitleaks.toml` pin, Trivy image scan job, SBOM generation, `security-scan.sh` SSRF/secrets-baseline extension, new `tests/python/test_security_posture.py`.
-- Phase 3 (IaC): `tests/python/test_iac.py` (non-root, HEALTHCHECK, compose parse, Makefile↔CI parity), `make ratchet` / `make sbom` / `make mutation` targets.
-- Phase 4 (TDD): `scripts/tdd-red-check.sh` (machine-proof Red receipt artifact), mutation gate promoted to scheduled CI job with survivor-budget threshold.
-- Phase 5 (Agile/Scrum): `scripts/scrum-metrics.py` (velocity+WIP burndown report), `sprint-10.md` retroactive creation, sprint-open-at-start discipline in `.clinerules`, DoR story-point rubric.
-
-**Hard constraints honored throughout:**
-- No new runtime dependencies (stdlib Python + `python-dotenv` only in shipped app).
-- Dev/CI tooling (coverage, bandit, pip-audit, gitleaks, Trivy, syft, CodeQL) ships nothing into the app.
-- All gates have `make` entry points.
-- Comments explain *why*.
-- CHANGELOG updated, docs in sync, backlog updated in same turn.
-
----
+Target tree:
+```
+usai/
+├── backend/
+│   ├── server.py
+│   ├── proxy_handlers.py
+│   ├── session_handlers.py
+│   ├── memory_handlers.py
+│   ├── mcp_handlers.py
+│   ├── projects_handlers.py
+│   └── tests/
+│       └── python/          ← was tests/python/
+├── frontend/
+│   ├── index.html
+│   ├── app.js
+│   ├── styles.css
+│   └── tests/
+│       └── js/              ← was tests/js/
+├── .env  .env.example
+├── .chunk_cache/  .chat_sessions/  .projects/  .raw_responses/  logs/
+├── scripts/  docs/  tests/  (tests/js-coverage.mjs stays at root for run-tests.sh)
+├── run-tests.sh  Makefile  Dockerfile  docker-compose.yml
+├── package.json  requirements*.txt  .coveragerc  .coverage-thresholds
+└── backlog.md  CHANGELOG.md  AGENTS.md  README.md
+```
 
 [Types]
-No new application data types; new CI/test configuration structures, a scrum metrics report schema, and a gitleaks TOML configuration.
+No new types, interfaces, or data structures — this is a pure file-move + path-correction refactor.
 
-**Scrum Metrics Report (output of `scripts/scrum-metrics.py`):**
-```
-{
-  "sprint": "NN",
-  "velocity": int,           # items completed this sprint
-  "cumulative_velocity": int, # total items completed all sprints
-  "backlog_open": int,        # items with [ ]
-  "backlog_in_progress": int, # items with [~]
-  "backlog_done": int,        # items with [x]
-  "wip_count": int,           # current [~] items (WIP limit check)
-  "wip_limit": int,           # configurable, default 3
-  "wip_ok": bool,
-  "burndown": [               # per-sprint cumulative completion counts
-    {"sprint": "NN", "done": int}
-  ]
-}
-```
-
-**`.gitleaks.toml` config structure:** Standard TOML gitleaks config with `[[rules]]` overrides for known false-positive patterns in USAi (e.g. test fixture keys), `[allowlist]` regexes.
-
-**`test_iac.py` assertion targets:**
-```python
-# Assertions verified by these test IDs:
-# IaC-1: Dockerfile contains "USER" instruction (non-root)
-# IaC-2: Dockerfile contains "HEALTHCHECK" instruction
-# IaC-3: docker-compose.yml parses as valid YAML
-# IaC-4: Makefile 'check' target contains same commands as CI tests.yml jobs
-# IaC-5: Makefile 'scan' target references security-scan.sh
-# IaC-6: .env.example keys == load_config() expected keys (existing, reconfirm)
-```
-
----
+All existing Python module-level globals (`REPO_ROOT`, `STATIC_DIR`, `CACHE_DIR`, `SESSIONS_DIR`, etc.) keep the same names and types; only the values of `PROJECT_ROOT` (renamed to `REPO_ROOT`) and the newly added `STATIC_DIR` change. No JS type changes.
 
 [Files]
-New and modified files across CI config, scripts, tests, and documentation.
+Six Python backend files move from repo root → `backend/`; three frontend files move from repo root → `frontend/`; two test directories move; several tooling/config files get path strings updated in-place.
 
-**NEW FILES:**
-- `.github/workflows/codeql.yml` — GitHub CodeQL analysis (JS + Python), triggers on push/PR/schedule.
-- `.github/workflows/sbom.yml` — SBOM generation via `anchore/sbom-action`, uploads as workflow artifact.
-- `.github/dependabot.yml` — Automated dependency update PRs for pip + github-actions ecosystems.
-- `.gitleaks.toml` — Deterministic gitleaks ruleset with USAi-specific allowlist; replaces implicit default.
-- `docs/ci-cd.md` — CI/CD contract doc: describes all jobs, required branch-protection settings, local equivalents.
-- `docs/specs/rail-gap-closure.md` — Spec document for this implementation (Status: In Progress).
-- `scripts/tdd-red-check.sh` — Verifies a TDD Red receipt artifact exists for the current change (git-diff based).
-- `scripts/scrum-metrics.py` — Parses `backlog.md` + sprint-index.md → emits velocity/WIP/burndown JSON + Markdown report.
-- `tests/python/test_iac.py` — Deterministic IaC assertions (non-root, HEALTHCHECK, compose YAML, Makefile↔CI parity).
-- `tests/python/test_security_posture.py` — SSRF allowlist, `/config` redaction invariant, and path-traversal pattern assertions (stdlib only).
-- `"/Users/ronaldbblake/Documents/Obsidian Vault/Cline/scrum/sprints/sprint-10.md"` — Retroactive sprint-10 note (ADVISORY-02 fix).
+**Files MOVED (git mv — preserves history):**
+- `server.py` → `backend/server.py`
+- `proxy_handlers.py` → `backend/proxy_handlers.py`
+- `session_handlers.py` → `backend/session_handlers.py`
+- `memory_handlers.py` → `backend/memory_handlers.py`
+- `mcp_handlers.py` → `backend/mcp_handlers.py`
+- `projects_handlers.py` → `backend/projects_handlers.py`
+- `tests/python/` (all files) → `backend/tests/python/`
+- `index.html` → `frontend/index.html`
+- `app.js` → `frontend/app.js`
+- `styles.css` → `frontend/styles.css`
+- `tests/js/app.test.mjs` → `frontend/tests/js/app.test.mjs`
+- `tests/js/app.behavior.test.mjs` → `frontend/tests/js/app.behavior.test.mjs`
 
-**MODIFIED FILES:**
-- `.github/workflows/tests.yml` — Add `ratchet` job (bash 4+ image, runs `scripts/ratchet-check.sh`), `docker-build` job, `pre-commit-parity` job. Add `needs:` dependency chain so `ratchet` only runs after python gate passes.
-- `scripts/security-scan.sh` — Add SSRF allowlist assertion block (step 5/5) and secrets-baseline re-scan of `Cline/memories/` (already partially present; extend). Add Trivy call when `trivy` binary is available (local); CI Trivy runs in separate job.
-- `Makefile` — Add `make ratchet`, `make sbom`, `make mutation`, `make scrum-metrics`, `make iac-test` targets. Update `make check` to include `make iac-test`.
-- `docs/rail-pipeline.md` — §4 CI section: describe all new jobs, remove "pre-commit is future backlog #28" note (now done), add CodeQL/SBOM/Trivy references.
-- `docs/governance.md` — SE rubric (§3): add mutation kill-rate + Trivy scan as SE-4 checks. SPMS rubric (§4): add scrum-metrics report as SPMS-2 check.
-- `docs/principles.md` — §2 DevSecOps: add Trivy/SBOM to the deterministic gates list.
-- `.clinerules/scrum-artifacts.md` — Add "On sprint start" step 0: create sprint note BEFORE first `/build` commit; reference `scrum-metrics.py` for velocity calculation.
-- `.clinerules/workflows/spec.md` — Add step to open sprint note at sprint start (INNOV-01 fix).
-- `"/Users/ronaldbblake/Documents/Obsidian Vault/Cline/scrum/definition-of-ready.md"` — Add story-point estimation rubric (S=0.5d, M=1-2d, L=3-5d) + WIP limit check (≤3 concurrent `[~]` items before pulling new item).
-- `backlog.md` — Add new backlog items for each shipped phase, mark this spec as [~] In Progress.
-- `CHANGELOG.md` — Entry under `[Unreleased]` for each phase as it ships.
+**Files STAYING at repo root (no move):**
+- `.env`, `.env.example`, `requirements.txt`, `requirements-dev.txt`
+- `.chunk_cache/`, `.chat_sessions/`, `.projects/`, `.raw_responses/`, `logs/`
+- `run-tests.sh`, `Makefile`, `Dockerfile`, `docker-compose.yml`
+- `package.json`, `.coveragerc`, `.coverage-thresholds`, `.coveragerc`
+- `tests/js-coverage.mjs` — STAYS at repo root (invoked by run-tests.sh from root)
+- `scripts/`, `docs/`, `backlog.md`, `CHANGELOG.md`, `AGENTS.md`, `README.md`
 
----
+**Files MODIFIED (path corrections only):**
+- `backend/server.py` — rename `PROJECT_ROOT` → `REPO_ROOT`, add `STATIC_DIR`, fix `run()` + `install_dependencies()`
+- `backend/tests/python/test_server_branches.py` — fix `StaticFileTests` `os.chdir` target
+- `backend/tests/python/test_server_proxy.py` — fix `PROJECT_ROOT = parents[2]` → `parents[2]` still correct (verify)
+- `backend/tests/python/test_server.py` — same `parents[2]` verification
+- `backend/tests/python/test_server_http.py` — same + any StaticFileTests chdir
+- `backend/tests/python/test_server_startup.py` — same
+- `backend/tests/python/test_server_mcp.py` — same
+- `backend/tests/python/test_server_branches.py` — `parents[2]` is now `backend/` root; `parents[3]` is repo root
+- `backend/tests/python/test_scripts.py` — `REPO_ROOT = parents[2]` stays correct
+- `run-tests.sh` — update all 6 path references
+- `Makefile` — `run:` target + inline paths
+- `Dockerfile` — COPY + CMD
+- `docker-compose.yml` — command/volume refs if any
+- `.coveragerc` — `source = server` → `source = backend.server` OR use `--source=backend/server` in run-tests.sh
+- `scripts/security-scan.sh` — bandit target list
+- `scripts/pre-commit.sh` — syntax gates
+- `scripts/mutation-audit.sh` — PATHS_TO_MUTATE
+- `scripts/cli-check.sh` — any path refs
+- `.github/workflows/tests.yml` — `py_compile`, `bandit`, `unittest discover` paths
+- `package.json` — test file globs if present
+- `docs/ORGANIZATION.md` — file table (three-concern map)
+- `docs/ARCHITECTURE.md` — layout + module-split section
+- `README.md` — run commands
+- `AGENTS.md` — layout description line
+- `backlog.md` — mark #56 `[x]`
+- `CHANGELOG.md` — add entry
 
 [Functions]
-New scripts and Python functions; no changes to shipped `server.py` or `app.js`.
+Two functions in `server.py` require path logic changes; all other functions across all six Python files are unchanged.
 
-**NEW FUNCTIONS/SCRIPTS:**
+**Modified functions:**
+- `server.py → backend/server.py` module-level constants block (lines 17–31):
+  - Rename `PROJECT_ROOT` → `REPO_ROOT`, update to `Path(__file__).resolve().parent.parent`
+  - Add `STATIC_DIR = REPO_ROOT / 'frontend'`
+  - All other dirs (`CACHE_DIR`, `SESSIONS_DIR`, etc.) switch from `PROJECT_ROOT /` to `REPO_ROOT /`
+  - `ENV_FILE = REPO_ROOT / '.env'`
 
-`scripts/tdd-red-check.sh`:
-```bash
-tdd_red_check()   # Main: checks git diff for test file added/modified BEFORE implementation;
-                  # emits a TDD-Red-Receipt artifact to /tmp/usai-tdd-red-receipt-<feature>
-                  # Returns 0 if receipt found, 1 if not (advisory in CI, blocking in /build)
-```
+- `run(host, port)` in `backend/server.py` (line 594):
+  - Change `os.chdir(PROJECT_ROOT)` → `os.chdir(STATIC_DIR)`
+  - This makes `SimpleHTTPRequestHandler` serve from `frontend/` instead of the repo root
 
-`scripts/scrum-metrics.py`:
-```python
-parse_backlog(path: str) -> dict         # Parses backlog.md, counts [ ] / [~] / [x] items per section
-parse_sprint_index(path: str) -> list    # Parses sprint-index.md velocity column
-compute_burndown(sprints: list) -> list  # Cumulative completion per sprint
-check_wip_limit(in_progress: int, limit: int) -> bool
-emit_report(metrics: dict, output_path: str) -> None   # Writes JSON + Markdown report
-main()   # Entry point: reads OBSIDIAN_VAULT_PATH from env or default
-```
+- `install_dependencies()` in `backend/server.py` (line 606):
+  - Change `PROJECT_ROOT / 'requirements.txt'` → `REPO_ROOT / 'requirements.txt'`
 
-`tests/python/test_iac.py`:
-```python
-class TestDockerfileIaC(unittest.TestCase):
-    test_non_root()      # IaC-1: USER instruction present
-    test_healthcheck()   # IaC-2: HEALTHCHECK instruction present
+**Handler file constructor (if any override `__init__`):**
+- `SimpleHTTPRequestHandler` supports a `directory=` kwarg (Python 3.7+). As an alternative to `os.chdir`, set `directory=str(STATIC_DIR)` in `EnvConfigHTTPRequestHandler.__init__`. Either approach is acceptable; `os.chdir(STATIC_DIR)` in `run()` is simpler given existing test infrastructure.
 
-class TestComposeIaC(unittest.TestCase):
-    test_compose_parses() # IaC-3: docker-compose.yml valid YAML
+**Test path constants (all test files in `backend/tests/python/`):**
+- `PROJECT_ROOT = Path(__file__).resolve().parents[2]` — BEFORE the move this pointed at `usai/`. AFTER the move `__file__` is `usai/backend/tests/python/test_*.py`, so `parents[2]` → `usai/backend/`. Tests import `server` via `sys.path.insert(0, str(PROJECT_ROOT))` which would now insert `usai/backend/` — this is correct because all six Python modules live there.
+- `REPO_ROOT = Path(__file__).resolve().parents[3]` — add this alias in test files that need to reference top-level scripts (e.g. `test_scripts.py` which currently uses `parents[2]` to find `scripts/`). `parents[3]` → `usai/` (repo root).
+  - `test_scripts.py`: update `REPO_ROOT = parents[2]` → `REPO_ROOT = parents[3]`
+  - `test_pre_commit.py`: same pattern
+  - `test_dev_deps.py`: same pattern
+  - `test_analyze_logs.py`: same pattern
 
-class TestMakefileCI_Parity(unittest.TestCase):
-    test_check_target_has_runtests()  # IaC-4: 'make check' references run-tests.sh
-    test_scan_target_has_security_sh() # IaC-5: 'make scan' references security-scan.sh
-    test_ci_jobs_match_makefile()     # IaC-6: tests.yml job steps reference same commands
-```
-
-`tests/python/test_security_posture.py`:
-```python
-class TestSSRFGuard(unittest.TestCase):
-    test_safe_urls_pass()           # SP-1: known safe HTTPS upstreams pass is_safe_upstream_url
-    test_localhost_blocked()        # SP-2: 127.0.0.1 / localhost blocked
-    test_private_ranges_blocked()   # SP-3: RFC-1918 ranges blocked (10.x, 192.168.x, 172.16-31.x)
-    test_file_scheme_blocked()      # SP-4: file:// scheme blocked
-    test_metadata_endpoint_blocked()# SP-5: 169.254.169.254 AWS metadata endpoint blocked
-
-class TestConfigRedaction(unittest.TestCase):
-    test_api_key_not_in_config()    # SP-6: /config response must not contain API key value
-    test_has_flags_present()        # SP-7: has_* boolean flags present in /config
-
-class TestPathTraversalGuard(unittest.TestCase):
-    test_dotdot_rejected()          # SP-8: ../.. sequences rejected by get_memory_dir
-    test_null_byte_rejected()       # SP-9: null bytes rejected
-    test_absolute_path_rejected()   # SP-10: absolute paths rejected for memory filenames
-```
-
-**MODIFIED FUNCTIONS:**
-
-`scripts/security-scan.sh` — `run_security_scan()`:
-- Add step 5: SSRF self-test (`grep is_safe_upstream_url server.py` confirms guard present)
-- Add step 6 (conditional): `trivy fs . --exit-code 1 --severity HIGH,CRITICAL` when `command -v trivy` succeeds locally
-
-`Makefile` — new targets:
-- `ratchet:` → `./scripts/ratchet-check.sh`
-- `sbom:` → `(syft . -o spdx-json > sbom.spdx.json 2>/dev/null || echo "sbom: syft not installed locally — runs in CI")`
-- `mutation:` → `./scripts/mutation-audit.sh`
-- `scrum-metrics:` → `.venv/bin/python scripts/scrum-metrics.py`
-- `iac-test:` → `.venv/bin/python -m unittest tests/python/test_iac.py tests/python/test_security_posture.py -v`
-
----
+**`StaticFileTests` in `test_server_branches.py`:**
+- Current: `os.chdir(Path(__file__).resolve().parents[2])` — after move this changes from `usai/` to `usai/backend/`, breaking the test that expects `index.html` to be accessible.
+- Fix: `os.chdir(server.STATIC_DIR)` — uses the newly introduced constant so it's always correct.
 
 [Classes]
-No new classes in the shipped application; all new test files use `unittest.TestCase` subclasses.
+No new classes, no removed classes. The mixin classes (`ProxyHandlersMixin`, `SessionHandlersMixin`, `MemoryHandlersMixin`, `McpHandlersMixin`, `ProjectsHandlersMixin`) and the main `EnvConfigHTTPRequestHandler` class remain identical — they move to `backend/` without any signature or inheritance changes.
 
-**NEW TEST CLASSES:**
-- `TestDockerfileIaC(unittest.TestCase)` — in `tests/python/test_iac.py`
-- `TestComposeIaC(unittest.TestCase)` — in `tests/python/test_iac.py`
-- `TestMakefileCI_Parity(unittest.TestCase)` — in `tests/python/test_iac.py`
-- `TestSSRFGuard(unittest.TestCase)` — in `tests/python/test_security_posture.py`
-  - Note: imports `is_safe_upstream_url` from `server` via the existing `sys.path` + `importlib` pattern used in other test files.
-- `TestConfigRedaction(unittest.TestCase)` — in `tests/python/test_security_posture.py`
-  - Boots a test server instance (same pattern as `test_server_http.py`).
-- `TestPathTraversalGuard(unittest.TestCase)` — in `tests/python/test_security_posture.py`
-  - Imports `get_memory_dir` from `server`.
-
-**MODIFIED CLASSES:** None — existing test classes in `test_server.py`, `test_server_http.py` etc. are not touched unless a regression is introduced.
-
----
+**No changes needed inside any handler class** — the `_ServerProxy` lazy-import pattern means all six handler files already import the server module by name at call time, not at module load time, so moving to `backend/` doesn't break inter-module imports (they'll all be in the same directory on `sys.path`).
 
 [Dependencies]
-No new runtime dependencies; new CI-only tooling added to GitHub Actions workflows only.
+No new runtime dependencies. No new dev dependencies. No version changes.
 
-**CI/GitHub Actions NEW tooling (dev/CI only — never shipped):**
-- `github/codeql-action@v3` — GitHub-native CodeQL; no install step; free for public repos.
-- `anchore/sbom-action@v0` — SBOM generation as a workflow step; artifact upload only.
-- `aquasecurity/trivy-action@master` — Trivy filesystem + image CVE scan in CI.
-- `dependabot` (`.github/dependabot.yml`) — GitHub-native; no package install.
-
-**Local tooling (optional, for `make sbom` locally):**
-- `syft` — can be installed locally via `brew install syft` or the install script; not required; `make sbom` gracefully skips if absent.
-- `trivy` — can be installed locally; `security-scan.sh` Trivy step is conditional on `command -v trivy`.
-
-**Existing dev deps already in place (no changes needed):**
-- `coverage`, `bandit`, `pip-audit`, `gitleaks`, `node --test` — all already wired.
-
-**`requirements-dev.txt`** — no changes; Trivy/syft/CodeQL are CI-job level tooling, not pip packages.
-
----
+The only "dependency" change is tooling path references — coverage source path in `.coveragerc` changes from `source = server` to `source = backend/server` (or equivalently keep `source = server` and adjust `--source` flag in `run-tests.sh` to pass `backend.server`). The cleaner approach: keep `source = server` in `.coveragerc` but update `run-tests.sh` to run `coverage run ... --source=server` from inside `backend/` (via a subshell `cd backend && ...`), OR update the `--source` to `backend.server` in `run-tests.sh` inline. Recommended: change `.coveragerc` `source = server` to stay as-is but change `run-tests.sh` to add `sys.path` or use the module reference `backend.server`; see Implementation Order step 7 for the exact command change.
 
 [Testing]
-New test files enforce IaC and security posture deterministically; new CI jobs gate ratchet, Docker build, and pre-commit in automation.
+All existing tests must pass at all existing coverage gates after the move; no new test logic is written (this is a refactor, not a feature). The only test changes are path constant corrections.
 
-**New test files (run by `./run-tests.sh` and CI):**
-- `tests/python/test_iac.py` — 6 tests (IaC-1 through IaC-6). Run by: `make iac-test`, `make check`, CI `python` job (matrix 3.9+3.11).
-- `tests/python/test_security_posture.py` — 10 tests (SP-1 through SP-10). Run by: `make iac-test`, `make check`, CI `python` job.
+**Test files requiring path-constant changes:**
+| File | Change |
+|------|--------|
+| `backend/tests/python/test_scripts.py` | `REPO_ROOT = parents[3]`, `SPEC_CHECK = REPO_ROOT / 'scripts/...'` |
+| `backend/tests/python/test_pre_commit.py` | `REPO_ROOT = parents[3]`, `PRE_COMMIT_SH = REPO_ROOT / 'scripts/...'` |
+| `backend/tests/python/test_dev_deps.py` | `REPO_ROOT = parents[3]`, `DEV_DEPS_CHECK = REPO_ROOT / 'scripts/...'` |
+| `backend/tests/python/test_analyze_logs.py` | `REPO_ROOT = parents[3]`, `SCRIPT_PATH = REPO_ROOT / 'scripts/...'` |
+| `backend/tests/python/test_server_proxy.py` | `PROJECT_ROOT = parents[2]` stays → now points at `backend/` ✓ |
+| `backend/tests/python/test_server.py` | `PROJECT_ROOT = parents[2]` → `backend/` ✓ |
+| `backend/tests/python/test_server_http.py` | `PROJECT_ROOT = parents[2]` → `backend/` ✓ |
+| `backend/tests/python/test_server_startup.py` | `PROJECT_ROOT = parents[2]` → `backend/` ✓ |
+| `backend/tests/python/test_server_mcp.py` | `PROJECT_ROOT = parents[2]` → `backend/` ✓ |
+| `backend/tests/python/test_server_branches.py` | `StaticFileTests` fix `os.chdir` → `server.STATIC_DIR` |
 
-**`run-tests.sh` update:** Add `test_iac.py` and `test_security_posture.py` to the `unittest discover` call so they are included in the full suite automatically.
+**Coverage source change:**
+- `.coveragerc`: `source = server` → `source = server` (keep same — but `run-tests.sh` will change discover path so coverage can resolve it; alternatively change to `omit` strategy. See Implementation Order step 7.)
+- Recommended: Change `.coveragerc` `source = server` to use omit-only approach OR change `run-tests.sh` discover command to `cd backend && $PY -m coverage run --branch --source=server -m unittest discover -s tests/python ...`.
 
-**New CI jobs (`.github/workflows/tests.yml` additions):**
-- `ratchet` job: `runs-on: ubuntu-latest`, installs `bash 5` via `apt`, runs `./scripts/ratchet-check.sh`. `needs: [python]` so it only runs after the coverage gate passes.
-- `docker-build` job: `runs-on: ubuntu-latest`, runs `docker build -t usai-test .` + `docker compose config` + (optional) `docker run --rm usai-test python -c "import server"` smoke test.
-- `pre-commit-parity` job: `runs-on: ubuntu-latest`, installs python-dotenv, runs `./scripts/pre-commit.sh` to confirm the hook script works in CI.
-
-**New CI workflows:**
-- `.github/workflows/codeql.yml` — CodeQL for JS + Python. Scheduled weekly + on push/PR. Uses `github/codeql-action/init`, `autobuild`, `analyze`. Non-blocking-by-default (advisory) unless a HIGH/CRITICAL finding is detected.
-- `.github/workflows/sbom.yml` — SBOM. Runs on push to main only. Artifact upload. Not blocking.
-
-**Scrum metrics validation:**
-- `scripts/scrum-metrics.py` includes a `--selftest` flag that parses a fixture backlog (inline string) and asserts correct velocity/WIP counts — runnable in CI via `make scrum-metrics -- --selftest`.
-
-**Mutation testing promotion:**
-- `.github/workflows/mutation.yml` (new) — scheduled weekly (`cron: '0 3 * * 1'`), runs `./scripts/mutation-audit.sh`, posts kill-rate to workflow summary. Non-blocking unless kill rate < 50% (configurable threshold).
-
----
+**Run gate after completion:**
+```bash
+./run-tests.sh --coverage   # server.py line ≥90%, branch ≥80%; JS branch ≥70%
+./scripts/security-scan.sh  # gitleaks + bandit + pip-audit
+.venv/bin/python backend/server.py  # boots and serves frontend/
+```
 
 [Implementation Order]
-Phases are sequenced to keep every gate green at each merge; each phase is independently reviewable.
+The changes must be applied in this specific order to avoid breaking intermediate states.
 
-**Phase 1 — CI/CD Foundation (S, ~1 sprint)**
-1. Add `.github/dependabot.yml` (pip + github-actions; XS, zero-risk).
-2. Add `docker-build` CI job to `tests.yml` (validates Dockerfile + compose config).
-3. Add `ratchet` CI job to `tests.yml` (closes `#39` intentional skip; needs bash 5 image).
-4. Add `pre-commit-parity` CI job to `tests.yml`.
-5. Add `.gitleaks.toml` config file (pins gitleaks ruleset, adds USAi allowlist).
-6. Write `docs/ci-cd.md` (branch-protection contract, job descriptions, local equivalents).
-7. Update `docs/rail-pipeline.md` §4, remove backlog #28 "future" note, add Dependabot/CodeQL references.
+1. **Create directories** — `mkdir -p backend/tests/python frontend/tests/js`
 
-**Phase 2 — DevSecOps Hardening (M)**
-8. Write `tests/python/test_security_posture.py` (TDD: write tests first, confirm red, then adjust server.py imports as needed).
-9. Add `test_security_posture.py` to `run-tests.sh` discover path.
-10. Extend `scripts/security-scan.sh` with SSRF guard assertion (step 5) and conditional Trivy (step 6).
-11. Add `.github/workflows/codeql.yml`.
-12. Add `.github/workflows/sbom.yml`.
-13. Add `make sbom` target to Makefile.
-14. Update `docs/principles.md` §2 with Trivy/SBOM.
-15. Update `docs/governance.md` SE rubric to reference new gates.
+2. **git mv Python backend files** — move all 6 Python files to `backend/` using `git mv` to preserve history:
+   ```
+   git mv server.py backend/server.py
+   git mv proxy_handlers.py backend/proxy_handlers.py
+   git mv session_handlers.py backend/session_handlers.py
+   git mv memory_handlers.py backend/memory_handlers.py
+   git mv mcp_handlers.py backend/mcp_handlers.py
+   git mv projects_handlers.py backend/projects_handlers.py
+   ```
 
-**Phase 3 — IaC Test Coverage (S)**
-16. Write `tests/python/test_iac.py` (TDD: Red first, confirm Dockerfile/compose assertions fail or pass as expected).
-17. Add `make iac-test` and `make ratchet` to Makefile.
-18. Add IaC tests to `run-tests.sh`.
-19. Update `docker-compose.yml` or `Dockerfile` if non-root / HEALTHCHECK assertions fail (fix the code, not the test).
+3. **git mv Python test files** — move `tests/python/` content to `backend/tests/python/`:
+   ```
+   git mv tests/python backend/tests/python
+   ```
 
-**Phase 4 — TDD Enforcement (S)**
-20. Write `scripts/tdd-red-check.sh` (machine-proof Red receipt).
-21. Add reference to `tdd-red-check.sh` in `.clinerules/workflows/build.md` Role 3 / TDD Red section.
-22. Add `.github/workflows/mutation.yml` (weekly scheduled, non-blocking, kill-rate report).
-23. Add `make mutation` target to Makefile (already references `mutation-audit.sh`).
-24. Update `docs/rail-pipeline.md` to describe mutation as "scheduled CI gate" not "optional cadence".
+4. **git mv frontend files** — move `index.html`, `app.js`, `styles.css` to `frontend/`:
+   ```
+   git mv index.html frontend/index.html
+   git mv app.js frontend/app.js
+   git mv styles.css frontend/styles.css
+   ```
 
-**Phase 5 — Agile/Scrum Discipline (S)**
-25. Create `"/Users/ronaldbblake/Documents/Obsidian Vault/Cline/scrum/sprints/sprint-10.md"` retroactively (ADVISORY-02 fix).
-26. Write `scripts/scrum-metrics.py` with `--selftest` mode.
-27. Add `make scrum-metrics` to Makefile.
-28. Update `.clinerules/scrum-artifacts.md` — add "open sprint note at sprint start" as Step 0 in "On sprint start".
-29. Update `.clinerules/workflows/spec.md` — add sprint-note-open reminder (INNOV-01 fix).
-30. Update `"/Users/ronaldbblake/Documents/Obsidian Vault/Cline/scrum/definition-of-ready.md"` — add size/estimation rubric + WIP limit gate.
-31. Update `docs/governance.md` SPMS rubric to reference scrum-metrics report.
+5. **git mv JS test files** — move `tests/js/` to `frontend/tests/js/`:
+   ```
+   git mv tests/js frontend/tests/js
+   ```
 
-**Phase 6 — Documentation & Backlog Close-out (XS)**
-32. Add all new backlog items to `backlog.md`, mark spec [~] → [x] Done.
-33. Write Cline memory note.
-34. Update `CHANGELOG.md [Unreleased]`.
+6. **Patch `backend/server.py`** — update path constants and `run()`:
+   - `PROJECT_ROOT` → `REPO_ROOT = Path(__file__).resolve().parent.parent`
+   - Add `STATIC_DIR = REPO_ROOT / 'frontend'`
+   - All `PROJECT_ROOT /` references → `REPO_ROOT /`
+   - `run()`: `os.chdir(STATIC_DIR)` 
+   - `install_dependencies()`: `REPO_ROOT / 'requirements.txt'`
 
----
+7. **Patch Python test files** — update `parents[N]` constants:
+   - Files using `parents[2]` to find `scripts/`: update to `parents[3]`
+   - `StaticFileTests.os.chdir` → `server.STATIC_DIR`
 
-## Plan Navigation Commands
+8. **Patch `run-tests.sh`** — update all path references:
+   - Syntax gate: `node --check frontend/app.js`
+   - `py_compile`: `backend/server.py backend/proxy_handlers.py ...` (all 6)
+   - JS tests: `node --test $(find frontend/tests/js -name ...)`
+   - jsdom behavior test: `node --test frontend/tests/js/app.behavior.test.mjs`
+   - Python discover: `-s backend/tests/python`
+   - Coverage discover: `--source=server -s backend/tests/python`
+   - Coverage JSON branch extraction: `d['files']['backend/server.py']` OR `d['files']['server.py']` (depends on source path)
 
-```bash
-# Read Overview section
-sed -n '/\[Overview\]/,/\[Types\]/p' implementation_plan.md | cat
+9. **Patch `.coveragerc`** — consider if `source = server` still resolves (it will if `backend/` is on sys.path during the coverage run, which it will be when discovering from `backend/tests/python`). Verify and update if needed.
 
-# Read Types section
-sed -n '/\[Types\]/,/\[Files\]/p' implementation_plan.md | cat
+10. **Patch `Makefile`** — `run:` → `$(PY) backend/server.py`
 
-# Read Files section
-sed -n '/\[Files\]/,/\[Functions\]/p' implementation_plan.md | cat
+11. **Patch `Dockerfile`** — `COPY` + `CMD`:
+    - `COPY requirements.txt ./`
+    - `COPY backend/server.py backend/proxy_handlers.py backend/session_handlers.py backend/memory_handlers.py backend/mcp_handlers.py backend/projects_handlers.py ./backend/`
+    - `COPY frontend/index.html frontend/app.js frontend/styles.css ./frontend/`
+    - `CMD ["python", "backend/server.py"]`
 
-# Read Functions section
-sed -n '/\[Functions\]/,/\[Classes\]/p' implementation_plan.md | cat
+12. **Patch `scripts/security-scan.sh`** — bandit list → `backend/server.py backend/proxy_handlers.py ...`
 
-# Read Classes section
-sed -n '/\[Classes\]/,/\[Dependencies\]/p' implementation_plan.md | cat
+13. **Patch `scripts/pre-commit.sh`** — syntax gates → `frontend/app.js`, `backend/server.py` etc.
 
-# Read Dependencies section
-sed -n '/\[Dependencies\]/,/\[Testing\]/p' implementation_plan.md | cat
+14. **Patch `scripts/mutation-audit.sh`** — `PATHS_TO_MUTATE` → `backend/server.py`
 
-# Read Testing section
-sed -n '/\[Testing\]/,/\[Implementation Order\]/p' implementation_plan.md | cat
+15. **Patch `.github/workflows/tests.yml`** — `py_compile`, `bandit`, discover paths
 
-# Read Implementation Order section
-sed -n '/\[Implementation Order\]/,$p' implementation_plan.md | cat
-```
+16. **Patch `docs/ORGANIZATION.md`** — update file table (three-concern map) with new paths
+
+17. **Patch `docs/ARCHITECTURE.md`** — update directory layout section and module-split reference
+
+18. **Patch `README.md`** — run command to `backend/server.py`
+
+19. **Patch `AGENTS.md`** — layout description
+
+20. **Verify** — run `./run-tests.sh --coverage`, `./scripts/security-scan.sh`, and boot `backend/server.py`
+
+21. **Update backlog + docs** — mark #56 `[x]`, add `CHANGELOG.md` entry
+
+22. **Write Obsidian memory note**

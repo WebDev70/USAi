@@ -1,5 +1,209 @@
 ## [Unreleased]
 
+### Added
+- **UX & UI SME — explicit two-discipline split (#60, docs):** Elevated the
+  existing "Front-End Design (UI/UX)" quality axis into a formal **UX & UI SME**
+  with clearly separated sub-disciplines across all harness documentation:
+  - **UX sub-discipline** (how it works): user-need framing, user-flow mapping,
+    information architecture & placement (cross-checked against `docs/USER_GUIDE.md`),
+    friction audit, and task-completion verification.
+  - **UI sub-discipline** (how it looks): unchanged vanilla CSS, token system,
+    WCAG AA, USWDS/Context7, motion guard, CSS cache-bust rules.
+  - Updated files: `.clinerules/workflows/sme-frontend.md` (UX/UI pre-impl
+    checklists + dual gate tables), `docs/rail-pipeline.md` §3 (updated "Quality axis
+    — UX & UI SME" section), `.continue/rules/ui-ux-design.md` (UX sub-discipline
+    block added), `.continue/checks/ui-ux-review.md` (3 new UX failing criteria:
+    user goal absent, flow undescribed, wrong IA placement).
+  - Directly encodes Self-Improvement Entry 002 (UI control placement / doc-HTML
+    drift) as an automated review criterion.
+  - Spec: `docs/specs/ux-ui-sme-role.md`.
+
+- **Referenced-path existence guard (#59, chore):** Extended `scripts/doc-consistency-check.sh`
+  with **Guard 4** — automatically detects when `.clinerules/` or `docs/tooling/` markdown
+  files reference a `backend/`, `frontend/`, or `scripts/` path that no longer exists on disk.
+  - Glob tokens (`*`) and shell variable tokens (`$`) are skipped to avoid false positives.
+  - Bare directory references (token ending in `/`) are skipped.
+  - 3 new regression tests added to `backend/tests/python/test_scripts.py`
+    (`TestRefPathExistenceGuard`: T-14a, T-14b, T-14c).
+  - Stale reference fixed: `.clinerules/workflows/sme-backend.md` updated to point to
+    `test_dev_deps.py` (correct test file) instead of `test_env_example_sync.py` (non-existent).
+  - Spec: `docs/specs/ref-path-existence-guard.md`.
+
+- **Doc-drift guards (#58, chore):** Extended `scripts/doc-consistency-check.sh` with three
+  deterministic Bash guards so the doc-drift classes fixed manually earlier are now
+  machine-enforced by the existing `cli-check.sh --review` gate and pre-commit hook:
+  - **Guard 1 (Stale-path):** Fails if deprecated flat test paths (`tests/js/`,
+    `tests/python/`, `node --check app.js`, `py_compile server.py`) appear in
+    `.clinerules/` or `docs/tooling/` files.
+  - **Guard 2 (Role-count consistency):** Fails if `The RAIL roles (0–6)` heading is
+    absent from `.clinerules/rail-pipeline.md`, or if conflicting count phrases
+    (`five roles`, `six roles`, `seven roles`) appear in `docs/tooling/` or `AGENTS.md`.
+  - **Guard 3 (Mandatory-gate):** Fails if `optional` appears on the same line as
+    `cli-check.sh --review` in any Cline doc.
+  - 7 new regression tests added to `backend/tests/python/test_scripts.py`
+    (`TestStalePathGuard`, `TestRoleCountGuard`, `TestMandatoryGateGuard`).
+  - Spec: `docs/specs/doc-drift-guards.md`.
+
+### Fixed
+- **RAIL doc drift (chore):** Reconciled all stale test paths (`tests/python/` →
+  `backend/tests/python/`, `tests/js/` → `frontend/tests/js/`) across
+  `.clinerules/rail-pipeline.md`, `spec.md`, `govern.md`, `sme-backend.md`, and
+  `sme-frontend.md`.
+- **loop.md:** Removed duplicated "Continuous Improvement" block; restructured as
+  an ordered five-step checklist (Steps 1–5) with clean "Step 5" memory-note prose.
+- **review.md:** Replaced misleading `cn` fallback note — corrected to accurately
+  describe that `./scripts/cli-check.sh --review` is **fail-closed**: it always
+  attempts the AI review pass (`cn` or `npx @continuedev/cli` fallback) and the
+  full gate fails if the review command fails. Removed incorrect "optional / skip"
+  language that contradicted the script's `set -euo pipefail` behaviour.
+- **docs/specs/doc-drift-guards.md:** Added explanatory note to §4 Guard 3 clarifying
+  the fail-closed policy so the spec's own prose matches the corrected workflow wording.
+
+
+### Docs (2026-07-15 — RAIL doc-drift cleanup)
+- **`.clinerules/rail-pipeline.md`** — Renamed "The six RAIL roles" heading to
+  "The RAIL roles (0–6)" with an explicit note that Role 0 is features-only and
+  the remaining six run on every build. Eliminates conflicting role-count language
+  across the Cline workflow files.
+- **`.clinerules/workflows/build.md`** — Fixed stale test-runner paths throughout:
+  `tests/js/` → `frontend/tests/js/`; `tests/python/` → `backend/tests/python/`
+  (with correct `PYTHONPATH=backend` prefix); `node --check app.js` →
+  `node --check frontend/app.js`; `py_compile server.py` →
+  `py_compile backend/server.py`. Added explicit §3a step to *create* the session
+  memory note before the Red receipt is appended (previously the note was referenced
+  but never defined as needing creation). Renumbered Role 3 sub-sections to remain
+  consistent (3a–3g).
+- **`.clinerules/workflows/review.md`** — Added mandatory §6a gate:
+  `./scripts/cli-check.sh --review` is now the canonical first check-suite step in
+  Cline's `/review` workflow. Renumbered subsequent sub-sections (§6b–§6i) to match.
+  The standalone `./run-tests.sh --coverage` gate is retained as §6c with a note
+  that its values are verified from §6a output.
+- **`.clinerules/workflows/loop.md`** — Clarified that the end-of-loop memory note
+  *appends to* the session file created in `/build` §3a rather than creating a new
+  duplicate note.
+- **`docs/tooling/cline.md`** — Fixed `/build`→`/review` role split in the flow
+  diagram (was "Roles 1–4: Planner, SME, Tester, Security"; now correctly "Roles
+  1–4: Planner→Architect→Developer→Tester" for `/build` and "Roles 5–6:
+  Security→Reviewer/QA" for `/review`). Updated `/review` workflow table entry and
+  "Running QA gates" section to reflect `./scripts/cli-check.sh --review` as the
+  primary gate; added `./scripts/spec-check.sh` to the gate list. Removed stale
+  commented-out optional `cli-check.sh` block; replaced with canonical gate
+  invocation showing all four internal stages.
+
+### Docs (2026-07-08 — /review docs sweep)
+- **`docs/rail-pipeline.md`** — Updated all test-path references from old flat
+  `tests/python/` and `tests/js/` to correct `backend/tests/python/` and
+  `frontend/tests/js/` paths following the backlog #56 directory reorg. Also
+  updated `tests/js-coverage.mjs` layout entry in the tree diagram.
+- **`docs/USER_GUIDE.md`** — Corrected server start command to
+  `.venv/bin/python backend/server.py` (from bare `python server.py`).
+- **`docs/EMBEDDINGS_GUIDE.md`** — Corrected server restart command to
+  `.venv/bin/python backend/server.py`.
+- **`docs/rail-pipeline.md` (IaC table)** — `test_env_example_sync.py` path
+  updated to `backend/tests/python/test_env_example_sync.py` in both the
+  cross-cutting concerns table and the harness-parity table.
+- **`docs/principles.md` §3 (IaC)** — `test_env_example_sync.py` path updated
+  to `backend/tests/python/test_env_example_sync.py`.
+
+
+### Fixed (2026-07-08 — flaky backend test isolation)
+- **`ProxySsrfGuardTests.setUpClass` (`test_server_proxy.py`)** — `test_server_mcp.py`
+  runs before `test_server_proxy.py` in alphabetical discovery order and leaves
+  `_test_allow_loopback: True` in the shared `server.CONFIG` global. The SSRF guard
+  tests then silently bypassed the guard and crashed with `RemoteDisconnected` instead
+  of the expected 502. Fixed by adding `server.CONFIG.pop('_test_allow_loopback', None)`
+  at the top of `ProxySsrfGuardTests.setUpClass` so the loopback bypass is always
+  cleared before the SSRF server boots.
+- **`test_pr2_list_projects_sorted_newest_first` (`test_server_http.py`)** — Two rapid
+  `POST /projects` calls in the same millisecond generated identical IDs
+  (`project_<ms_timestamp>`), causing the second project to overwrite the first on disk.
+  `GET /projects` then returned 1 project instead of 2, failing the assertion.
+  Fixed in `projects_handlers.py` by switching the ID generation to microsecond
+  precision plus a 6-char UUID hex suffix
+  (`project_<µs_timestamp>_<uuid_hex[:6]>`), making IDs collision-proof.
+
+### Fixed (2026-07-08 — _ServerProxy KeyError when launched as backend/server.py)
+- **`_ServerProxy.__getattr__` in all 5 handler mixins** — When the server is launched
+  as `python backend/server.py`, Python registers the module under `__main__` (not
+  `'server'`) in `sys.modules`. The hard-coded `sys.modules['server']` lookup in each
+  mixin's `_ServerProxy.__getattr__` therefore raised `KeyError: 'server'` on the first
+  real request, producing an empty reply and a "Network error: Failed to fetch" in the
+  browser. Fixed by changing the lookup to
+  `sys.modules.get('server') or sys.modules.get('__main__')` in all five files:
+  `proxy_handlers.py`, `session_handlers.py`, `memory_handlers.py`,
+  `mcp_handlers.py`, `projects_handlers.py`. All endpoints (`/sessions`, `/projects`,
+  `/config`, etc.) now respond correctly regardless of how the server is started.
+
+### Refactor (2026-07-06 — frontend/backend directory reorg, backlog #56)
+- **`backend/`** — Moved all Python server modules (`server.py`, `proxy_handlers.py`,
+  `memory_handlers.py`, `session_handlers.py`, `mcp_handlers.py`, `projects_handlers.py`)
+  into `backend/`. `backend/server.py` resolves `STATIC_DIR` to `../frontend` relative
+  to its own directory so it continues to serve the frontend correctly.
+- **`frontend/`** — Moved frontend assets (`index.html`, `app.js`, `styles.css`) into
+  `frontend/`.
+- **`backend/tests/python/`** — Python test files relocated (via `git mv`) from
+  `tests/python/`.
+- **`frontend/tests/js/`** — JS test files relocated (via `git mv`) from `tests/js/`.
+- **Tooling patches** — `run-tests.sh`, `.coveragerc`, `Dockerfile`, `Makefile`,
+  `scripts/security-scan.sh`, `scripts/cli-check.sh` all updated to reference the new
+  paths. `make run` now starts `backend/server.py`.
+- **Docs patches** — `README.md`, `AGENTS.md`, `docs/ORGANIZATION.md`,
+  `.github/workflows/tests.yml` all updated to reference the new `frontend/` and
+  `backend/` paths.
+- **Verification** — 316 tests pass; JS tests green (0 failures); security scan clean;
+  `GET /` returns HTTP 200. Pre-existing failures (SSRF SSL cert + project-sort +
+  reasoning-field) confirmed identical to those on the commit before this change.
+
+### Changed (2026-07-05 — doc sync: model catalogue references)
+- **`docs/USER_GUIDE.md` §4 "Built-in model choices"** — Updated the provider list to match the current gateway catalogue (Google: 2.5 Flash/Flash-Lite/Pro + 2.0 Flash; Anthropic: Haiku/Sonnet/Opus 4.x; OpenAI: GPT-5.2/5.4/5.5; Meta: Llama 4 Maverick; Cohere: English v3). Removed stale entries (Gemini 2.0 Pro, Claude 3.5/3.7/Sonnet 4/Opus 4, Llama 3.2 11B).
+- **`README.md` sample `.env`** — Changed `DEFAULT_MODEL=claude_3_haiku` → `claude_4_5_haiku` to match a valid current gateway ID.
+- **`backlog.md` model-routing note** — Updated tier candidates to `claude_4_8_opus` / `claude_4_6_sonnet` / `claude_4_5_haiku`.
+
+### Changed (2026-07-05 — model dropdown refresh)
+- **`index.html` model list** — Updated `#modelSelect` to match the current gateway model catalogue. Removed stale IDs (`claude_3_haiku`, `claude_sonnet_3_7`, `claude_sonnet_4`, `claude_opus_4`, `llama3211b`, `gemini-2.0-pro`). Added new groups and correct IDs:
+  - **Google**: `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-2.5-pro`, `gemini-2.0-flash`
+  - **Anthropic**: `claude_4_5_haiku`, `claude_4_5_sonnet`, `claude_4_6_sonnet`, `claude_4_5_opus`, `claude_4_7_opus`, `claude_4_8_opus`
+  - **OpenAI** *(new group)*: `gpt-5.2-latest-guardrails-defaultv2`, `gpt-5.4-latest-guardrails-defaultv2`, `gpt-5.5-latest-guardrails-defaultv2`
+  - **Meta**: `llama_4_maverick`
+  - **Cohere** *(new group)*: `cohere_english_v3`
+  - `TIER_MAP` fallbacks and `MODEL_PARAM_EXCLUSIONS` patterns were already correct — no changes needed. 105 JS tests pass.
+
+### Fixed (2026-07-05 — circular-import startup crash, #45 regression)
+- **Circular-import startup crash** — `server.py` crashed immediately on start when
+  run as `python server.py` because each handler-mixin module (`proxy_handlers`,
+  `memory_handlers`, `session_handlers`, `mcp_handlers`, `projects_handlers`) imported
+  `server` at module-import time, hitting Python's partially-initialised module object.
+  Fixed by replacing the top-level `import server as _server` in every handler file
+  with a lazy `_ServerProxy` wrapper that defers attribute lookup to
+  `sys.modules['server']` at call time. The server now starts cleanly.
+- **`server.py` `__main__` — respects `HOST`/`PORT` env vars** — Added
+  `os.getenv('HOST', '127.0.0.1')` / `os.getenv('PORT', '8000')` reads in the
+  `if __name__ == '__main__'` block so callers and CI test subprocesses can bind to
+  a free port without modifying source.
+
+### Tests (2026-07-05 — startup regression test)
+- **`tests/python/test_server_startup.py`** (new) — Subprocess-level regression test
+  (`TestServerSubprocessStartup.test_server_starts_without_import_error`) launches
+  `server.py` as a real subprocess with `PYTHONUNBUFFERED=1`, binds to an
+  OS-assigned free port, and asserts the "Serving on" startup banner is printed
+  within 12 s. Catches the circular-import class of bug that in-process tests cannot
+  detect. 1 new test; completes in ~0.4 s.
+
+### Refactor / Architecture
+- **`server.py` module split — backlog #45** — Split the 1,871-line `server.py` (BLOCKING-02 governance) into 6 focused Python modules using mixin classes with ZERO behavior changes. All 315 existing tests continue to pass without modification.
+  - `server.py` reduced to ~630 lines (scaffold, config, routing, helpers, entrypoint)
+  - `proxy_handlers.py` — `ProxyHandlersMixin` (~430 lines): `_proxy_api`, `_get_context7`, `_post_embeddings`, `_get_raw_responses`, `_delete_raw_responses`
+  - `session_handlers.py` — `SessionHandlersMixin` (~400 lines): 14 session/cache/log handler methods
+  - `memory_handlers.py` — `MemoryHandlersMixin` (~265 lines): 5 Obsidian memory handler methods
+  - `mcp_handlers.py` — `McpHandlersMixin` (~127 lines): 5 MCP bridge handler methods
+  - `projects_handlers.py` — `ProjectsHandlersMixin` (~178 lines): 5 projects CRUD handler methods
+  - Class MRO: `ProxyHandlersMixin, SessionHandlersMixin, MemoryHandlersMixin, McpHandlersMixin, ProjectsHandlersMixin, SimpleHTTPRequestHandler`
+  - All module-level names (`CONFIG`, `SESSIONS_DIR`, `add_log`, etc.) remain in `server.py` — no test files modified
+  - `run-tests.sh` syntax gate updated to include all 5 new handler files
+  - `scripts/security-scan.sh` bandit scan updated to cover all 6 Python modules
+  - Spec: `docs/specs/server-module-split.md`
+  - Coverage: line 92.6% (≥90%), branch 87.5% (≥80%)
+
 ### Process / Tooling
 - **RAIL pipeline — SHK (Senior Housekeeping & Hygiene Steward) role added** — Closed the housekeeping gap in the RAIL pipeline by adding a dedicated Housekeeping SME role at three levels of the process:
   - **Per-item (lightweight):** `/review §6h` leave-no-trace gate added to `review.md` — checks spec Status header, scratch files, untracked TODOs, and CHANGELOG freshness after every build.

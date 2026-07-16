@@ -121,7 +121,7 @@ handling) see [`docs/rail-pipeline.md` §3](docs/rail-pipeline.md).
 
 ```bash
 # Start (MUST use the venv so python-dotenv is available)
-.venv/bin/python server.py        # then open http://localhost:8000
+.venv/bin/python backend/server.py        # then open http://localhost:8000
 
 # Stop / free the port
 lsof -ti:8000 | xargs kill
@@ -140,10 +140,10 @@ Validate changes with the zero-dependency test suite:
 Or run the pieces individually:
 
 ```bash
-node --check app.js                                            # JS syntax
-python3 -m py_compile server.py                                # Python syntax
-node --test $(find tests/js -name '*.test.mjs')                # JS unit tests
-.venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'   # Python unit tests
+node --check frontend/app.js                                                        # JS syntax
+python3 -m py_compile backend/server.py                                            # Python syntax
+node --test $(find frontend/tests/js -name '*.test.mjs')                           # JS unit tests
+PYTHONPATH=backend .venv/bin/python -m unittest discover -s backend/tests/python -p 'test_*.py'  # Python unit tests
 ```
 
 ---

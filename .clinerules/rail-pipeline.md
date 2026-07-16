@@ -30,10 +30,12 @@ Done (tests green, security scan clean, docs updated, memory note written)
 
 ---
 
-## The six RAIL roles (apply in order)
+## The RAIL roles (0–6) (apply in order)
 
-Each role has its own Execute → Review → Improve → Approve sub-cycle before
-handing off to the next.
+There are **seven roles numbered 0–6**. Role 0 (Product Owner) applies to features
+only and is skipped for bugfixes, chores, and refactors. The remaining six roles
+run on every build. Each role has its own Execute → Review → Improve → Approve
+sub-cycle before handing off to the next.
 
 ### 0. Product Owner *(features only — skip for bugfix/chore/refactor)*
 - Confirm a **Definition of Ready** before planning: user story, testable
@@ -65,7 +67,7 @@ handing off to the next.
   "Backlog lifecycle" below).
 
 ### 4. Tester
-- Write/update tests in `tests/js/*.test.mjs` or `tests/python/test_*.py`.
+- Write/update tests in `frontend/tests/js/*.test.mjs` or `backend/tests/python/test_*.py`.
 - Run the full suite + coverage gates:
   ```bash
   ./run-tests.sh --coverage
@@ -163,7 +165,7 @@ As a <user> I want <goal> so that <value>.
 ## 3. Affected files
 - `file.py` — change description
 - `file.js` — change description
-- `tests/python/test_*.py` — new/updated tests
+- `backend/tests/python/test_*.py` — new/updated tests
 
 ## 4. Technical approach
 Key functions/endpoints/components to add or change.
@@ -172,7 +174,7 @@ Conventions that apply (tool gating, path-traversal guards, CSS bump, etc.).
 ## 5. Test plan
 | Test | File | Description |
 |------|------|-------------|
-| ... | tests/python/test_server.py | ... |
+| ... | backend/tests/python/test_server.py | ... |
 
 ## 6. Docs to update
 - [ ] CHANGELOG.md

@@ -177,8 +177,8 @@ As a <user> I want <goal> so that <value>.
 | `app.js` | <description> |
 | `index.html` | <description — or "none"> |
 | `styles.css` | <description — or "none"> |
-| `tests/python/test_*.py` | <new/updated tests> |
-| `tests/js/app.test.mjs` | <new/updated tests — or "none"> |
+| `backend/tests/python/test_*.py` | <new/updated tests> |
+| `frontend/tests/js/app.test.mjs` | <new/updated tests — or "none"> |
 | `docs/...` | <spec + any doc updates> |
 
 ---
@@ -214,9 +214,9 @@ As a <user> I want <goal> so that <value>.
 
 | # | Test description | File | Type |
 |---|-----------------|------|------|
-| T-1 | <description> | `tests/python/test_server.py` | unit |
-| T-2 | <description> | `tests/python/test_server_http.py` | integration |
-| T-3 | <description> | `tests/js/app.test.mjs` | unit |
+| T-1 | <description> | `backend/tests/python/test_server.py` | unit |
+| T-2 | <description> | `backend/tests/python/test_server_http.py` | integration |
+| T-3 | <description> | `frontend/tests/js/app.test.mjs` | unit |
 
 **TDD order:** write these tests first (Red) → implement (Green) → refactor.
 

@@ -373,12 +373,25 @@ def _setup_convention_tree(tmp_dir, canonical_content, extra_files):
 
     tmp_dir/
       docs/rail-pipeline.md          ← canonical source (always written)
+      .clinerules/rail-pipeline.md   ← always contains the canonical role phrase
       <extra_files>                   ← files that may duplicate conventions
     """
     canonical_path = os.path.join(tmp_dir, "docs", "rail-pipeline.md")
     os.makedirs(os.path.dirname(canonical_path), exist_ok=True)
     with open(canonical_path, "w") as fh:
         fh.write(canonical_content)
+
+    # Always create a .clinerules/rail-pipeline.md with the canonical phrase so
+    # Guard 2 Sub-check A passes (unless the caller overrides it via extra_files).
+    clinerules_path = os.path.join(tmp_dir, ".clinerules", "rail-pipeline.md")
+    os.makedirs(os.path.dirname(clinerules_path), exist_ok=True)
+    if ".clinerules/rail-pipeline.md" not in extra_files:
+        with open(clinerules_path, "w") as fh:
+            fh.write(
+                "# RAIL — Cline always-on rule\n"
+                "The RAIL roles (0-6) apply in order.\n"
+                "See docs/rail-pipeline.md for the canonical convention list.\n"
+            )
 
     for rel_path, content in extra_files.items():
         abs_path = os.path.join(tmp_dir, rel_path)
@@ -417,8 +430,10 @@ class TestDocConsistencyPass(unittest.TestCase):
                         # Cline reference
                         See [coding conventions](../rail-pipeline.md#3-conventions).
                     """),
+                    # Must include the canonical role phrase or Guard 2 fires
                     ".clinerules/rail-pipeline.md": textwrap.dedent("""\
                         # RAIL
+                        The RAIL roles (0-6) apply in order.
                         See docs/rail-pipeline.md for the convention list.
                     """),
                 },
@@ -676,6 +691,310 @@ class TestJsSentinelMatchesOutput(unittest.TestCase):
             sentinel_pct, reported_pct, places=1,
             msg=f"Sentinel {sentinel_pct} != reported {reported_pct}",
         )
+
+
+# ---------------------------------------------------------------------------
+# Item #58 — Doc-drift guard tests (T-11, T-12, T-13)
+# Tests for the three new guard blocks in scripts/doc-consistency-check.sh
+# ---------------------------------------------------------------------------
+
+def _setup_drift_tree(tmp_dir, extra_files):
+    """
+    Build a minimal doc tree for doc-drift guard testing.
+
+    Always creates:
+      docs/rail-pipeline.md  — canonical source with the RAIL roles (0-6) phrase
+      docs/tooling/cline.md  — minimal reference (no duplication)
+      .clinerules/rail-pipeline.md — minimal reference (no duplication)
+      AGENTS.md              — minimal reference (no duplication)
+
+    extra_files: dict of rel_path → content overrides (merged on top).
+    """
+    base_files = {
+        "docs/rail-pipeline.md": textwrap.dedent("""\
+            # RAIL Pipeline
+            The RAIL roles (0-6) apply in order.
+            ## 3. Conventions
+            - CSS changes bump `styles.css?v=N` in index.html.
+            - SSRF guard: `is_safe_upstream_url` in server.py.
+            - New tools go in `TOOL_REGISTRY`.
+            - Gate via `getEnabledTools()`.
+            - New endpoints add a `_handler`.
+            Run `./scripts/cli-check.sh --review` before merging.
+        """),
+        "docs/tooling/cline.md": textwrap.dedent("""\
+            # Cline tooling reference
+            See [conventions](../rail-pipeline.md).
+        """),
+        ".clinerules/rail-pipeline.md": textwrap.dedent("""\
+            # RAIL — Cline always-on rule
+            The RAIL roles (0-6) apply in order.
+            See docs/rail-pipeline.md for the canonical convention list.
+        """),
+        "AGENTS.md": textwrap.dedent("""\
+            # AGENTS
+            See [conventions](docs/rail-pipeline.md).
+        """),
+    }
+    # Apply overrides from extra_files on top of base
+    merged = {**base_files, **extra_files}
+    for rel_path, content in merged.items():
+        abs_path = os.path.join(tmp_dir, rel_path)
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        with open(abs_path, "w") as fh:
+            fh.write(content)
+
+
+# ---------------------------------------------------------------------------
+# T-11: Stale-path guard
+# ---------------------------------------------------------------------------
+
+class TestStalePathGuard(unittest.TestCase):
+    """
+    T-11a/b: AC-1 — doc-consistency-check.sh exits non-zero if any deprecated
+    flat test path (tests/js/, tests/python/, 'node --check app.js',
+    'py_compile server.py') appears verbatim in .clinerules/ or docs/tooling/
+    files.
+    """
+
+    def test_fails_when_stale_path_in_clinerules(self):
+        """T-11a: stale flat path 'tests/js/' in .clinerules/workflows/build.md → exit non-zero."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                    # Build workflow
+                    Run: node --test $(find tests/js/ -name '*.test.mjs')
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (stale 'tests/js/' in .clinerules/), got {rc}.\n{out}",
+            )
+            self.assertIn("tests/js/", out,
+                          msg=f"Expected stale path in output:\n{out}")
+
+    def test_passes_when_correct_paths_used(self):
+        """T-11b: only correct paths 'frontend/tests/js/' and 'backend/tests/python/' → exit 0."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                "docs/tooling/cline.md": textwrap.dedent("""\
+                    # Cline tooling reference
+                    See [conventions](../rail-pipeline.md).
+                """),
+                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                    # Build workflow
+                    Run: node --test $(find frontend/tests/js/ -name '*.test.mjs')
+                    Run: python -m unittest discover -s backend/tests/python
+                    Run: node --check frontend/app.js
+                    Run: python3 -m py_compile backend/server.py
+                """),
+            })
+            # Create all referenced paths so Guard 4 does not fire
+            os.makedirs(os.path.join(tmp, "frontend", "tests", "js"), exist_ok=True)
+            os.makedirs(os.path.join(tmp, "backend", "tests", "python"), exist_ok=True)
+            with open(os.path.join(tmp, "frontend", "app.js"), "w") as fh:
+                fh.write("// app\n")
+            with open(os.path.join(tmp, "backend", "server.py"), "w") as fh:
+                fh.write("# server\n")
+            rc, out = _run_doc_consistency(tmp)
+            self.assertEqual(
+                rc, 0,
+                msg=f"Expected exit 0 (correct paths only), got {rc}.\n{out}",
+            )
+
+
+# ---------------------------------------------------------------------------
+# T-12: Role-count consistency guard
+# ---------------------------------------------------------------------------
+
+class TestRoleCountGuard(unittest.TestCase):
+    """
+    T-12a/b/c: AC-3 — doc-consistency-check.sh exits non-zero if the canonical
+    phrase 'The RAIL roles (0-6)' is absent from .clinerules/rail-pipeline.md,
+    or if a conflicting count phrase (five roles / six roles / seven roles)
+    appears in any enforcing file.
+    """
+
+    def test_fails_when_canonical_phrase_missing(self):
+        """T-12a: .clinerules/rail-pipeline.md lacks 'The RAIL roles (0' prefix → exit non-zero."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                # Override with a version that lacks 'The RAIL roles (0' entirely
+                ".clinerules/rail-pipeline.md": textwrap.dedent("""\
+                    # RAIL — Cline always-on rule
+                    Run the pipeline roles in order.
+                    See docs/rail-pipeline.md for the canonical convention list.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (canonical phrase missing), got {rc}.\n{out}",
+            )
+
+    def test_fails_when_conflicting_count_present(self):
+        """T-12b: 'six roles' in docs/tooling/cline.md → exit non-zero."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                "docs/tooling/cline.md": textwrap.dedent("""\
+                    # Cline tooling reference
+                    There are six roles in the RAIL pipeline.
+                    See [conventions](../rail-pipeline.md).
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit ('six roles' conflict in docs/tooling/cline.md), got {rc}.\n{out}",
+            )
+            self.assertIn("six roles", out,
+                          msg=f"Expected 'six roles' in output:\n{out}")
+
+    def test_passes_when_canonical_phrase_present_no_conflict(self):
+        """T-12c: correct canonical phrase present, no conflicting count → exit 0."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {})
+            rc, out = _run_doc_consistency(tmp)
+            self.assertEqual(
+                rc, 0,
+                msg=f"Expected exit 0 (canonical phrase present, no conflict), got {rc}.\n{out}",
+            )
+
+
+# ---------------------------------------------------------------------------
+# T-13: Mandatory-gate guard
+# ---------------------------------------------------------------------------
+
+class TestMandatoryGateGuard(unittest.TestCase):
+    """
+    T-13a/b: AC-4 — doc-consistency-check.sh exits non-zero if the word
+    'optional' appears on the same line as 'cli-check.sh --review' in any
+    Cline doc (.clinerules/ or docs/tooling/cline.md).
+    """
+
+    def test_fails_when_optional_on_same_line_as_cli_check(self):
+        """T-13a: 'optional' on same line as 'cli-check.sh --review' → exit non-zero."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                "docs/tooling/cline.md": textwrap.dedent("""\
+                    # Cline tooling reference
+                    Running ./scripts/cli-check.sh --review is optional before merging.
+                    See [conventions](../rail-pipeline.md).
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit ('optional' near cli-check), got {rc}.\n{out}",
+            )
+
+    def test_passes_when_cli_check_not_described_as_optional(self):
+        """T-13b: 'cli-check.sh --review' without 'optional' on same line → exit 0."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                "docs/tooling/cline.md": textwrap.dedent("""\
+                    # Cline tooling reference
+                    See [conventions](../rail-pipeline.md).
+                    Run `./scripts/cli-check.sh --review` to gate a PR.
+                """),
+            })
+            # Create scripts/cli-check.sh so Guard 4 does not fire
+            scripts_dir = os.path.join(tmp, "scripts")
+            os.makedirs(scripts_dir, exist_ok=True)
+            with open(os.path.join(scripts_dir, "cli-check.sh"), "w") as fh:
+                fh.write("#!/usr/bin/env bash\n")
+            rc, out = _run_doc_consistency(tmp)
+            self.assertEqual(
+                rc, 0,
+                msg=f"Expected exit 0 (cli-check not optional), got {rc}.\n{out}",
+            )
+
+
+# ---------------------------------------------------------------------------
+# T-14: Referenced-path existence guard (AC-2, item #59)
+# ---------------------------------------------------------------------------
+
+class TestRefPathExistenceGuard(unittest.TestCase):
+    """
+    T-14a/b/c: AC-2 — doc-consistency-check.sh exits non-zero when a .md file
+    in .clinerules/ or docs/tooling/ references a backend/, frontend/, or
+    scripts/ path that does not exist on disk.
+    """
+
+    def test_fails_when_referenced_backend_path_missing(self):
+        """T-14a: backend/nonexistent/path.py referenced but not on disk → exit non-zero."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                    # Build workflow
+                    Run: PYTHONPATH=backend .venv/bin/python -m unittest discover \
+-s backend/tests/python -p 'test_*.py'
+                    See also backend/nonexistent/path.py for details.
+                """),
+            })
+            # Create the real path that _setup_drift_tree mentions so only
+            # backend/nonexistent/path.py is missing
+            os.makedirs(os.path.join(tmp, "backend", "tests", "python"), exist_ok=True)
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (missing backend path), got {rc}.\n{out}",
+            )
+            self.assertIn("backend/nonexistent/path.py", out,
+                          msg=f"Expected missing path in output:\n{out}")
+
+    def test_passes_when_all_referenced_paths_exist(self):
+        """T-14b: all backend/, frontend/, scripts/ references resolve → exit 0."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                # Override docs/tooling/cline.md to only reference paths we create
+                "docs/tooling/cline.md": textwrap.dedent("""\
+                    # Cline tooling reference
+                    See [conventions](../rail-pipeline.md).
+                    Run `./scripts/doc-consistency-check.sh` to gate a PR.
+                """),
+                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                    # Build workflow
+                    Run: node --test $(find frontend/tests/js/ -name '*.test.mjs')
+                    Run: PYTHONPATH=backend .venv/bin/python -m unittest discover \
+-s backend/tests/python
+                    Gate: ./scripts/doc-consistency-check.sh
+                """),
+            })
+            # Create the real directories and files so the references resolve
+            os.makedirs(os.path.join(tmp, "frontend", "tests", "js"), exist_ok=True)
+            os.makedirs(os.path.join(tmp, "backend", "tests", "python"), exist_ok=True)
+            scripts_dir = os.path.join(tmp, "scripts")
+            os.makedirs(scripts_dir, exist_ok=True)
+            with open(os.path.join(scripts_dir, "doc-consistency-check.sh"), "w") as fh:
+                fh.write("#!/usr/bin/env bash\n")
+            rc, out = _run_doc_consistency(tmp)
+            self.assertEqual(
+                rc, 0,
+                msg=f"Expected exit 0 (all referenced paths exist), got {rc}.\n{out}",
+            )
+
+    def test_skips_glob_tokens_no_false_positive(self):
+        """T-14c: glob pattern 'backend/tests/*.py' skipped (contains *) → exit 0."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                # Override docs/tooling/cline.md to avoid any scripts/ references
+                "docs/tooling/cline.md": textwrap.dedent("""\
+                    # Cline tooling reference
+                    See [conventions](../rail-pipeline.md).
+                """),
+                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                    # Build workflow
+                    Run: find backend/tests/*.py  (glob — not a real path)
+                    Run: scripts/$VAR/helper.sh   (shell variable — skip)
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertEqual(
+                rc, 0,
+                msg=f"Expected exit 0 (glob/variable tokens skipped), got {rc}.\n{out}",
+            )
 
 
 if __name__ == "__main__":

@@ -76,7 +76,7 @@ steps a human must remember:
 - **`Makefile`** provides one-word entry points (`make run`, `make test`,
   `make scan`, `make check`) so the same commands work locally and in CI.
 - **Config is code and validated:** `.env.example` is the declarative contract for
-  configuration, and a test (`tests/python/test_env_example_sync.py`) fails if it
+  configuration, and a test (`backend/tests/python/test_env_example_sync.py`) fails if it
   drifts from what `load_config()` actually reads. No hidden/undocumented config.
 
 ---

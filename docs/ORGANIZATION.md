@@ -30,10 +30,10 @@ be confused.
 
 | File / Directory | Role |
 |------------------|------|
-| `index.html` | Static chat UI |
-| `app.js` | Browser logic (model selection, streaming, tools, memory) |
-| `styles.css` | UI styling |
-| `server.py` | Python stdlib backend — API proxy + local persistence endpoints |
+| `frontend/index.html` | Static chat UI |
+| `frontend/app.js` | Browser logic (model selection, streaming, tools, memory) |
+| `frontend/styles.css` | UI styling |
+| `backend/server.py` | Python stdlib backend — API proxy + local persistence endpoints |
 | `requirements.txt` | Python runtime dependency (`python-dotenv`) |
 | `Dockerfile` / `docker-compose.yml` | Container packaging |
 | `Makefile` | One-word entry points (`run`, `test`, `scan`, `check`, …) |
@@ -180,7 +180,7 @@ Cline `/spec`→`/loop`) lives in its own config directory.
 
 | What you're adding | Where it goes |
 |--------------------|--------------|
-| A new feature / bug fix in the app | `index.html`, `app.js`, `server.py`, `styles.css`, `tests/` |
+| A new feature / bug fix in the app | `frontend/index.html`, `frontend/app.js`, `backend/server.py`, `frontend/styles.css`, `frontend/tests/js/`, `backend/tests/python/` |
 | A new Continue rule (behavioral guidance) | `.continue/rules/` |
 | A new Continue QA check | `.continue/checks/` |
 | A new Continue agent mode | `.continue/agents/` |

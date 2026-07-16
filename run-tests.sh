@@ -34,8 +34,8 @@ PY=".venv/bin/python"
 [ -x "$PY" ] || PY="python3"
 
 echo "── Syntax gates ───────────────────────────────────────────"
-node --check app.js
-"$PY" -m py_compile server.py
+node --check frontend/app.js
+"$PY" -m py_compile backend/server.py backend/proxy_handlers.py backend/session_handlers.py backend/memory_handlers.py backend/mcp_handlers.py backend/projects_handlers.py
 echo "  ✓ syntax OK"
 
 if [ "$COVERAGE" -eq 1 ]; then
@@ -53,23 +53,9 @@ if [ "$COVERAGE" -eq 1 ]; then
   #
   # SSL-context isolation note (#43 — backlog ADVISORY-03):
   #   Two test classes in test_server_proxy.py are sensitive to CONFIG state
-  #   set by other classes in the same discover batch:
-  #     • ProxySsrfGuardTests      — sets base_url to a private IP (no _test_allow_loopback)
-  #     • ProxyIncrementalStreamingTests — uses a SlowStream upstream + raw socket timing
-  #   When these share a discover pass with classes that mutate CONFIG (e.g. those that
-  #   set '_test_allow_loopback': True), tearDownClass execution order can leave CONFIG
-  #   polluted, causing intermittent failures.
-  #
-  #   WORKAROUND (if you hit failures): run the two sensitive classes separately and
-  #   merge their coverage with --append:
-  #     $PY -m coverage run --branch --source=server -m unittest \
-  #       tests.python.test_server_proxy.ProxySsrfGuardTests \
-  #       tests.python.test_server_proxy.ProxyIncrementalStreamingTests
-  #     $PY -m coverage run --branch --source=server --append -m unittest discover \
-  #       -s tests/python -p 'test_*.py'
-  #   The combined discover below passes reliably in most environments; if you see
-  #   intermittent proxy failures, switch to the two-pass form above.
-  "$PY" -m coverage run --branch --source=server -m unittest discover -s tests/python -p 'test_*.py'
+  #   set by other classes in the same discover batch.
+  #   WORKAROUND: run the two sensitive classes separately if intermittent failures occur.
+  PYTHONPATH="$(pwd)/backend" "$PY" -m coverage run --branch --source=server -m unittest discover -s backend/tests/python -p 'test_*.py'
   "$PY" -m coverage report -m
   "$PY" -m coverage report --fail-under="$PY_MIN" >/dev/null \
     && echo "  ✓ server.py line coverage ≥ ${PY_MIN}%" \
@@ -83,7 +69,7 @@ if [ "$COVERAGE" -eq 1 ]; then
   PY_BRANCH_PCT=$("$PY" -c "
 import json, sys
 d = json.load(open('$COVERAGE_JSON'))
-s = d['files']['server.py']['summary']
+s = d['files']['backend/server.py']['summary']
 nb = s['num_branches']
 cb = s['covered_branches']
 pct = (cb / nb * 100) if nb > 0 else 100.0
@@ -100,9 +86,6 @@ print('%.2f' % pct)
 
   # --- Ratchet guard (RAIL Phase 2 / #37 fix) ---
   # Fail if any threshold dropped below the committed high-water mark.
-  # js-coverage.mjs writes the LIVE branch % to a sentinel file (/tmp/usai-js-branch-pct)
-  # so we can pass the actual measured value to ratchet-check.sh.
-  # Fallback to $JS_MIN only if the sentinel wasn't written (e.g. Node < 22 skip).
   JS_SENTINEL="/tmp/usai-js-branch-pct"
   if [ -f "$JS_SENTINEL" ]; then
     JS_BRANCH_LIVE=$(cat "$JS_SENTINEL")
@@ -118,18 +101,18 @@ print('%.2f' % pct)
 else
   echo "── JS unit tests (node --test) ────────────────────────────"
   # Pure-helper unit tests (no jsdom). Behavior tests run separately below.
-  node --test $(find tests/js -name '*.test.mjs' ! -name 'app.behavior.test.mjs')
+  node --test $(find frontend/tests/js -name '*.test.mjs' ! -name 'app.behavior.test.mjs')
 
   echo "── JS behavior tests (jsdom, dev-only) ────────────────────"
   if [ -d "node_modules/jsdom" ]; then
-    node --test tests/js/app.behavior.test.mjs
+    node --test frontend/tests/js/app.behavior.test.mjs
   else
     echo "  ⚠ jsdom not installed — skipping behavior tests."
     echo "    Run: npm install  (or: make dev-setup)"
   fi
 
   echo "── Python unit/integration tests (unittest) ──────────────"
-  "$PY" -m unittest discover -s tests/python -p 'test_*.py'
+  PYTHONPATH="$(pwd)/backend" "$PY" -m unittest discover -s backend/tests/python -p 'test_*.py'
 fi
 
 echo "── All checks passed ✓ ────────────────────────────────────"

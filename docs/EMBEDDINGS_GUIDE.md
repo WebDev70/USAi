@@ -149,7 +149,7 @@ EMBED_INPUT_TYPE=search_document
 
 ```bash
 # Stop the current server (Ctrl+C), then:
-.venv/bin/python server.py
+.venv/bin/python backend/server.py
 ```
 
 ### Step 4 — Verify

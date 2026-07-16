@@ -1,13 +1,33 @@
 ---
 name: UI/UX Design Review
-description: Frontend changes stay accessible, responsive, token-driven, and dependency-free
+description: Frontend changes stay accessible, responsive, token-driven, dependency-free, and UX-sound
 ---
 
-Review this change for **UI/UX quality and accessibility**, but only when it
+Review this change for **UX & UI quality and accessibility**, but only when it
 touches `index.html` or `styles.css` (per `.continue/rules/ui-ux-design.md`). If the
 change doesn't touch the frontend, pass.
 
-Flag as **failing** if any of these are true:
+Flag as **failing** if any of the following are true:
+
+---
+
+## UX quality failures
+
+- **User goal absent:** an interactive element or new control was added with no
+  stated user need — the spec, comment, or PR description cannot answer *"which user
+  task does this enable?"*
+- **Flow undescribed for multi-step interactions:** a new dialog, settings sequence,
+  or multi-step workflow was added with no sentence-level user flow (e.g. "user
+  clicks X → Y appears → user confirms → Z"). The flow does not need to be a
+  wireframe, but it must exist somewhere (spec §4, code comment, or PR description).
+- **Wrong IA placement:** a new control was placed in a settings or UI section that
+  does not match its conceptual function (e.g. a file-retrieval toggle placed in
+  MCP & Plugins, or an appearance option buried in a data section) — and no
+  cross-check was made against `docs/USER_GUIDE.md` section headings.
+
+---
+
+## UI quality failures
 
 - **New dependency / build step / framework** was introduced for the frontend
   (Tailwind, React, shadcn, icon packages, a CSS bundler, etc.). The frontend must
@@ -32,6 +52,8 @@ Flag as **failing** if any of these are true:
 - **Responsiveness broken:** the change is likely to break the ≤768px / ≤640px
   layouts, the collapsible sidebar drawer, the composer toolbar, or cause obvious
   layout shift.
+
+---
 
 When non-trivial design choices were made, the change should reference the guidance
 it followed (e.g. **USWDS** via Context7, or a specific ARIA/WCAG pattern). Note its

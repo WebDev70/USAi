@@ -53,9 +53,34 @@ If any item fails: add it to the Gap List (§ below) and stop further gates.
 
 ## Role 6 — Reviewer / QA (spec vs. build diff + check gates)
 
-### 6a. Spec compliance check
+### 6a. Full check-suite gate (mandatory)
 
-Run the machine-enforced spec↔build checker first — its output replaces the
+Run the full Cline check suite *before* the spec-compliance review — this is
+the canonical QA gate for Cline's `/review`:
+
+```bash
+./scripts/cli-check.sh --review
+```
+
+This runs: `./run-tests.sh --coverage` (syntax + tests + coverage gates) +
+`./scripts/security-scan.sh --strict` + `./scripts/doc-consistency-check.sh` +
+the `cn review` AI review pass against all `.continue/checks/*.md` criteria.
+
+| cli-check.sh result | Action |
+|---|---|
+| Exit 0 | ✅ Full check suite — PASS; proceed to spec compliance checks below |
+| Exit non-zero (any stage) | **FAIL** — add to Gap List, do not proceed to spec checks |
+
+> **Note:** `./scripts/cli-check.sh --review` **always attempts the AI review** as part
+> of the full gate, using `cn` (Continue CLI) if available, or an `npx @continuedev/cli`
+> fallback if `cn` is not on PATH. Because the script runs under `set -euo pipefail`, the
+> full `--review` gate **fails if the AI review command fails** — there is no skip path.
+> To control which CLI is used, pre-install `cn` (`npm i -g @continuedev/cli`) or set the
+> `CN_CMD` env var to override the default.
+
+### 6b. Spec compliance check
+
+Run the machine-enforced spec↔build checker next — its output replaces the
 manual table scan for §3 and §5:
 
 ```bash
@@ -80,18 +105,17 @@ After the script passes (exit 0), manually verify the remaining items:
 | Tests written first (TDD — Red receipt in memory note)? | ✅ / ❌ | |
 | No out-of-scope code added? | ✅ / ❌ | |
 
-### 6b. Test suite gate
+### 6c. Test suite gate
 
-```bash
-./run-tests.sh --coverage
-```
+> Note: `./run-tests.sh --coverage` is already run as part of `./scripts/cli-check.sh --review`
+> above (§6a). This gate confirms the reported values meet the thresholds:
 
-Pass criteria:
+Pass criteria (verified from §6a output):
 - All tests green (zero failures)
 - `server.py` ≥ **90%** line coverage
 - JS exported helpers ≥ **70%** branch coverage
 
-### 6c. Documentation gate
+### 6d. Documentation gate
 
 Cross-check spec §6 (Docs to update):
 - [ ] `CHANGELOG.md` updated under `[Unreleased]`
@@ -113,7 +137,7 @@ Cross-check spec §6 (Docs to update):
   Completed table. If absent: emit `GAP-N [docs]: scrum product-backlog.md not updated
   — move item to Completed table.`
 
-### 6d. Acceptance criteria gate
+### 6e. Acceptance criteria gate
 
 From spec §2, verify each acceptance criterion:
 
@@ -122,7 +146,7 @@ From spec §2, verify each acceptance criterion:
 | AC-1 | <test name or observable behavior> | ✅ / ❌ |
 | AC-2 | ... | ✅ / ❌ |
 
-### 6e. USAi convention gate
+### 6f. USAi convention gate
 
 | Convention | Compliant? |
 |---|---|
@@ -134,15 +158,15 @@ From spec §2, verify each acceptance criterion:
 | CSS change bumps `styles.css?v=N` | ✅ / N/A / ❌ |
 | Comments explain *why* | ✅ / ❌ |
 
-> **§6e-BE / §6e-FE / §6e-DOCS:** When the spec touches domain-specific files,
+> **§6f-BE / §6f-FE / §6f-DOCS:** When the spec touches domain-specific files,
 > the relevant SME mandatory gates apply within this section:
-> - **§6e-BE** (backend): re-run the "Mandatory back-end gates" table from `sme-backend.md`
-> - **§6e-FE** (frontend): re-run the "Mandatory front-end gates" table from `sme-frontend.md`
-> - **§6e-DOCS** (docs/memory): re-run the "Mandatory documentation gates" table from `sme-docs.md`
+> - **§6f-BE** (backend): re-run the "Mandatory back-end gates" table from `sme-backend.md`
+> - **§6f-FE** (frontend): re-run the "Mandatory front-end gates" table from `sme-frontend.md`
+> - **§6f-DOCS** (docs/memory): re-run the "Mandatory documentation gates" table from `sme-docs.md`
 >
 > If the spec does not touch the domain, mark the subsection N/A.
 
-### 6f. Shift-left governance findings gate (§4b)
+### 6g. Shift-left governance findings gate (§4b)
 
 Confirm the spec's §4b table is filled:
 
@@ -172,7 +196,7 @@ A per-item subset of the SHK sweep. Run these four checks for the item just buil
 > This is the *lightweight per-item* gate. The full 7-step SHK sweep runs at sprint
 > close via `/govern` (Role 5) or on demand via `/housekeep`.
 
-### 6g. Runtime log review (advisory)
+### 6i. Runtime log review (advisory)
 
 Run the log analyzer if `PERSIST_LOGS` is enabled:
 

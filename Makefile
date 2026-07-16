@@ -35,7 +35,7 @@ setup: ## Create venv + install runtime dep and dev-only tooling (coverage/secur
 	$(PY) -m pip install coverage bandit pip-audit
 
 run: ## Start the server locally (uses the venv so python-dotenv loads)
-	$(PY) server.py
+	$(PY) backend/server.py
 
 stop: ## Free the app port
 	-lsof -ti:$(PORT) | xargs kill 2>/dev/null || true

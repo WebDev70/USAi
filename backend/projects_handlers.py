@@ -5,6 +5,7 @@ from EnvConfigHTTPRequestHandler (server.py backlog #45 module split).
 """
 
 import json
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -17,7 +18,8 @@ class _ServerProxy:
     See proxy_handlers.py for the full explanation.
     """
     def __getattr__(self, name):
-        return getattr(sys.modules['server'], name)
+        mod = sys.modules.get('server') or sys.modules.get('__main__')
+        return getattr(mod, name)
 
 
 _server = _ServerProxy()
@@ -95,7 +97,11 @@ class ProjectsHandlersMixin:
 
         memory_mode = (data.get('memoryMode') or 'default').strip()
         now = datetime.now().isoformat()
-        project_id = f"project_{int(datetime.now().timestamp() * 1000)}"
+        # Use microsecond-precision timestamp + 6-char uuid hex suffix so that two
+        # projects created in the same millisecond (e.g. rapid test POSTs) still get
+        # distinct IDs and distinct filenames — preventing the second project from
+        # silently overwriting the first.
+        project_id = f"project_{int(datetime.now().timestamp() * 1_000_000)}_{uuid.uuid4().hex[:6]}"
         project = {
             'id': project_id,
             'name': name,

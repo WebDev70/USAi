@@ -167,31 +167,28 @@ note's `## Working-tree state` section (see template above).
 
 ## Role: Continuous Improvement (post-loop)
 
-After a successful loop, before closing:
+After a successful loop, before closing, work through this ordered checklist:
 
-1. **Brief retro** — one sentence each:
-   - What shipped?
-   - What failed review and why?
-   - What took the most iterations?
+### Step 1 — Brief retro
 
-2. **Coverage ratchet self-advancement:** check if measured values warrant a
-   gate bump (see "Coverage ratchet self-advancement" below).
+One sentence each:
+- What shipped?
+- What failed review and why?
+- What took the most iterations?
 
-3. **Optional mutation audit** (see "Optional deep-quality pass" below).
+### Step 2 — Coverage ratchet self-advancement
 
-4. **Propose improvements** — for each proposal, write it into **both** sinks:
-
-After recording the coverage numbers, check for advancement opportunities:
+After recording the coverage numbers from `./run-tests.sh --coverage`, check for
+advancement opportunities:
 
 - If any measured value exceeds its `.coverage-thresholds` gate by **≥ 5 percentage
-  points** (e.g., gate is 90%, measured is 95.3%), propose bumping the threshold in
-  the post-loop retro:
+  points** (e.g., gate is 90%, measured is 95.3%), propose bumping the threshold:
   > "Coverage ratchet: `py_line` is 95.3% vs gate 90% (gap +5.3pp) — propose
   > bumping gate to 93% in `.coverage-thresholds`."
 - Include the proposal in the **Follow-up proposals** section of the memory note.
-- Never auto-edit `.coverage-thresholds` — the proposal goes to the user for approval.
+- **Never auto-edit** `.coverage-thresholds` — the proposal goes to the user for approval.
 
-### Optional deep-quality pass (mutation testing)
+### Step 3 — Optional mutation audit
 
 For builds that **significantly touch `server.py`** (new helpers, new logic branches,
 refactored functions):
@@ -204,26 +201,32 @@ This is informational only (exits 0 always). Record the kill rate in the memory 
 A drop in kill rate is a signal to add more assertion-rich tests. If the rate is
 below 60%, add a proposal to improve test assertion depth.
 
+### Step 4 — Propose improvements
 
-
-2. **Propose improvements** — for each proposal, write it into **both** sinks:
+For each proposal, write it into **both** sinks:
 
    a. **`backlog.md`** — add a new `- [ ] **N. <title>** *(size)*` entry under the
       appropriate section. Do this in the same turn; do not leave it as a chat
       suggestion.
 
+   b. **Obsidian memory note** — append a `## Follow-up proposals` section to the
+      session memory note:
       ```
-      File: <OBSIDIAN_VAULT_PATH>/Cline/memories/YYYY-MM-DD-HHMMSS-<feature>-proposals.md
-      Tags: [usai-chat, rail-loop, proposals, <topic-tags>]
+      File: <OBSIDIAN_VAULT_PATH>/Cline/memories/YYYY-MM-DD-HHMMSS-<feature>.md
+      (same file created in /build §3a — append, do not create a new note)
       ```
       List each proposal with a brief rationale and a link to the relevant backlog entry.
 
    Do not auto-apply any proposal — these are recorded for user review and approval.
    If the user approves a proposal, run `/spec` to promote it to a full spec.
 
-3. **Write the memory note** to Obsidian:
+### Step 5 — Finalize the memory note
+
+The `/build` pre-flight (§3a) creates this file at the start of the first
+iteration. Append the loop summary here — **do not create a new duplicate note**:
 
    File: `<OBSIDIAN_VAULT_PATH>/Cline/memories/YYYY-MM-DD-HHMMSS-<feature>.md`
+   *(same file created in `/build` §3a — append to it)*
 
    ```markdown
    ---

@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAIL — Rule-governed Agentic Iteration Loop</title>
+  <style>
+    /* ── Design tokens ─────────────────────────────────────────────────── */
+    :root {
+      --c-bg:         #0f1117;
+      --c-surface:    #181c27;
+      --c-surface2:   #1e2334;
+      --c-border:     #2a3050;
+      --c-text:       #e8eaf2;
+      --c-muted:      #8b92b0;
+      --c-accent:     #5b8dee;
+      --c-accent2:    #7c5be8;
+      --c-green:      #3dd68c;
+      --c-amber:      #f5b942;
+      --c-red:        #f56c6c;
+      --c-teal:       #3dcfcf;
+      --c-purple:     #b07cee;
+      --c-pink:       #e87cce;
+      --grad-hero:    linear-gradient(135deg, #1a1f36 0%, #0f1117 60%, #131827 100%);
+      --grad-rail:    linear-gradient(90deg, var(--c-accent2), var(--c-accent), var(--c-teal));
+      --shadow-card:  0 4px 24px rgba(0,0,0,.45);
+      --shadow-glow:  0 0 28px rgba(91,141,238,.18);
+      --radius:       14px;
+      --radius-sm:    8px;
+      --font:         system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --transition:   0.22s ease;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --c-bg:       #f4f6fb;
+        --c-surface:  #ffffff;
+        --c-surface2: #eef1f9;
+        --c-border:   #d3d9ee;
+        --c-text:     #1a1f36;
+        --c-muted:    #5a6180;
+        --grad-hero:  linear-gradient(135deg, #e0e8ff 0%, #f4f6fb 60%, #eaf4ff 100%);
+        --shadow-card: 0 4px 24px rgba(0,0,0,.10);
+        --shadow-glow: 0 0 28px rgba(91,141,238,.12);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+
+    /* ── Base ────────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font);
+      background: var(--c-bg);
+      color: var(--c-text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    a { color: var(--c-accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout helpers ──────────────────────────────────────────────────── */
+    .container {
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    section { padding: 52px 0 40px; }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--c-accent);
+      margin-bottom: 10px;
+    }
+
+    h2.section-title {
+      font-size: clamp(1.35rem, 3vw, 1.8rem);
+      font-weight: 700;
+      margin-bottom: 28px;
+      color: var(--c-text);
+    }
+
+    /* ── Rail line decorative ────────────────────────────────────────────── */
+    .rail-line {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--grad-rail);
+      margin-bottom: 0;
+    }
+
+    /* ── Hero ────────────────────────────────────────────────────────────── */
+    .hero {
+      background: var(--grad-hero);
+      padding: 72px 0 60px;
+      border-bottom: 1px solid var(--c-border);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 15% 50%, rgba(91,141,238,.12) 0%, transparent 60%),
+        radial-gradient(circle at 85% 30%, rgba(124,91,232,.10) 0%, transparent 55%);
+      pointer-events: none;
+    }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(91,141,238,.15);
+      border: 1px solid rgba(91,141,238,.35);
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--c-accent);
+      margin-bottom: 20px;
+      letter-spacing: .06em;
+    }
+
+    .hero-eyebrow::before {
+      content: '';
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--c-accent);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .5; transform: scale(1.3); }
+    }
+
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 800;
+      letter-spacing: -.02em;
+      line-height: 1.15;
+      margin-bottom: 16px;
+    }
+
+    .hero h1 span { background: var(--grad-rail); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+    .hero-sub {
+      font-size: clamp(1rem, 2vw, 1.15rem);
+      color: var(--c-muted);
+      max-width: 640px;
+      margin-bottom: 32px;
+    }
+
+    /* RAIL acronym breakdown */
+    .acronym-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      max-width: 680px;
+      margin-bottom: 36px;
+    }
+
+    @media (max-width: 600px) { .acronym-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    .acronym-card {
+      background: rgba(255,255,255,.05);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      text-align: center;
+    }
+
+    .acronym-letter {
+      font-size: 1.8rem;
+      font-weight: 800;
+      background: var(--grad-rail);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .acronym-word {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--c-muted);
+      letter-spacing: .04em;
+    }
+
+    /* ── Core loop diagram ───────────────────────────────────────────────── */
+    .loop-diagram {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      padding: 8px 0 16px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .loop-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .loop-pill {
+      background: var(--c-surface2);
+      border: 1.5px solid var(--c-border);
+      border-radius: 24px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+      transition: transform var(--transition), box-shadow var(--transition);
+      cursor: default;
+    }
+
+    .loop-pill:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .loop-pill.pill-goal    { background: rgba(61,214,140,.12); border-color: var(--c-green); color: var(--c-green); }
+    .loop-pill.pill-spec    { background: rgba(91,141,238,.12); border-color: var(--c-accent); color: var(--c-accent); }
+    .loop-pill.pill-loop    { background: rgba(124,91,232,.12); border-color: var(--c-purple); color: var(--c-purple); }
+    .loop-pill.pill-done    { background: rgba(61,207,207,.12); border-color: var(--c-teal); color: var(--c-teal); }
+
+    .loop-inner {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      background: rgba(255,255,255,.04);
+      border: 1.5px solid var(--c-border);
+      border-radius: 24px;
+      padding: 8px 14px;
+    }
+
+    .loop-inner-pill {
+      background: var(--c-surface);
+      border: 1.5px solid var(--c-border);
+      border-radius: 20px;
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .loop-inner-pill.build  { border-color: var(--c-amber); color: var(--c-amber); }
+    .loop-inner-pill.review { border-color: var(--c-pink); color: var(--c-pink); }
+
+    .loop-caption {
+      font-size: 10px;
+      color: var(--c-muted);
+      font-weight: 600;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    /* arrows */
+    .arrow {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      padding: 0 6px;
+      color: var(--c-muted);
+      font-size: 18px;
+      font-weight: 300;
+      user-select: none;
+    }
+
+    .inner-arrow {
+      padding: 0 6px;
+      color: var(--c-muted);
+      font-size: 14px;
+      user-select: none;
+    }
+
+    /* feedback arrow */
+    .feedback-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 18px;
+      padding: 10px 18px;
+      background: rgba(91,141,238,.07);
+      border: 1px dashed var(--c-border);
+      border-radius: var(--radius-sm);
+      max-width: fit-content;
+    }
+
+    .feedback-row span { font-size: 13px; color: var(--c-muted); }
+    .feedback-row strong { color: var(--c-accent); }
+
+    /* ── Roles stepper ───────────────────────────────────────────────────── */
+    .roles-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .role-row {
+      display: grid;
+      grid-template-columns: 60px 4px 1fr;
+      gap: 0 20px;
+      position: relative;
+    }
+
+    /* vertical track */
+    .role-track {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .role-track-line {
+      width: 2px;
+      flex: 1;
+      background: var(--c-border);
+      min-height: 20px;
+    }
+
+    .role-track-line.last { background: transparent; }
+
+    .role-num {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      font-weight: 800;
+      flex-shrink: 0;
+      border: 2px solid;
+      background: var(--c-surface);
+    }
+
+    .role-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 14px;
+      transition: transform var(--transition), box-shadow var(--transition);
+      cursor: default;
+    }
+
+    .role-card:hover {
+      transform: translateX(4px);
+      box-shadow: var(--shadow-card);
+    }
+
+    .role-card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .role-badge {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 20px;
+      border: 1px solid;
+    }
+
+    .role-name { font-size: 1rem; font-weight: 700; }
+    .role-desc { font-size: 13px; color: var(--c-muted); line-height: 1.5; }
+
+    /* role colors */
+    .r0 { border-color: var(--c-amber); color: var(--c-amber); }
+    .r1 { border-color: var(--c-accent); color: var(--c-accent); }
+    .r2 { border-color: var(--c-accent2); color: var(--c-accent2); }
+    .r3 { border-color: var(--c-green); color: var(--c-green); }
+    .r4 { border-color: var(--c-teal); color: var(--c-teal); }
+    .r5 { border-color: var(--c-red); color: var(--c-red); }
+    .r6 { border-color: var(--c-pink); color: var(--c-pink); }
+
+    /* ── Cross-cutting banner ─────────────────────────────────────────────── */
+    .cross-banner {
+      display: flex;
+      align-items: stretch;
+      gap: 2px;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      margin: 8px 0 28px;
+    }
+
+    .cross-label {
+      background: var(--c-surface2);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+      padding: 12px 18px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--c-muted);
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+    }
+
+    .cross-items {
+      display: flex;
+      flex: 1;
+      gap: 2px;
+      flex-wrap: wrap;
+    }
+
+    .cross-item {
+      flex: 1;
+      min-width: 140px;
+      padding: 12px 16px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .cross-devsec  { background: rgba(245,105,108,.10); color: var(--c-red);    border: 1px solid rgba(245,105,108,.25); }
+    .cross-iac     { background: rgba(91,141,238,.10);  color: var(--c-accent); border: 1px solid rgba(91,141,238,.25); }
+    .cross-obs     { background: rgba(61,207,207,.10);  color: var(--c-teal);   border: 1px solid rgba(61,207,207,.25); }
+
+    /* ── Cadence roles ────────────────────────────────────────────────────── */
+    .cadence-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .cadence-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 22px 22px 20px;
+      box-shadow: var(--shadow-card);
+      transition: transform var(--transition), box-shadow var(--transition);
+    }
+
+    .cadence-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-glow); }
+
+    .cadence-icon {
+      font-size: 2rem;
+      margin-bottom: 10px;
+      display: block;
+    }
+
+    .cadence-cmd {
+      display: inline-block;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      background: rgba(91,141,238,.12);
+      color: var(--c-accent);
+      border: 1px solid rgba(91,141,238,.3);
+      border-radius: var(--radius-sm);
+      padding: 3px 10px;
+      margin-bottom: 10px;
+    }
+
+    .cadence-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
+    .cadence-card p  { font-size: 13px; color: var(--c-muted); line-height: 1.5; }
+
+    /* ── Rules grid ──────────────────────────────────────────────────────── */
+    .rules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      margin-bottom: 32px;
+    }
+
+    .rule-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 18px 18px 16px;
+      transition: transform var(--transition), box-shadow var(--transition);
+      cursor: default;
+    }
+
+    .rule-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }
+
+    .rule-emoji { font-size: 1.6rem; margin-bottom: 8px; display: block; }
+    .rule-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .rule-desc  { font-size: 12px; color: var(--c-muted); line-height: 1.5; }
+
+    /* ── QA Gates ────────────────────────────────────────────────────────── */
+    .gates-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 10px;
+    }
+
+    .gate-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-size: 13px;
+      transition: border-color var(--transition);
+    }
+
+    .gate-item:hover { border-color: var(--c-accent); }
+
+    .gate-check {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: rgba(61,214,140,.15);
+      border: 1.5px solid var(--c-green);
+      color: var(--c-green);
+      font-size: 10px;
+      font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .gate-name  { font-weight: 700; display: block; margin-bottom: 2px; }
+    .gate-desc  { font-size: 11px; color: var(--c-muted); line-height: 1.4; }
+
+    /* ── Backlog lifecycle ────────────────────────────────────────────────── */
+    .backlog-flow {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .bl-chip {
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 700;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      border: 1.5px solid;
+    }
+
+    .bl-not-started { background: rgba(139,146,176,.10); border-color: var(--c-muted); color: var(--c-muted); }
+    .bl-in-progress { background: rgba(91,141,238,.12); border-color: var(--c-accent); color: var(--c-accent); }
+    .bl-done        { background: rgba(61,214,140,.12); border-color: var(--c-green); color: var(--c-green); }
+
+    .bl-arrow {
+      padding: 0 14px;
+      color: var(--c-muted);
+      font-size: 18px;
+    }
+
+    .bl-labels {
+      display: flex;
+      gap: 0;
+      flex-wrap: wrap;
+    }
+
+    .bl-label {
+      flex: 1;
+      min-width: 130px;
+      text-align: center;
+      font-size: 11px;
+      color: var(--c-muted);
+      padding: 4px 20px;
+    }
+
+    /* ── Workflows table ──────────────────────────────────────────────────── */
+    .workflows-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    .wf-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      transition: transform var(--transition), box-shadow var(--transition);
+      cursor: default;
+    }
+
+    .wf-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-glow); }
+
+    .wf-cmd {
+      display: inline-block;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      background: rgba(124,91,232,.12);
+      color: var(--c-purple);
+      border: 1px solid rgba(124,91,232,.3);
+      border-radius: var(--radius-sm);
+      padding: 3px 10px;
+      margin-bottom: 8px;
+    }
+
+    .wf-cmd.cmd-core     { background: rgba(91,141,238,.12); color: var(--c-accent); border-color: rgba(91,141,238,.3); }
+    .wf-cmd.cmd-loop     { background: rgba(124,91,232,.12); color: var(--c-purple); border-color: rgba(124,91,232,.3); }
+    .wf-cmd.cmd-build    { background: rgba(245,185,66,.12);  color: var(--c-amber);  border-color: rgba(245,185,66,.3); }
+    .wf-cmd.cmd-review   { background: rgba(232,124,206,.12); color: var(--c-pink);   border-color: rgba(232,124,206,.3); }
+    .wf-cmd.cmd-govern   { background: rgba(61,214,140,.12);  color: var(--c-green);  border-color: rgba(61,214,140,.3); }
+    .wf-cmd.cmd-sme      { background: rgba(61,207,207,.12);  color: var(--c-teal);   border-color: rgba(61,207,207,.3); }
+    .wf-cmd.cmd-util     { background: rgba(139,146,176,.10); color: var(--c-muted);  border-color: var(--c-border); }
+
+    .wf-mode {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--c-muted);
+      margin-bottom: 6px;
+    }
+
+    .wf-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .wf-desc  { font-size: 12px; color: var(--c-muted); line-height: 1.5; }
+
+    /* ── UX & UI SME quality axis ───────────────────────────────────────── */
+    .sme-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 4px;
+    }
+
+    @media (max-width: 600px) { .sme-grid { grid-template-columns: 1fr; } }
+
+    .sme-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 20px 22px 18px;
+      position: relative;
+      overflow: hidden;
+      transition: transform var(--transition), box-shadow var(--transition);
+      cursor: default;
+    }
+
+    .sme-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }
+
+    .sme-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+    }
+
+    .sme-ux::before { background: var(--c-teal); }
+    .sme-ui::before { background: var(--c-purple); }
+
+    .sme-pill {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      padding: 2px 10px;
+      border-radius: 20px;
+      border: 1px solid;
+      margin-bottom: 10px;
+    }
+
+    .sme-ux .sme-pill { background: rgba(61,207,207,.12); border-color: var(--c-teal);   color: var(--c-teal); }
+    .sme-ui .sme-pill { background: rgba(176,124,238,.12); border-color: var(--c-purple); color: var(--c-purple); }
+
+    .sme-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+    .sme-card p  { font-size: 12px; color: var(--c-muted); line-height: 1.55; margin-bottom: 10px; }
+
+    .sme-checks {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .sme-check-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--c-muted);
+    }
+
+    .sme-check-icon {
+      flex-shrink: 0;
+      margin-top: 1px;
+      font-size: 11px;
+    }
+
+    .sme-ux .sme-check-icon { color: var(--c-teal); }
+    .sme-ui .sme-check-icon { color: var(--c-purple); }
+
+    .sme-axis-note {
+      margin-top: 16px;
+      padding: 10px 14px;
+      background: rgba(91,141,238,.06);
+      border: 1px dashed var(--c-border);
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      color: var(--c-muted);
+    }
+
+    .sme-axis-note strong { color: var(--c-text); }
+
+    /* ── TDD section ─────────────────────────────────────────────────────── */
+    .tdd-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    @media (max-width: 560px) { .tdd-row { grid-template-columns: 1fr; } }
+
+    .tdd-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .tdd-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+    }
+
+    .tdd-red::before    { background: var(--c-red); }
+    .tdd-green::before  { background: var(--c-green); }
+    .tdd-refactor::before { background: var(--c-amber); }
+
+    .tdd-step {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .tdd-red    .tdd-step { color: var(--c-red); }
+    .tdd-green  .tdd-step { color: var(--c-green); }
+    .tdd-refactor .tdd-step { color: var(--c-amber); }
+
+    .tdd-label { font-size: 1.1rem; font-weight: 800; margin-bottom: 6px; }
+    .tdd-desc  { font-size: 12px; color: var(--c-muted); line-height: 1.5; }
+
+    /* ── Footer ──────────────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--c-border);
+      padding: 24px 0;
+      text-align: center;
+      font-size: 12px;
+      color: var(--c-muted);
+    }
+
+    footer code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      background: var(--c-surface2);
+      border: 1px solid var(--c-border);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+
+    /* ── Section dividers ────────────────────────────────────────────────── */
+    .section-divider {
+      height: 1px;
+      background: var(--c-border);
+      margin: 0;
+    }
+
+    /* ── Spec interview steps ────────────────────────────────────────────── */
+    .spec-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .spec-step {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-size: 13px;
+    }
+
+    .spec-step-num {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: rgba(91,141,238,.15);
+      border: 1.5px solid var(--c-accent);
+      color: var(--c-accent);
+      font-size: 11px;
+      font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .spec-step-text strong { display: block; font-weight: 700; margin-bottom: 2px; }
+    .spec-step-text span   { font-size: 11px; color: var(--c-muted); line-height: 1.4; }
+
+    /* responsive tweaks */
+    @media (max-width: 768px) {
+      .loop-diagram { gap: 0; }
+      .cross-label  { display: none; }
+      .backlog-flow { flex-direction: column; align-items: flex-start; }
+      .bl-arrow     { transform: rotate(90deg); padding: 8px 0; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ RAIL LINE ═══ -->
+<div class="rail-line"></div>
+
+<!-- ═════════════════════════════════════════════════════════════ HERO ═══ -->
+<header class="hero">
+  <div class="container">
+    <div class="hero-eyebrow">USAi · RAIL Pipeline</div>
+    <h1>The <span>RAIL</span> Pipeline</h1>
+    <p class="hero-sub">
+      A closed-loop agent workflow that turns a goal into reviewed, tested, and documented code —
+      then feeds learnings back in to improve itself over time.
+    </p>
+
+    <div class="acronym-grid">
+      <div class="acronym-card"><div class="acronym-letter">R</div><div class="acronym-word">Rule-governed</div></div>
+      <div class="acronym-card"><div class="acronym-letter">A</div><div class="acronym-word">Agentic</div></div>
+      <div class="acronym-card"><div class="acronym-letter">I</div><div class="acronym-word">Iteration</div></div>
+      <div class="acronym-card"><div class="acronym-letter">L</div><div class="acronym-word">Loop</div></div>
+    </div>
+
+    <!-- Core flow -->
+    <div class="loop-diagram">
+      <div class="loop-node">
+        <div class="loop-pill pill-goal">🎯 Goal</div>
+        <div class="loop-caption">Start</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="loop-node">
+        <div class="loop-pill pill-spec">/spec</div>
+        <div class="loop-caption">Plan Mode</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="loop-node">
+        <div class="loop-pill pill-loop">/loop</div>
+        <div class="loop-caption">Act Mode</div>
+      </div>
+      <div class="arrow" style="padding:0 4px;font-size:14px; margin-top:-14px">→</div>
+      <div class="loop-node">
+        <div class="loop-inner">
+          <div class="loop-inner-pill build">/build</div>
+          <div class="inner-arrow">⇄</div>
+          <div class="loop-inner-pill review">/review</div>
+        </div>
+        <div class="loop-caption">Repeat until clean</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="loop-node">
+        <div class="loop-pill pill-done">✅ Done</div>
+        <div class="loop-caption">All gates pass</div>
+      </div>
+    </div>
+
+    <div class="feedback-row">
+      <span>↺</span>
+      <span><strong>Continuous Improvement</strong> feeds new rules, checks &amp; tests back into the pipeline</span>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════════════════════════════════════════════ CROSS-CUTTING ═══ -->
+<div class="container" style="padding-top:32px">
+  <div class="section-label">Always-on — inside every role</div>
+  <div class="cross-banner">
+    <div class="cross-label">Cross-cutting</div>
+    <div class="cross-items">
+      <div class="cross-item cross-devsec">🔐 DevSecOps — security machine-enforced at every step</div>
+      <div class="cross-item cross-iac">🏗 Infrastructure as Code — declarative &amp; reproducible env</div>
+      <div class="cross-item cross-obs">👁 Observability — log via <code style="font-size:12px">add_log</code>, never log secrets</div>
+    </div>
+  </div>
+</div>
+
+<div class="section-divider"></div>
+
+<!-- ═══════════════════════════════════════════════════ SEQUENTIAL ROLES ═══ -->
+<section>
+  <div class="container">
+    <div class="section-label">Sequential roles — per backlog item, in order</div>
+    <h2 class="section-title">The 7 RAIL Roles</h2>
+
+    <div class="roles-grid">
+
+      <!-- Role 0 -->
+      <div class="role-row">
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div class="role-num r0" style="border-color:var(--c-amber);color:var(--c-amber)">0</div>
+          <div class="role-track-line"></div>
+        </div>
+        <div></div>
+        <div class="role-card">
+          <div class="role-card-header">
+            <div class="role-name">Product Owner</div>
+            <div class="role-badge r0">Features only</div>
+          </div>
+          <div class="role-desc">Gates the <strong>start</strong> with a Definition of Ready (user story, testable acceptance criteria, vertical slice, size estimate). Gates the <strong>end</strong> with acceptance — every criterion verified. <em>Skipped for bugfixes, chores, refactors, and docs.</em></div>
+        </div>
+      </div>
+
+      <!-- Role 1 -->
+      <div class="role-row">
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div class="role-num r1" style="border-color:var(--c-accent);color:var(--c-accent)">1</div>
+          <div class="role-track-line"></div>
+        </div>
+        <div></div>
+        <div class="role-card">
+          <div class="role-card-header">
+            <div class="role-name">Code Planner</div>
+            <div class="role-badge r1">Plan first</div>
+          </div>
+          <div class="role-desc">Recalls Obsidian memory first. Produces a structured plan: <strong>Goal · Files · Approach · Tests · Docs · Risks</strong>. Writes <code>docs/specs/&lt;feature&gt;.md</code> before touching a single source file.</div>
+        </div>
+      </div>
+
+      <!-- Role 2 -->
+      <div class="role-row">
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div class="role-num r2" style="border-color:var(--c-accent2);color:var(--c-accent2)">2</div>
+          <div class="role-track-line"></div>
+        </div>
+        <div></div>
+        <div class="role-card">
+          <div class="role-card-header">
+            <div class="role-name">Architect</div>
+            <div class="role-badge r2">Conventions</div>
+          </div>
+          <div class="role-desc">Validates the design against USAi conventions: no new runtime deps, SSRF guard, path-traversal rejection, CSS <code>?v=N</code> bump, tool gating via <code>getEnabledTools</code>. Flags conflicts <em>before</em> implementation begins.</div>
+        </div>
+      </div>
+
+      <!-- Role 3 -->
+      <div class="role-row">
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div class="role-num r3" style="border-color:var(--c-green);color:var(--c-green)">3</div>
+          <div class="role-track-line"></div>
+        </div>
+        <div></div>
+        <div class="role-card">
+          <div class="role-card-header">
+            <div class="role-name">Developer (SME)</div>
+            <div class="role-badge r3">TDD Red→Green→Refactor</div>
+          </div>
+          <div class="role-desc">Implements <em>exactly</em> what the spec covers (flags scope creep). Writes the failing test first (Red), then minimum code to pass (Green), then cleans up (Refactor). Keeps docs + backlog in sync in the same turn.</div>
+        </div>
+      </div>
+
+      <!-- Role 4 -->
+      <div class="role-row">
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div class="role-num r4" style="border-color:var(--c-teal);color:var(--c-teal)">4</div>
+          <div class="role-track-line"></div>
+        </div>
+        <div></div>
+        <div class="role-card">
+          <div class="role-card-header">
+            <div class="role-name">Tester</div>
+            <div class="role-badge r4">Coverage gates</div>
+          </div>
+          <div class="role-desc">Writes/updates tests in <code>backend/tests/python/</code> and <code>frontend/tests/js/</code>. Runs <code>./run-tests.sh --coverage</code>. Gates: Python ≥ 90% lines, JS branch ≥ 70%. Every bug fix gets a regression test.</div>
+        </div>
+      </div>
+
+      <!-- Role 5 -->
+      <div class="role-row">
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div class="role-num r5" style="border-color:var(--c-red);color:var(--c-red)">5</div>
+          <div class="role-track-line"></div>
+        </div>
+        <div></div>
+        <div class="role-card">
+          <div class="role-card-header">
+            <div class="role-name">Security</div>
+            <div class="role-badge r5">Deterministic scan</div>
+          </div>
+          <div class="role-desc">Runs <code>./scripts/security-scan.sh</code> — <strong>gitleaks</strong> (secrets), <strong>bandit</strong> (Python SAST), <strong>pip-audit</strong> (CVEs). Never weaken or disable a scanner to make it pass — fix the finding instead.</div>
+        </div>
+      </div>
+
+      <!-- Role 6 -->
+      <div class="role-row">
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div class="role-num r6" style="border-color:var(--c-pink);color:var(--c-pink)">6</div>
+          <div class="role-track-line last"></div>
+        </div>
+        <div></div>
+        <div class="role-card">
+          <div class="role-card-header">
+            <div class="role-name">Reviewer (QA)</div>
+            <div class="role-badge r6">All gates must pass</div>
+          </div>
+          <div class="role-desc">Runs <code>./scripts/cli-check.sh --review</code>. Compares implementation vs spec line-by-line. <strong>Pass only when ALL of:</strong> tests green + coverage gates + security scan clean + acceptance criteria met + docs updated + memory note written. On any failure: emits gap list → return to Developer.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TDD sub-cycle -->
+    <div style="margin-top:16px;">
+      <div class="section-label" style="margin-bottom:10px">TDD inner cycle (inside Developer role)</div>
+      <div class="tdd-row">
+        <div class="tdd-card tdd-red">
+          <div class="tdd-step">Step 1 — Red</div>
+          <div class="tdd-label">🔴 Write the test</div>
+          <div class="tdd-desc">Write the failing test first. Confirm it fails for the right reason before writing any production code.</div>
+        </div>
+        <div class="tdd-card tdd-green">
+          <div class="tdd-step">Step 2 — Green</div>
+          <div class="tdd-label">🟢 Make it pass</div>
+          <div class="tdd-desc">Write the minimum code needed to make the test pass without breaking existing tests.</div>
+        </div>
+        <div class="tdd-card tdd-refactor">
+          <div class="tdd-step">Step 3 — Refactor</div>
+          <div class="tdd-label">🟡 Clean up</div>
+          <div class="tdd-desc">Improve code quality while all tests stay green. Then run the full suite.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ══════════════════════════════════════════ UX & UI SME AXIS ════════ -->
+<section>
+  <div class="container">
+    <div class="section-label">Quality axis — advises Roles 2 &amp; 3 on every frontend change</div>
+    <h2 class="section-title">UX &amp; UI SME</h2>
+
+    <div class="sme-grid">
+
+      <!-- UX card -->
+      <div class="sme-card sme-ux">
+        <div class="sme-pill">UX — How it works</div>
+        <h3>User Experience</h3>
+        <p>Ensures the feature solves a real user problem and fits naturally into the user's journey — before a pixel of CSS is written.</p>
+        <div class="sme-checks">
+          <div class="sme-check-item">
+            <span class="sme-check-icon">◆</span>
+            <span><strong>User-need framing:</strong> every control maps to a stated user task in the spec or <code>docs/USER_GUIDE.md</code>.</span>
+          </div>
+          <div class="sme-check-item">
+            <span class="sme-check-icon">◆</span>
+            <span><strong>User-flow / journey mapping:</strong> multi-step interactions have a sentence-level flow (e.g. "user clicks X → Y appears → confirms → Z") before implementation.</span>
+          </div>
+          <div class="sme-check-item">
+            <span class="sme-check-icon">◆</span>
+            <span><strong>Information architecture &amp; placement:</strong> new controls are placed in the section that matches their conceptual function — cross-checked against <code>USER_GUIDE.md</code> headings.</span>
+          </div>
+          <div class="sme-check-item">
+            <span class="sme-check-icon">◆</span>
+            <span><strong>Friction audit:</strong> the happy path can be completed without back-tracking; error states are named; task completion is verifiable.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- UI card -->
+      <div class="sme-card sme-ui">
+        <div class="sme-pill">UI — How it looks</div>
+        <h3>User Interface</h3>
+        <p>Ensures the graphical elements are cohesive, accessible, and coded to USAi standards — no framework, no magic values.</p>
+        <div class="sme-checks">
+          <div class="sme-check-item">
+            <span class="sme-check-icon">◆</span>
+            <span><strong>Vanilla CSS &amp; JS only:</strong> no framework, no build step, no new runtime dependency.</span>
+          </div>
+          <div class="sme-check-item">
+            <span class="sme-check-icon">◆</span>
+            <span><strong>Token-driven design:</strong> colours, radii, shadows use <code>--color-*</code> / <code>--radius-*</code> tokens; works in both light and dark themes.</span>
+          </div>
+          <div class="sme-check-item">
+            <span class="sme-check-icon">◆</span>
+            <span><strong>WCAG AA accessibility:</strong> ≥ 4.5:1 contrast, <code>:focus-visible</code> on interactive elements, semantic HTML, <code>aria-label</code> on icon-only controls.</span>
+          </div>
+          <div class="sme-check-item">
+            <span class="sme-check-icon">◆</span>
+            <span><strong>Motion guard:</strong> non-essential animation wrapped in <code>@media (prefers-reduced-motion: reduce)</code>.</span>
+          </div>
+          <div class="sme-check-item">
+            <span class="sme-check-icon">◆</span>
+            <span><strong>CSS cache bust:</strong> any <code>styles.css</code> edit bumps <code>?v=N</code> in <code>index.html</code>.</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="sme-axis-note">
+      <strong>Not a sequential role.</strong> The UX &amp; UI SME is a quality axis that advises the
+      <strong>Architect (Role 2)</strong> during design and the <strong>Developer (Role 3)</strong> during
+      implementation. It surfaces via the <code>ui-ux-review</code> QA gate (Reviewer Role 6) and the
+      <code>/sme-frontend</code> workflow.
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ══════════════════════════════════════════════ CADENCE ROLES ═══════ -->
+<section>
+  <div class="container">
+    <div class="section-label">Cadence roles — per-sprint or on-demand</div>
+    <h2 class="section-title">Sprint-Level Oversight</h2>
+    <div class="cadence-grid">
+
+      <div class="cadence-card">
+        <span class="cadence-icon">🏛</span>
+        <div class="cadence-cmd">/govern</div>
+        <h3>Governance Board</h3>
+        <p>Four-role macro-assessment at every sprint close: <strong>SBA</strong> (business alignment) · <strong>SA</strong> (architecture fitness) · <strong>SE</strong> (engineering quality) · <strong>SPMS</strong> (process maturity). Findings are BLOCKING / ADVISORY / INNOVATION. Backlog items are added for any BLOCKING finding.</p>
+      </div>
+
+      <div class="cadence-card">
+        <span class="cadence-icon">🧹</span>
+        <div class="cadence-cmd">/housekeep</div>
+        <h3>Senior Housekeeping &amp; Hygiene Steward (SHK)</h3>
+        <p>Repo hygiene sweep: spec/backlog reconciliation, dead-code audit, log &amp; cache bloat, doc-consistency drift, dependency freshness, vault memory hygiene. Runs automatically as Role 5 in <code>/govern</code>, or standalone via <code>/housekeep</code>. A lightweight leave-no-trace gate also runs inside every <code>/loop</code>.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ══════════════════════════════════════════════════════ RULES ════════ -->
+<section>
+  <div class="container">
+    <div class="section-label">Always-on non-negotiables</div>
+    <h2 class="section-title">The Rules</h2>
+
+    <div class="rules-grid">
+      <div class="rule-card">
+        <span class="rule-emoji">🔐</span>
+        <div class="rule-title">Secrets</div>
+        <div class="rule-desc">Never commit or echo secrets. API keys live only in <code>.env</code> (git-ignored). <code>/config</code> returns only <code>has_*</code> boolean flags — never raw keys.</div>
+      </div>
+      <div class="rule-card">
+        <span class="rule-emoji">📝</span>
+        <div class="rule-title">Docs in sync</div>
+        <div class="rule-desc">CHANGELOG on every substantive change. USER_GUIDE for user-facing features. README for setup/config. Backlog lifecycle updated in the same turn.</div>
+      </div>
+      <div class="rule-card">
+        <span class="rule-emoji">🧠</span>
+        <div class="rule-title">Memory</div>
+        <div class="rule-desc">Recall from Obsidian vault at task start. Record a session note to <code>Cline/memories/</code> at task end. Context must survive across sessions.</div>
+      </div>
+      <div class="rule-card">
+        <span class="rule-emoji">🎨</span>
+        <div class="rule-title">CSS cache bust</div>
+        <div class="rule-desc">Any edit to <code>styles.css</code> requires bumping the <code>?v=N</code> query string in <code>index.html</code> to prevent stale cache.</div>
+      </div>
+      <div class="rule-card">
+        <span class="rule-emoji">🧹</span>
+        <div class="rule-title">Housekeeping</div>
+        <div class="rule-desc">Leave-no-trace gate inside every <code>/loop</code> pass. Full SHK sweep runs automatically at sprint close via <code>/govern</code>.</div>
+      </div>
+    </div>
+
+    <!-- QA Gates -->
+    <div class="section-label" style="margin-bottom:12px">QA pass/fail gates (all must be green)</div>
+    <div class="gates-grid">
+      <div class="gate-item">
+        <div class="gate-check">✓</div>
+        <div>
+          <span class="gate-name">definition-of-ready</span>
+          <span class="gate-desc">Work item well-formed with testable AC before planning (features only)</span>
+        </div>
+      </div>
+      <div class="gate-item">
+        <div class="gate-check">✓</div>
+        <div>
+          <span class="gate-name">test-coverage</span>
+          <span class="gate-desc">Tests written first; Python ≥ 90% lines; JS branch ≥ 70%</span>
+        </div>
+      </div>
+      <div class="gate-item">
+        <div class="gate-check">✓</div>
+        <div>
+          <span class="gate-name">security-review</span>
+          <span class="gate-desc">No hardcoded secrets; path traversal rejected; upstreams verified; nothing logged</span>
+        </div>
+      </div>
+      <div class="gate-item">
+        <div class="gate-check">✓</div>
+        <div>
+          <span class="gate-name">dependency-review</span>
+          <span class="gate-desc">No unjustified runtime dep; any new dep vetted/pinned; pip-audit clean</span>
+        </div>
+      </div>
+      <div class="gate-item">
+        <div class="gate-check">✓</div>
+        <div>
+          <span class="gate-name">iac-review</span>
+          <span class="gate-desc">Env/config declarative &amp; reproducible; no hardcoded host/port; container non-root</span>
+        </div>
+      </div>
+      <div class="gate-item">
+        <div class="gate-check">✓</div>
+        <div>
+          <span class="gate-name">code-quality-review</span>
+          <span class="gate-desc">Matches conventions; no new runtime dep; CSS bumped; comments explain why</span>
+        </div>
+      </div>
+      <div class="gate-item">
+        <div class="gate-check">✓</div>
+        <div>
+          <span class="gate-name">docs-in-sync</span>
+          <span class="gate-desc">CHANGELOG + USER_GUIDE + README updated in the same turn</span>
+        </div>
+      </div>
+      <div class="gate-item">
+        <div class="gate-check">✓</div>
+        <div>
+          <span class="gate-name">ui-ux-review</span>
+          <span class="gate-desc"><strong>UX:</strong> user goal stated · flow described for multi-step interactions · correct IA placement vs USER_GUIDE. <strong>UI:</strong> WCAG AA contrast · visible focus · semantic/ARIA · responsive · no new frontend dep</span>
+        </div>
+      </div>
+      <div class="gate-item">
+        <div class="gate-check">✓</div>
+        <div>
+          <span class="gate-name">acceptance-criteria</span>
+          <span class="gate-desc">Each AC verified by test or observable behaviour (features only)</span>
+        </div>
+      </div>
+      <div class="gate-item" style="border-color:var(--c-green)">
+        <div class="gate-check" style="background:rgba(61,214,140,.25);border-color:var(--c-green)">★</div>
+        <div>
+          <span class="gate-name" style="color:var(--c-green)">definition-of-done</span>
+          <span class="gate-desc">Meta-gate: ALL previous gates green + memory note written</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ══════════════════════════════════════════════ BACKLOG LIFECYCLE ════ -->
+<section>
+  <div class="container">
+    <div class="section-label">Backlog lifecycle — every feature follows this path</div>
+    <h2 class="section-title">Backlog Item States</h2>
+
+    <div class="backlog-flow">
+      <div class="bl-chip bl-not-started">[ ] Not started</div>
+      <div class="bl-arrow">→</div>
+      <div class="bl-chip bl-in-progress">[~] In Progress</div>
+      <div class="bl-arrow">→</div>
+      <div class="bl-chip bl-done">[x] Done</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px;max-width:680px">
+      <div style="font-size:12px;color:var(--c-muted)"><strong style="color:var(--c-text)">[ ] Not started</strong><br>Item exists in backlog, not yet specced or started.</div>
+      <div style="font-size:12px;color:var(--c-muted)"><strong style="color:var(--c-text)">[~] In Progress</strong><br>Spec written at <code>docs/specs/*.md</code>. Set by Code Planner at <code>/spec</code> Step 3b.</div>
+      <div style="font-size:12px;color:var(--c-muted)"><strong style="color:var(--c-text)">[x] Done</strong><br>All gates passed. Date + one-line outcome + spec link appended. Set by Developer at <code>/loop</code> Done criteria.</div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ══════════════════════════════════════════════════ /spec WORKFLOW ═══ -->
+<section>
+  <div class="container">
+    <div class="section-label">The /spec workflow in detail</div>
+    <h2 class="section-title">/spec — From Goal to Ready-to-Build</h2>
+
+    <div class="spec-steps">
+      <div class="spec-step">
+        <div class="spec-step-num">0</div>
+        <div class="spec-step-text">
+          <strong>Recall first</strong>
+          <span>Search Obsidian vault (all 3 memory subfolders) for prior context. Emit prevention-rule recall receipt.</span>
+        </div>
+      </div>
+      <div class="spec-step">
+        <div class="spec-step-num">1</div>
+        <div class="spec-step-text">
+          <strong>PO Interview</strong>
+          <span>Type · Goal · Success criteria · Out of scope · Constraints · Files to touch — one question at a time.</span>
+        </div>
+      </div>
+      <div class="spec-step">
+        <div class="spec-step-num">2</div>
+        <div class="spec-step-text">
+          <strong>Architecture check</strong>
+          <span>Silent validation: no new runtime deps, endpoint patterns, tool gating, secrets, SSRF, path traversal.</span>
+        </div>
+      </div>
+      <div class="spec-step">
+        <div class="spec-step-num">2b</div>
+        <div class="spec-step-text">
+          <strong>Shift-left governance</strong>
+          <span>G-1 AC testability · G-2 scope/value · G-3 dependency coherence. Advisory — doesn't block Ready.</span>
+        </div>
+      </div>
+      <div class="spec-step">
+        <div class="spec-step-num">3</div>
+        <div class="spec-step-text">
+          <strong>Write spec file</strong>
+          <span>Writes <code>docs/specs/&lt;name&gt;.md</code> with Status: Ready. 8-section template.</span>
+        </div>
+      </div>
+      <div class="spec-step">
+        <div class="spec-step-num">3b</div>
+        <div class="spec-step-text">
+          <strong>Update backlog</strong>
+          <span>Flip <code>[ ]</code> → <code>[~]</code> in <code>backlog.md</code> and mirror to scrum product-backlog.</span>
+        </div>
+      </div>
+      <div class="spec-step">
+        <div class="spec-step-num">4</div>
+        <div class="spec-step-text">
+          <strong>Handoff</strong>
+          <span>Announces spec path + backlog update. Directs user to run <code>/loop</code> in Act Mode.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ══════════════════════════════════════════════════ WORKFLOWS ════════ -->
+<section>
+  <div class="container">
+    <div class="section-label">Slash commands — .clinerules/workflows/</div>
+    <h2 class="section-title">All Workflows</h2>
+    <div class="workflows-grid">
+
+      <div class="wf-card">
+        <div class="wf-cmd cmd-core">/spec</div>
+        <div class="wf-mode">Plan Mode</div>
+        <div class="wf-title">Specification Writer</div>
+        <div class="wf-desc">Interviews the user, validates architecture, runs shift-left governance, writes <code>docs/specs/&lt;feature&gt;.md</code>, and marks item In Progress in backlog.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-cmd cmd-loop">/loop</div>
+        <div class="wf-mode">Act Mode</div>
+        <div class="wf-title">Orchestration Loop</div>
+        <div class="wf-desc">Drives <code>/build</code> → <code>/review</code> repeatedly until all Done criteria pass. Handles escalation if stuck. Closes backlog item to Done on success.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-cmd cmd-build">/build</div>
+        <div class="wf-mode">Act Mode</div>
+        <div class="wf-title">Implementation</div>
+        <div class="wf-desc">Implements the spec exactly. TDD: Red receipt (failing test) first, then Green (minimum code), then Refactor. Flags any spec deviation immediately.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-cmd cmd-review">/review</div>
+        <div class="wf-mode">Act Mode</div>
+        <div class="wf-title">QA Review</div>
+        <div class="wf-desc">Runs all 10 QA gates (coverage, security scan, doc-consistency, spec-check, acceptance criteria, DoD). Emits gap list on failure; returns to Developer.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-cmd cmd-govern">/govern</div>
+        <div class="wf-mode">Sprint-close / on-demand</div>
+        <div class="wf-title">Governance Board</div>
+        <div class="wf-desc">Full 5-role sprint-close audit: SBA · SA · SE · SPMS · SHK. Produces BLOCKING/ADVISORY/INNOVATION findings. Feeds results into backlog.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-cmd cmd-govern">/housekeep</div>
+        <div class="wf-mode">On-demand</div>
+        <div class="wf-title">Standalone Hygiene Sweep</div>
+        <div class="wf-desc">Runs the SHK sweep in isolation: spec/backlog reconciliation, dead-code, log bloat, doc drift, dependency freshness, vault hygiene.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-cmd cmd-util">/self-improve</div>
+        <div class="wf-mode">Any mode</div>
+        <div class="wf-title">Self-scoring Rewrite</div>
+        <div class="wf-desc">Scores output 1–10 on correctness/clarity/coverage/style. Rewrites until ≥ 9 or 3 iterations. Shows only final output + last score.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-cmd cmd-sme">/sme-backend</div>
+        <div class="wf-mode">Act Mode</div>
+        <div class="wf-title">Backend SME</div>
+        <div class="wf-desc">Domain-specific helper for <code>server.py</code> and Python backend work: endpoint patterns, security guards, stdlib-only conventions.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-cmd cmd-sme">/sme-frontend</div>
+        <div class="wf-mode">Act Mode</div>
+        <div class="wf-title">UX &amp; UI SME (Frontend)</div>
+        <div class="wf-desc"><strong>UX:</strong> user-need framing, flow mapping, IA placement vs USER_GUIDE, friction audit. <strong>UI:</strong> vanilla CSS/JS, token system, WCAG AA, CSS <code>?v=N</code> cache-bust, no-framework rule.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-cmd cmd-sme">/sme-docs</div>
+        <div class="wf-mode">Act Mode</div>
+        <div class="wf-title">Docs SME</div>
+        <div class="wf-desc">Domain-specific helper for documentation work: CHANGELOG format, USER_GUIDE style, spec authoring, README maintenance, consistency checks.</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ══════════════════════════════════════════════════════ FOOTER ════════ -->
+<footer>
+  <div class="container">
+    <p>
+      Canonical reference: <code>docs/rail-pipeline.md</code> &nbsp;·&nbsp;
+      Cline operating contract: <code>.clinerules/rail-pipeline.md</code> &nbsp;·&nbsp;
+      Governance: <code>docs/governance.md</code> &nbsp;·&nbsp;
+      Spec template: <code>.clinerules/workflows/spec.md</code>
+    </p>
+    <p style="margin-top:8px; color: var(--c-muted)">USAi Chat · RAIL Pipeline Visualization</p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -29,7 +29,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy just the files the running app needs (keeps the image minimal & auditable).
 # .env is intentionally NOT copied — it's provided at run time via --env-file /
 # compose env_file, so secrets never bake into the image.
-COPY server.py index.html app.js styles.css ./
+COPY backend/server.py backend/proxy_handlers.py backend/session_handlers.py \
+     backend/memory_handlers.py backend/mcp_handlers.py backend/projects_handlers.py ./
+COPY frontend/index.html frontend/app.js frontend/styles.css ./
 
 USER appuser
 EXPOSE 8000

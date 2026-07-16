@@ -428,7 +428,7 @@ stream completion.
 
 Start the server:
 ```bash
-.venv/bin/python server.py   # then open http://localhost:8000
+.venv/bin/python backend/server.py   # then open http://localhost:8000
 ```
 Or with Docker:
 ```bash
@@ -447,3 +447,52 @@ docker compose up
 | [`docs/USER_GUIDE.md`](USER_GUIDE.md) | End-user features and usage |
 | [`docs/specs/`](specs/) | Per-feature design specs |
 | `README.md` | Setup, quick-start, test commands |
+
+---
+
+## 8. Python module structure (backlog #45)
+
+`server.py` has been split into 6 focused Python modules to keep each file under 1,500 lines
+while preserving all existing module-level names in `server.py` so that no test files require modification.
+
+### Module overview
+
+| Module | Class / Role | Methods | ~Lines |
+|--------|-------------|---------|--------|
+| `server.py` | `EnvConfigHTTPRequestHandler` — scaffold, config, routing, helpers, entrypoint | `_json_response`, `_get_config`, `do_GET`, `do_POST`, `do_PUT`, `do_DELETE` | ~630 |
+| `proxy_handlers.py` | `ProxyHandlersMixin` | `_proxy_api`, `_get_context7`, `_post_embeddings`, `_get_raw_responses`, `_delete_raw_responses` | ~430 |
+| `session_handlers.py` | `SessionHandlersMixin` | `_resolve_chunk_cache_dir`, `_get/post/delete_chunk_cache`, `_get/post_sessions`, `_get/post_chat_history`, `_get/post_logs`, `_get_log_files`, `_post_logs_clear`, `_post_new_chat_session`, `_delete_sessions` | ~400 |
+| `memory_handlers.py` | `MemoryHandlersMixin` | `_project_memory_dirs`, `_memory_search`, `_memory_list`, `_memory_read`, `_memory_save` | ~265 |
+| `mcp_handlers.py` | `McpHandlersMixin` | `_read_mcp_body`, `_post_mcp_tool`, `_post_mcp_rename_tag`, `_post_mcp_move_note`, `_get_mcp_vaults` | ~127 |
+| `projects_handlers.py` | `ProjectsHandlersMixin` | `_safe_project_id`, `_get_projects`, `_post_projects`, `_put_project`, `_delete_project` | ~178 |
+
+### Class declaration (MRO)
+
+```python
+class EnvConfigHTTPRequestHandler(
+    ProxyHandlersMixin,
+    SessionHandlersMixin,
+    MemoryHandlersMixin,
+    McpHandlersMixin,
+    ProjectsHandlersMixin,
+    SimpleHTTPRequestHandler
+):
+```
+
+### Import strategy
+
+Each mixin file imports shared module-level names from `server` at import time:
+
+```python
+import server as _server
+# then uses _server.CONFIG, _server.add_log(), _server.SESSIONS_DIR, etc.
+```
+
+This avoids circular-import issues because `server.py` defines all module-level constants/functions
+**before** the mixin import statements and the class declaration at the bottom.
+
+### Critical invariant
+
+All module-level names (`CONFIG`, `SESSIONS_DIR`, `HISTORY_FILE`, `add_log`, `get_project_memory_dir`, etc.)
+remain in `server.py` so that `import server; server.CONFIG` and similar patterns used by the test suite
+continue to work without any test file modifications.

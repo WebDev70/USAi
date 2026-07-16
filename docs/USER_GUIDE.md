@@ -27,7 +27,7 @@ use each feature — no coding knowledge required.
 1. Open a terminal in the project folder.
 2. Start the server:
    ```bash
-   python3 server.py
+   .venv/bin/python backend/server.py
    ```
 3. Open your browser to **http://localhost:8000**
 
@@ -121,9 +121,11 @@ the bottom of the screen (right next to the 📎 paperclip), so you can switch m
 without opening the sidebar.
 
 ### Built-in model choices
-- **Google AI:** Gemini 2.0 Flash, Gemini 2.0 Pro
-- **Anthropic:** Claude Haiku 3.5, Claude Sonnet 3.7, Claude Sonnet 4, Claude Opus 4
-- **Meta:** Llama 3.2 11B, Llama 4 Maverick
+- **Google AI:** Gemini 2.5 Flash, Gemini 2.5 Flash Lite, Gemini 2.5 Pro, Gemini 2.0 Flash
+- **Anthropic:** Claude Haiku 4.5, Claude Sonnet 4.5, Claude Sonnet 4.6, Claude Opus 4.5, Claude Opus 4.7, Claude Opus 4.8
+- **OpenAI:** GPT-5.2, GPT-5.4, GPT-5.5
+- **Meta:** Llama 4 Maverick
+- **Cohere:** Cohere English v3
 
 (The full list reflects whatever your provider returns when models are loaded.)
 
@@ -517,7 +519,7 @@ line like this in the terminal:
 **What to do:**
 1. Open your `.env` file and verify `API_KEY=` is set to a valid, unexpired key.
 2. Make sure `BASE_URL=` points to the correct endpoint for your provider.
-3. Restart the server (`Ctrl+C` then `.venv/bin/python server.py`).
+3. Restart the server (`Ctrl+C` then `.venv/bin/python backend/server.py`).
 
 If the key is valid but the probe still warns (e.g. your upstream doesn't expose
 `/api/v1/models`), the warning is a false alarm — the app will work normally. The
@@ -557,7 +559,7 @@ affect functionality and can be ignored.
   cannot call Context7 as a tool.
 
 ### The page seems stuck
-- Check the terminal where `server.py` is running for messages.
+- Check the terminal where `backend/server.py` is running for messages.
 - Reload the browser tab.
 - Look in the **Debug Logs** panel for errors.
 

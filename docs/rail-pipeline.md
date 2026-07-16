@@ -37,8 +37,8 @@
 We practice **TDD** for any non-trivial change to testable logic. The loop is
 **Red → Green → Refactor**:
 
-1. **RED** — write the failing test(s) first in `tests/js/*.test.mjs` or
-   `tests/python/test_*.py`; run the suite and confirm they fail for the right
+1. **RED** — write the failing test(s) first in `frontend/tests/js/*.test.mjs` or
+   `backend/tests/python/test_*.py`; run the suite and confirm they fail for the right
    reason.
 2. **GREEN** — write the minimum code to pass without breaking existing tests.
 3. **REFACTOR** — clean up under green; re-run the suite.
@@ -64,7 +64,7 @@ browser), but any real logic should be pushed into a tested pure helper.
 - **Security & infra are machine-enforced, not just prose (DevSecOps + IaC).**
   Deterministic gates run the same way every time: `./scripts/security-scan.sh`
   (gitleaks/bandit/pip-audit) and the IaC config-drift guard
-  (`tests/python/test_env_example_sync.py`), in addition to LLM-judgment checks.
+  (`backend/tests/python/test_env_example_sync.py`), in addition to LLM-judgment checks.
   See `docs/principles.md` §2–3.
 - **Value-first, vertically sliced (Agile).** A Product Owner role bookends RAIL
   with a Definition of Ready and an acceptance gate; a single Definition of Done is
@@ -129,14 +129,14 @@ browser testing; we deliberately avoid a jsdom/headless-browser dependency.
 ### Layout & conventions
 
 ```
-tests/
-├── python/
+backend/tests/python/
 │   ├── test_server.py            # unit tests for pure helpers
 │   ├── test_server_http.py       # HTTP integration: config, memory, sessions, cache, limits
 │   ├── test_server_branches.py   # HTTP integration: branches, malformed bodies, logs
 │   └── test_server_proxy.py      # HTTP integration: /api proxy + /context7 (fake upstream)
-├── js/
+frontend/tests/js/
 │   └── app.test.mjs              # node:test + node:assert; run with `node --test`
+tests/
 └── js-coverage.mjs               # dev-only JS coverage gate (Node built-in coverage)
 ```
 - **Naming:** `test_*.py` (Python), `*.test.mjs` (JS).
@@ -226,7 +226,7 @@ each role rule as a guide. A sample `config.yaml` with all three tiers is at
 | Concern | Enforced by |
 |---------|-------------|
 | **DevSecOps** — security shifted left & machine-enforced | Deterministic `scripts/security-scan.sh` (gitleaks + bandit + pip-audit), run in CI too. |
-| **Infrastructure as Code** — declarative, reproducible env/config | `tests/python/test_env_example_sync.py` config-drift guard; `Dockerfile`/`docker-compose.yml`/`Makefile`. |
+| **Infrastructure as Code** — declarative, reproducible env/config | `backend/tests/python/test_env_example_sync.py` config-drift guard; `Dockerfile`/`docker-compose.yml`/`Makefile`. |
 | **Observability** — make behavior visible, never log secrets | `add_log` for all server logging; secrets never echoed. |
 
 ### Code Planner — required plan template
@@ -283,18 +283,31 @@ the single reference for parity status; update it whenever a check is added or r
 | `test-coverage.md` | §3 — run `./run-tests.sh --coverage`; gates Python line ≥ 90%, branch ≥ 80%, JS branch ≥ 70% |
 | `security-review.md` | §4 — run `./scripts/security-scan.sh` (gitleaks + bandit + pip-audit) |
 | `dependency-and-supply-chain-review.md` | §4 — security scan includes `pip-audit`; Architect role (§2) blocks unjustified runtime deps |
-| `iac-review.md` | §2 — Architect role verifies no hardcoded host/port/secret; config-drift guard via `test_env_example_sync.py` |
+| `iac-review.md` | §2 — Architect role verifies no hardcoded host/port/secret; config-drift guard via `backend/tests/python/test_env_example_sync.py` |
 | `code-quality-review.md` | §2 — Architect role checks conventions via `doc-consistency-check.sh`; §5 — spec-check.sh verifies scope |
 | `docs-in-sync.md` | §6 — reviewer verifies CHANGELOG + USER_GUIDE + README updated in same turn |
 | `ui-ux-review.md` | §2 — Architect role flags any frontend change without WCAG/token/accessibility review |
 | `acceptance-criteria.md` | §7 — Product Owner end gate: each AC verified by test or observable behaviour |
 | `definition-of-done.md` | §8 — meta-gate: all previous steps green + memory note written |
 
-### Quality axis — Front-End Design (UI/UX)
-Alongside the sequential *correctness* roles, a **Front-End Design (UI/UX) SME**
-keeps `index.html`/`styles.css` modern and user-friendly. It is scoped to frontend
-files so it adds no overhead to backend-only changes.
+### Quality axis — UX & UI SME
+Alongside the sequential *correctness* roles, a **UX & UI SME** keeps
+`index.html`/`styles.css` modern and user-friendly. It is scoped to frontend files
+so it adds no overhead to backend-only changes. The role has **two explicit
+sub-disciplines** that must both be satisfied:
 
+**UX sub-discipline (how it works — user experience):**
+- Every new control or interaction must have a **stated user need** — if no clear
+  user goal is served, the feature should not ship.
+- **User flow mapping** is required for multi-step interactions before any code is
+  written (sentence-level description is sufficient — not a formal wireframe).
+- **Information architecture & placement:** new controls belong in the settings
+  section that matches their conceptual function; placement is cross-checked against
+  `docs/USER_GUIDE.md` headings as the IA source of truth.
+- **Friction audit:** every multi-step interaction is reviewed for unnecessary steps;
+  defaults are provided where possible.
+
+**UI sub-discipline (how it looks — user interface):**
 - **Constraints:** "latest innovative design" = modern **vanilla CSS** (fluid
   `clamp()` type, `color-mix()`, logical properties, container queries / `:has()`,
   View Transitions) — **never** a framework, icon pack, or build step. Extend the

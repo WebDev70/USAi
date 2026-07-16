@@ -23,7 +23,7 @@ Deliver **secure, minimal-surface, stdlib-only** back-end changes that:
 - Keep the environment **declarative and drift-free** (`HOST`/`PORT` via
   `resolve_bind_address`; new config keys added to `.env.example` and the sync test).
 - Write **testable pure helpers** — keep functions small, pure, and importable by
-  `tests/python/test_server.py`.
+  `backend/tests/python/test_server.py`.
 
 ---
 
@@ -49,7 +49,7 @@ Read the spec §3 (Affected files) and §4 (Technical approach). Verify:
       `has_*` boolean flags. Secrets must never reach the browser.
 - [ ] **IaC check.** New `.env` config keys must be:
       - Added to `.env.example` (with a safe placeholder value, never a real key).
-      - Covered by `tests/python/test_env_example_sync.py` (which checks that
+      - Covered by `backend/tests/python/test_dev_deps.py` (which checks that
         `load_config()` reads every key in `.env.example`).
 - [ ] **`add_log` check.** All server-side logging must use `add_log()` — never
       `print()` or `logging.*` directly. Logged messages must never contain
@@ -62,15 +62,16 @@ Read the spec §3 (Affected files) and §4 (Technical approach). Verify:
 ### RED — write failing tests first
 
 Back-end tests live in:
-- `tests/python/test_server.py` — unit tests for pure helpers (no network, no FS)
-- `tests/python/test_server_http.py` — HTTP integration tests (boot real server on ephemeral port)
-- `tests/python/test_server_branches.py` — branch/error-path integration tests
-- `tests/python/test_server_proxy.py` — proxy + `/context7` tests (fake stdlib upstream)
+- `backend/tests/python/test_server.py` — unit tests for pure helpers (no network, no FS)
+- `backend/tests/python/test_server_http.py` — HTTP integration tests (boot real server on ephemeral port)
+- `backend/tests/python/test_server_branches.py` — branch/error-path integration tests
+- `backend/tests/python/test_server_proxy.py` — proxy + `/context7` tests (fake stdlib upstream)
 
 Write tests from spec §5 before touching `server.py`. Run:
 
 ```bash
-.venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'
+PYTHONPATH="$(pwd)/backend" .venv/bin/python -m unittest discover \
+  -s backend/tests/python -p 'test_*.py'
 ```
 
 Confirm each new test fails for the right reason before writing production code.
@@ -140,7 +141,7 @@ add_log(f"Action completed: {safe_summary}")  # OK
 - Ensure all error paths return a consistent `{"error": "…"}` JSON body.
 - Verify `try/except` blocks are specific (not bare `except Exception`).
 - Add `# why` comments explaining non-obvious decisions.
-- Re-run `python3 -m py_compile server.py` and the full test suite.
+- Re-run `python3 -m py_compile backend/server.py` and the full test suite.
 
 ---
 
@@ -156,7 +157,7 @@ add_log(f"Action completed: {safe_summary}")  # OK
 | **`add_log` used for all logging** | No new `print()` or `logging.*` calls. |
 | **No secrets in logs** | `add_log` messages contain no keys, tokens, or vault content. |
 | **Endpoint registered in `routes`** | New endpoint handler registered in the `routes` dict. |
-| **Tests passing** | `.venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'` green. |
+| **Tests passing** | `PYTHONPATH="$(pwd)/backend" .venv/bin/python -m unittest discover -s backend/tests/python -p 'test_*.py'` green. |
 | **Coverage gate** | `./run-tests.sh --coverage` passes `server.py` ≥ 90% line, ≥ 80% branch. |
 | **Security scan clean** | `./scripts/security-scan.sh` exits 0. |
 
@@ -211,4 +212,4 @@ Do not refactor the entire `server.py` or add unrelated endpoints.
 - `build.md` — master orchestrator (sequences this file within Role 3)
 - `review.md` — QA verifier (re-runs the "Mandatory back-end gates" table above at §6e-BE, independently of `/build`)
 - `sme-frontend.md` — front-end specialist (used when the same spec touches frontend files)
-- `tests/python/` — test conventions and patterns to follow
+- `backend/tests/python/` — test conventions and patterns to follow

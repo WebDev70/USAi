@@ -28,7 +28,8 @@ class _ServerProxy:
     executing and all module-level names are fully bound.
     """
     def __getattr__(self, name):
-        return getattr(sys.modules['server'], name)
+        mod = sys.modules.get('server') or sys.modules.get('__main__')
+        return getattr(mod, name)
 
 
 _server = _ServerProxy()

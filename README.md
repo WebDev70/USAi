@@ -5,11 +5,11 @@ A lightweight browser-based chat interface for connecting to USAi-compatible mod
 ## Project overview
 
 This repository contains:
-- `index.html` — static chat UI for sending prompts and receiving model responses
-- `styles.css` — styling for the chat interface
-- `app.js` — browser logic for model selection, request handling, and UI updates
+- `frontend/index.html` — static chat UI for sending prompts and receiving model responses
+- `frontend/styles.css` — styling for the chat interface
+- `frontend/app.js` — browser logic for model selection, request handling, and UI updates
 
-- `server.py` — a simple backend server to proxy API requests and serve the UI
+- `backend/server.py` — a simple backend server to proxy API requests and serve the UI
 - `requirements.txt` — Python dependencies for the backend server
 
 
@@ -31,7 +31,7 @@ Create or update `.env` in the project root with values like:
 ```env
 API_KEY=YOUR_API_KEY_HERE
 BASE_URL=https://your-openai-compatible-endpoint/
-DEFAULT_MODEL=claude_3_haiku
+DEFAULT_MODEL=claude_4_5_haiku
 DEFAULT_SYSTEM_PROMPT=
 ```
 
@@ -109,7 +109,7 @@ pip install -r requirements.txt
    named 'dotenv'`):
 
 ```bash
-.venv/bin/python server.py        # or: activate the venv, then `python3 server.py`
+.venv/bin/python backend/server.py        # or: activate the venv, then `python3 backend/server.py`
 ```
 
 To stop the server / free the port:
@@ -168,12 +168,12 @@ tooling is never added to `requirements.txt` and never ships in the app.
 Or run the pieces individually:
 
 ```bash
-node --check app.js && python3 -m py_compile server.py        # syntax gates
-node --test $(find tests/js -name '*.test.mjs')               # JS unit tests
-.venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'  # Python tests
+node --check frontend/app.js && python3 -m py_compile backend/server.py        # syntax gates
+node --test $(find frontend/tests/js -name '*.test.mjs')               # JS unit tests
+PYTHONPATH=backend .venv/bin/python -m unittest discover -s backend/tests/python -p 'test_*.py'  # Python tests
 ```
 
-Tests live in `tests/js/*.test.mjs` and `tests/python/test_*.py` (the Python HTTP
+Tests live in `frontend/tests/js/*.test.mjs` and `backend/tests/python/test_*.py` (the Python HTTP
 integration suites are `test_server_http.py`, `test_server_branches.py`, and
 `test_server_proxy.py`). See [`docs/rail-pipeline.md`](docs/rail-pipeline.md)
 for the full TDD strategy. Engineering principles are in [`docs/principles.md`](docs/principles.md).

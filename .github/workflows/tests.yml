@@ -29,12 +29,12 @@ jobs:
           # (used by the dev-only coverage gate; no third-party deps).
           node-version: "22"
       - name: Syntax check (app.js)
-        run: node --check app.js
+        run: node --check frontend/app.js
       - name: Run JS unit tests
         # Use `find` to enumerate the test files explicitly. This is portable
         # across Node versions (directory args to `node --test` need Node >= 21)
         # and avoids relying on bash globstar (`**`), which is off in CI shells.
-        run: node --test $(find tests/js -name '*.test.mjs')
+        run: node --test $(find frontend/tests/js -name '*.test.mjs')
       - name: JS coverage gate (exported helpers)
         run: node tests/js-coverage.mjs 70
 
@@ -60,7 +60,7 @@ jobs:
           pip install -r requirements.txt
           pip install coverage
       - name: Syntax check (server.py)
-        run: python -m py_compile server.py
+        run: python -m py_compile backend/server.py
       - name: Run Python tests with branch coverage gate
         # .coveragerc branch=True enables branch measurement (RAIL Phase 2).
         # We enforce two independent thresholds that mirror run-tests.sh --coverage:
@@ -70,13 +70,15 @@ jobs:
         # requires bash 4+ which is not guaranteed on all CI images; the two gates
         # above are sufficient to catch regressions in CI. (#39)
         run: |
-          python -m coverage run --branch -m unittest discover -s tests/python -p 'test_*.py'
+          PYTHONPATH=backend python -m coverage run --branch -m unittest discover -s backend/tests/python -p 'test_*.py'
           python -m coverage report -m
           python -m coverage report --fail-under=90
           python -m coverage json -o /tmp/coverage.json
           python - <<'EOF'
           import json, sys
           d = json.load(open('/tmp/coverage.json'))
+          # Coverage stores the key using the source path; with PYTHONPATH=backend
+          # and source=server the key will be 'server.py'.
           s = d['files']['server.py']['summary']
           nb = s['num_branches']
           cb = s['covered_branches']
@@ -110,9 +112,9 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: SAST (bandit on server.py)
-        # -ll = report medium+ severity; server.py is the only first-party Python.
-        run: bandit -ll -r server.py
+      - name: SAST (bandit on backend/)
+        # -ll = report medium+ severity; all first-party Python lives in backend/.
+        run: bandit -ll -r backend/
       - name: Dependency CVE audit (pip-audit)
         # GHSA-mf9w-mj56-hr94 is ignored with justification (see
         # scripts/security-scan.sh): python-dotenv set_key/unset_key symlink issue

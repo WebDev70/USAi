@@ -210,6 +210,11 @@ class ProxySsrfGuardTests(unittest.TestCase):
         # Point at a private IP — the guard must block it before any connection.
         # _test_allow_loopback is intentionally NOT set here.
         server.CONFIG = dict(cls._saved_config)
+        # Explicitly remove the loopback bypass in case a prior test file (e.g.
+        # test_server_mcp.py) left it in the global CONFIG.  Without this the
+        # SSRF guard would be silently bypassed and the tests would fail with
+        # RemoteDisconnected instead of the expected 502.
+        server.CONFIG.pop('_test_allow_loopback', None)
         server.CONFIG.update({
             'api_key': 'k',
             'base_url': 'http://192.168.1.1',

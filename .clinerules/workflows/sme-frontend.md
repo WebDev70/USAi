@@ -1,4 +1,4 @@
-# Workflow: SME — Front-End Developer
+# Workflow: SME — Front-End Developer (UX & UI)
 # Cline RAIL — Front-End Specialist Rules
 
 > **Concern: Cline dev harness** — this file is part of the *Cline* VS Code
@@ -9,12 +9,38 @@
 or `app.js` (UI/DOM/CSS work). This file is a **domain-specific expansion of Role 3**
 — it does not replace the sequencing in `build.md`.
 
-**Canonical reference:** [`docs/rail-pipeline.md` §3 — Front-End Design quality axis](../../docs/rail-pipeline.md)
+**Canonical reference:** [`docs/rail-pipeline.md` §3 — UX & UI SME quality axis](../../docs/rail-pipeline.md)
 
 ---
 
-## Front-End SME charter
+## UX & UI SME charter
 
+This SME has **two distinct sub-disciplines** that must both be satisfied before a
+front-end change is considered done:
+
+### UX sub-discipline (how it works — user experience)
+Ensure the feature solves a real user problem and fits the user's mental model:
+- **State the user need.** Every new control or interaction must answer: *"Which
+  user goal does this enable?"* If no clear goal exists, the feature should not ship.
+- **Map the user flow** before writing any code for multi-step interactions (e.g. a
+  new dialog, a settings sequence, a multi-panel workflow). A brief description
+  ("user clicks X → Y appears → user confirms → Z happens") is sufficient — it does
+  not need to be a formal wireframe.
+- **Information architecture & placement.** New controls must be placed in the
+  settings/UI section that matches their conceptual function:
+  - File-retrieval controls → File Uploads section.
+  - External integrations → MCP & Plugins section.
+  - Appearance / display → System / Appearance section.
+  - **Cross-check placement against `docs/USER_GUIDE.md`** — the guide's section
+    headings are the IA source of truth. A control placed in the wrong section with
+    no documented rationale is a UX defect (see Self-Improvement Entry 002).
+- **Friction audit.** For any interaction that requires more than one step, ask:
+  *"Is every step necessary? Is the sequence intuitive?"* Remove steps or provide
+  defaults where possible.
+- **Task completion.** Can a user accomplish the feature's stated goal without
+  confusion or dead ends? If in doubt, describe the happy path before implementing.
+
+### UI sub-discipline (how it looks — user interface)
 Deliver **modern, accessible, dependency-free** front-end changes that:
 - Use **vanilla CSS** and **vanilla JS only** — no framework, no build step, no new
   runtime dependency.
@@ -33,6 +59,19 @@ Deliver **modern, accessible, dependency-free** front-end changes that:
 Read the spec §3 (Affected files) and §4 (Technical approach). For each front-end
 file in scope, verify:
 
+### UX pre-implementation
+- [ ] **User need stated.** The spec or a comment answers: *"Which user goal does
+      this feature enable?"*
+- [ ] **User flow described** (for multi-step interactions). A sentence-level flow
+      ("click X → Y appears → user confirms → Z") is written in the spec §4 or as a
+      code comment before implementation begins.
+- [ ] **IA placement verified.** The intended section in `index.html` matches the
+      conceptual category of the feature. Confirmed against `docs/USER_GUIDE.md`
+      section headings.
+- [ ] **Friction minimized.** Any multi-step interaction has been reviewed for
+      unnecessary steps; defaults are provided where reasonable.
+
+### UI pre-implementation
 - [ ] **No new runtime dependencies.** If you need an icon, use a Unicode glyph or
       inline SVG. If you need a component, build it with vanilla HTML/CSS/JS.
 - [ ] **Token extension, not token replacement.** Identify which existing CSS custom
@@ -57,16 +96,16 @@ file in scope, verify:
 
 ### RED — write failing tests first (JS logic)
 
-Front-end tests live in `tests/js/app.test.mjs` and test **pure helper functions**
+Front-end tests live in `frontend/tests/js/app.test.mjs` and test **pure helper functions**
 exported via the `module.exports` guard at the bottom of `app.js`. They use
 `node:test` + `node:assert` — no browser, no jsdom.
 
 - Identify which new/changed helpers from spec §5 need unit tests.
 - Write the tests; confirm they fail before writing production code.
 - **DOM wiring is NOT unit-tested** (no jsdom dependency). It is verified by
-  `node --check app.js` (syntax) + manual/browser testing.
+  `node --check frontend/app.js` (syntax) + manual/browser testing.
 
-**CSS-only changes:** no unit tests required. The gate is `node --check app.js`
+**CSS-only changes:** no unit tests required. The gate is `node --check frontend/app.js`
 (syntax guard on any JS touched) + visual verification in the browser + the
 cache-bust bump.
 
@@ -105,11 +144,22 @@ Implement only what spec §4 describes. Front-end conventions to respect:
 - Ensure new tokens are defined at the right scope (`:root` for global, `[data-theme=dark]`
   for dark overrides).
 - Verify no new hardcoded color hex values outside the token layer.
-- Re-run `node --check app.js` and `node --test tests/js/` to confirm green.
+- Re-run `node --check frontend/app.js` and `node --test frontend/tests/js/` to confirm green.
 
 ---
 
 ## Mandatory front-end gates (before handing back to build.md)
+
+### UX gates
+
+| Gate | Check |
+|------|-------|
+| **User need stated** | A user goal is named for every new control or interaction. |
+| **Flow described** | Any multi-step interaction has a sentence-level flow in spec §4 or a code comment. |
+| **IA placement** | New control's section in `index.html` matches conceptual function; cross-checked against `docs/USER_GUIDE.md` headings. |
+| **Friction minimal** | Multi-step interactions reviewed; unnecessary steps removed or defaulted. |
+
+### UI gates
 
 | Gate | Check |
 |------|-------|
@@ -120,7 +170,7 @@ Implement only what spec §4 describes. Front-end conventions to respect:
 | **`aria-hidden` on glyphs** | Decorative icons have `aria-hidden="true"`. |
 | **`prefers-reduced-motion`** | Any new animation/transition wrapped in the media query. |
 | **Pure helpers exported** | New testable helpers added to `module.exports` guard in `app.js`. |
-| **Tests passing** | `node --test tests/js/` green; `node --check app.js` clean. |
+| **Tests passing** | `node --test frontend/tests/js/` green; `node --check frontend/app.js` clean. |
 | **No `innerHTML` with unescaped input** | All `innerHTML` assignments use HTML-escaped or safe content. |
 
 ---
@@ -144,6 +194,8 @@ The Front-End SME implements **exactly what the spec describes**. If you notice:
   item (tag: accessibility).
 - A missing WCAG requirement **within the changed component** → fix it now (in scope
   for the current change, as it directly affects what you're touching).
+- A UX concern (wrong placement, missing user goal, friction) **outside the current
+  change** → note it as a future backlog item (tag: ux).
 
 Do not refactor the entire stylesheet or rewrite unrelated components.
 
@@ -151,8 +203,8 @@ Do not refactor the entire stylesheet or rewrite unrelated components.
 
 ## References
 
-- [`docs/rail-pipeline.md` §3 — Front-End Design](../../docs/rail-pipeline.md)
+- [`docs/rail-pipeline.md` §3 — UX & UI SME quality axis](../../docs/rail-pipeline.md)
 - `build.md` — master orchestrator (sequences this file within Role 3)
-- `review.md` — QA verifier (re-runs the "Mandatory front-end gates" table above at §6e-FE, independently of `/build`)
+- `review.md` — QA verifier (re-runs the "Mandatory front-end gates" tables above at §6e-FE, independently of `/build`)
 - `sme-backend.md` — back-end specialist (used for the same spec when it touches server.py)
 - `docs/principles.md` §1 — minimal runtime surface (why no framework)

@@ -10,7 +10,7 @@
 # is independently gated. The fail_under here is a safety net for the combined
 # coverage.py report; the run-tests.sh gates are stricter and more specific.
 [run]
-source = server
+source = backend/server
 branch = True
 
 [report]
@@ -28,4 +28,4 @@ exclude_lines =
     # Defensive: client disconnected mid-stream / unreachable error glue.
     except (BrokenPipeError, ConnectionResetError):
 omit =
-    tests/*
+    backend/tests/*
