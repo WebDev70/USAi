@@ -10,7 +10,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **60**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **67**.
 
 ---
 
@@ -70,6 +70,71 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 ---
 
 ## Open items
+
+### Projects follow-up work (found 2026-09-13)
+
+> Gaps found by reading the Projects code against the docs. None are started
+> (`[ ]` = Not started). Listed highest priority first.
+
+- [ ] **61. Make project context actually load** *(S)*
+  - A project can be created, but a chat inside it does not really pick up the
+    project's files, instructions, or memory folder. Six fixes belong together:
+    1. There is no `GET /projects/<id>` route on the backend, but the frontend
+       `openProject` and `restoreSession` both call it.
+    2. The session list response leaves out `projectId`, which the sidebar needs
+       to group chats by project.
+    3. `restoreSession` never calls `loadProjectChunks`, so project text is not
+       loaded.
+    4. `prepareContextMessages` and `saveMemory` leave out the active project ID,
+       so the per-project memory folders are never used.
+    5. The frontend sends `isolated` for memory mode, while the backend only
+       expects the project-only value.
+    6. `_put_project` ignores changes to `memoryMode`.
+  - Files: `backend/projects_handlers.py`, `backend/session_handlers.py`,
+    `frontend/app.js`.
+
+- [ ] **62. Documentation corrections — uploads, project icon, model IDs, env example** *(S)*
+  - Four places where the docs do not match the code:
+    1. `docs/USER_GUIDE.md` says uploads create embeddings. They do not.
+    2. `docs/ARCHITECTURE.md` documents a project icon that is never stored.
+    3. `.env.example` lists `claude_3_haiku`, while newer docs use
+       `claude_4_5_haiku`.
+    4. `EMBED_MODEL` and `EMBED_INPUT_TYPE` are read by the server but are
+       missing from `.env.example`.
+  - Files: `docs/USER_GUIDE.md`, `docs/ARCHITECTURE.md`, `.env.example`.
+
+- [ ] **63. Project file UI wiring** *(M)*
+  - The block around `frontend/index.html` line 290 has no reachable entry
+    point, and its event wiring is incomplete. Give it a way in and finish
+    hooking up its controls.
+  - Files: `frontend/index.html`, `frontend/app.js`, `frontend/styles.css`.
+
+- [ ] **64. Real PDF and DOCX extraction** *(M)*
+  - The UI advertises PDF and DOCX, but `uploadProjectFile` reads those binary
+    files as plain text, so the stored text is garbage.
+  - Files: `frontend/app.js`, `backend/projects_handlers.py`.
+
+- [ ] **65. Embeddings for project chunks** *(M)*
+  - `uploadProjectFile` stores a null embedding, so project search falls back to
+    keyword matching every time. Cover:
+    1. Generate embeddings for project chunks.
+    2. Save them with the chunk.
+    3. Keep the keyword fallback when embeddings are missing or fail.
+    4. Re-index files that were uploaded before this change.
+  - Files: `frontend/app.js`, `backend/projects_handlers.py`.
+
+- [ ] **66. Move an existing chat into a project** *(M)*
+  - Today there is no endpoint and no UI action to move a chat into a project.
+    Add both.
+  - Files: `backend/session_handlers.py`, `frontend/app.js`,
+    `frontend/index.html`.
+
+- [ ] **67. Per-project model, tool, and reasoning settings** *(L)*
+  - Model choice, tool toggles, and reasoning effort are global today, saved by
+    `saveSettings`. Let a project hold its own values. Projects inherit the
+    global defaults unless a project overrides them.
+  - Files: `frontend/app.js`, `frontend/index.html`,
+    `backend/projects_handlers.py`.
 
 ### 🔧 Governance findings (Sprint 09 close — 2026-06-26)
 
@@ -834,6 +899,11 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 ---
 
 ## Future / deferred
+
+> **Note (not a backlog item, no ID):** Sharing and collaboration, a project
+> home page, and project icons stay deferred on purpose, per
+> `docs/specs/projects-workspaces-slice4.md` (around line 21). They are not new
+> backlog items.
 
 - [x] **56. Frontend/backend directory reorg** *(M)* — Done (2026-07-06): Moved Python backend files (`server.py`, `proxy_handlers.py`, `memory_handlers.py`, `session_handlers.py`, `mcp_handlers.py`, `projects_handlers.py`) into `backend/`, frontend assets (`index.html`, `app.js`, `styles.css`) into `frontend/`, and tests into `backend/tests/python/` and `frontend/tests/js/` respectively. `backend/server.py` resolves `STATIC_DIR` relative to `REPO_ROOT`; all patched files: `run-tests.sh`, `.coveragerc`, `Dockerfile`, `Makefile`, `scripts/security-scan.sh`, `scripts/cli-check.sh`. 316 tests pass; security scan clean; `GET /` returns HTTP 200. Pre-existing test failures (SSRF SSL + project sort) confirmed on HEAD~1. Spec: `implementation_plan.md`.
 
