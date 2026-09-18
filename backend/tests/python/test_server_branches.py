@@ -299,6 +299,190 @@ class PayloadTooLargeTests(ServerBranchTestBase):
     def test_logs_413_when_too_large(self):
         self.assertEqual(self._post_oversized('/logs', 11 * 1024 * 1024), 413)
 
+    def test_extract_text_413_when_too_large(self):
+        """POST /extract-text -> 413 when Content-Length > 25 MB."""
+        self.assertEqual(self._post_oversized('/extract-text', 25 * 1024 * 1024 + 1), 413)
+
+
+class ExtractTextHandlerTests(ServerBranchTestBase):
+    """Cover the /extract-text handler branches: no-file 400 and extract 500."""
+
+    def _post_multipart(self, path, filename, file_bytes, content_type):
+        """POST a single-file multipart/form-data body and return (status, body)."""
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+        boundary = '----BranchTestBoundary'
+        head = (
+            f'--{boundary}\r\n'
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            f'Content-Type: {content_type}\r\n\r\n'
+        ).encode('utf-8')
+        body = head + file_bytes + f'\r\n--{boundary}--\r\n'.encode('utf-8')
+        req = Request(
+            self.url(path), data=body, method='POST',
+            headers={'Content-Type': f'multipart/form-data; boundary={boundary}',
+                     'Content-Length': str(len(body))},
+        )
+        try:
+            with urlopen(req) as resp:
+                return resp.status, json.loads(resp.read().decode('utf-8'))
+        except HTTPError as err:
+            return err.code, json.loads(err.read().decode('utf-8'))
+
+    def test_extract_text_400_when_no_file_field(self):
+        """A multipart body with no filename part → 400 'file' field required.
+
+        Exercises the final ``return`` of _post_extract_text (line 52) where the
+        loop finds no part carrying a filename.
+        """
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+        boundary = '----NoFileBoundary'
+        body = (
+            f'--{boundary}\r\n'
+            f'Content-Disposition: form-data; name="note"\r\n\r\n'
+            f'just a text field, no file\r\n'
+            f'--{boundary}--\r\n'
+        ).encode('utf-8')
+        req = Request(
+            self.url('/extract-text'), data=body, method='POST',
+            headers={'Content-Type': f'multipart/form-data; boundary={boundary}',
+                     'Content-Length': str(len(body))},
+        )
+        try:
+            urlopen(req)
+            self.fail('Expected HTTPError 400')
+        except HTTPError as err:
+            self.assertEqual(err.code, 400)
+
+    def test_extract_text_500_when_parser_raises(self):
+        """A corrupt PDF payload makes the parser raise → 500 with error body.
+
+        Exercises the except branch (lines 48-50) of _post_extract_text: the
+        file part is present (satisfying the filename check) but the bytes are
+        not a valid PDF, so extract_text_from_file raises and the handler
+        returns 500.
+        """
+        status, body = self._post_multipart(
+            '/extract-text', 'broken.pdf',
+            b'%PDF-1.4 this is not a real pdf at all',
+            'application/pdf',
+        )
+        self.assertEqual(status, 500)
+        self.assertIn('error', body)
+
+    def test_extract_text_400_on_missing_boundary(self):
+        """POST /extract-text with multipart Content-Type but no boundary -> 400."""
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+        req = Request(
+            self.url('/extract-text'),
+            data=b'data',
+            method='POST'
+        )
+        req.add_header('Content-Type', 'multipart/form-data') # No boundary
+        with self.assertRaises(HTTPError) as cm:
+            urlopen(req)
+        # The server's email parser will fail to find the boundary and the handler
+        # should return a 400-series error. Depending on the exact failure point,
+        # it could be a 400 from our handler or a lower-level failure.
+        # We expect a 400 because the request is malformed.
+        self.assertIn(cm.exception.code, (400, 415))
+
+    def test_extract_text_file_part_not_first(self):
+        """Multipart body with file part not first is still processed correctly."""
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+        boundary = '----TestBoundaryMultiPart'
+        body = (
+            f'--{boundary}\r\n'
+            f'Content-Disposition: form-data; name="note"\r\n\r\n'
+            f'Some other field\r\n'
+            f'--{boundary}\r\n'
+            f'Content-Disposition: form-data; name="file"; filename="test.txt"\r\n'
+            f'Content-Type: text/plain\r\n\r\n'
+            f'Hello from the second part\r\n'
+            f'--{boundary}--\r\n'
+        ).encode('utf-8')
+
+        req = Request(
+            self.url('/extract-text'),
+            data=body,
+            method='POST',
+            headers={'Content-Type': f'multipart/form-data; boundary={boundary}'}
+        )
+
+        try:
+            with urlopen(req) as resp:
+                status = resp.status
+                body = json.loads(resp.read().decode('utf-8'))
+        except HTTPError as err:
+            status = err.code
+            body = json.loads(err.read().decode('utf-8'))
+
+        self.assertEqual(status, 200)
+        self.assertIn('Hello from the second part', body.get('text', ''))
+
+    def test_extract_text_400_on_binary_as_text(self):
+        """A binary file sent with a text Content-Type should return a clean 4xx."""
+        status, body = self._post_multipart(
+            '/extract-text',
+            'invalid.txt',
+            b'\x80\x81\x82',  # Invalid UTF-8 sequence
+            'text/plain; charset=utf-8',
+        )
+        # The server should handle the UnicodeDecodeError gracefully and return 400.
+        self.assertEqual(status, 400)
+        self.assertIn('error', body)
+
+    def test_extract_text_400_on_content_length_mismatch(self):
+        """A body larger than its Content-Length should be handled gracefully."""
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+
+        boundary = '----TestBoundaryMismatch'
+        body = (
+            f'--{boundary}\r\n'
+            f'Content-Disposition: form-data; name="file"; filename="test.txt"\r\n'
+            f'Content-Type: text/plain\r\n\r\n'
+            f'some content here\r\n'
+            f'--{boundary}--\r\n'
+        ).encode('utf-8')
+
+        req = Request(
+            self.url('/extract-text'),
+            data=body,
+            method='POST',
+            headers={
+                'Content-Type': f'multipart/form-data; boundary={boundary}',
+                'Content-Length': str(len(body) - 10)  # Smaller than actual body
+            }
+        )
+
+        with self.assertRaises(HTTPError) as cm:
+            urlopen(req)
+        
+        self.assertEqual(cm.exception.code, 400)
+
+
+class InvalidHeaderTests(ServerBranchTestBase):
+    """Tests for requests with invalid headers."""
+
+    def test_extract_text_400_on_invalid_content_length(self):
+        """POST /extract-text with non-integer Content-Length must be 400."""
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+        req = Request(
+            self.url('/extract-text'),
+            data=b'data',
+            method='POST'
+        )
+        # Malformed header
+        req.add_header('Content-Length', 'not-an-integer')
+        with self.assertRaises(HTTPError) as cm:
+            urlopen(req)
+        self.assertEqual(cm.exception.code, 400)
+
 
 class MemoryWithVaultTests(unittest.TestCase):
     """Tests that exercise memory endpoints with a real (temp) vault configured."""
@@ -574,6 +758,163 @@ class EmbeddingsMemorySearchTests(unittest.TestCase):
         finally:
             server.CONFIG['embed_model'] = orig_model
             server.CONFIG['base_url'] = orig_base
+
+    def test_post_embeddings_sends_input_type_when_configured(self):
+        """generate_embeddings adds 'input_type' to the payload when configured.
+
+        Covers the branch in server.generate_embeddings that appends
+        embed_input_type to the upstream payload. A fake upstream echoes the
+        received body so the test can assert input_type was forwarded.
+        """
+        import json as _json
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+
+        captured = {}
+
+        ok_response = _json.dumps({
+            'data': [{'index': 0, 'embedding': [0.1, 0.2]}],
+        }).encode()
+
+        class EchoUpstream(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                length = int(self.headers.get('Content-Length', 0))
+                captured['payload'] = _json.loads(self.rfile.read(length))
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(ok_response)))
+                self.end_headers()
+                self.wfile.write(ok_response)
+            def log_message(self, *a): pass  # silence
+
+        upstream = HTTPServer(('127.0.0.1', 0), EchoUpstream)
+        up_port = upstream.server_address[1]
+        import threading as _threading
+        up_thread = _threading.Thread(target=upstream.serve_forever, daemon=True)
+        up_thread.start()
+
+        orig_model = server.CONFIG.get('embed_model', '')
+        orig_base = server.CONFIG.get('base_url', '')
+        orig_input_type = server.CONFIG.get('embed_input_type')
+        orig_loopback = server.CONFIG.get('_test_allow_loopback')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            server.CONFIG['base_url'] = f'http://127.0.0.1:{up_port}'
+            server.CONFIG['embed_input_type'] = 'search_document'
+            server.CONFIG['_test_allow_loopback'] = True
+            status, body = _request('POST', self.url('/embeddings'),
+                                    {'input': ['hello world']})
+            self.assertEqual(status, 200)
+            self.assertEqual(captured['payload'].get('input_type'),
+                             'search_document')
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+            server.CONFIG['base_url'] = orig_base
+            if orig_input_type is None:
+                server.CONFIG.pop('embed_input_type', None)
+            else:
+                server.CONFIG['embed_input_type'] = orig_input_type
+            if orig_loopback is None:
+                server.CONFIG.pop('_test_allow_loopback', None)
+            else:
+                server.CONFIG['_test_allow_loopback'] = orig_loopback
+            upstream.shutdown()
+
+    def test_generate_embeddings_raises_when_api_key_unset(self):
+        """generate_embeddings raises ValueError when API_KEY is unset.
+
+        Covers the direct guard in server.generate_embeddings (line 432) for a
+        missing API key even when model and base_url are present.
+        """
+        orig_model = server.CONFIG.get('embed_model', '')
+        orig_base = server.CONFIG.get('base_url', '')
+        orig_key = server.CONFIG.get('api_key', '')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            server.CONFIG['base_url'] = 'https://api.example.com/v1/'
+            server.CONFIG['api_key'] = ''
+            with self.assertRaises(ValueError):
+                server.generate_embeddings(['hello'])
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+            server.CONFIG['base_url'] = orig_base
+            server.CONFIG['api_key'] = orig_key
+
+    def test_generate_embeddings_raises_on_unsafe_endpoint(self):
+        """generate_embeddings raises ValueError when the endpoint is unsafe.
+
+        Covers the SSRF-guard branch (lines 436-437) in
+        server.generate_embeddings when the resolved endpoint targets a private
+        address and the loopback test-override is not set.
+        """
+        orig_model = server.CONFIG.get('embed_model', '')
+        orig_base = server.CONFIG.get('base_url', '')
+        orig_key = server.CONFIG.get('api_key', '')
+        orig_loopback = server.CONFIG.get('_test_allow_loopback')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            server.CONFIG['base_url'] = 'http://127.0.0.1:12345/v1/'
+            server.CONFIG['api_key'] = 'secret'
+            server.CONFIG.pop('_test_allow_loopback', None)
+            with self.assertRaises(ValueError):
+                server.generate_embeddings(['hello'])
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+            server.CONFIG['base_url'] = orig_base
+            server.CONFIG['api_key'] = orig_key
+            if orig_loopback is not None:
+                server.CONFIG['_test_allow_loopback'] = orig_loopback
+
+    def test_generate_embeddings_raises_when_upstream_data_not_a_list(self):
+        """generate_embeddings raises when upstream 'data' is not a list.
+
+        Covers the ValueError branch in server.generate_embeddings that guards
+        against a malformed upstream embeddings response (missing/non-list
+        'data' array). We exercise generate_embeddings() directly because that
+        is the only code path that inspects the upstream 'data' shape — the
+        /embeddings route is a pure proxy that forwards the upstream response
+        verbatim and never validates it.
+        """
+        import json as _json
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+
+        # Upstream returns 200 but with a non-list 'data' field.
+        bad_response = _json.dumps({'data': {'oops': 'not a list'}}).encode()
+
+        class FakeBadUpstream(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(bad_response)))
+                self.end_headers()
+                self.wfile.write(bad_response)
+            def log_message(self, *a): pass  # silence
+
+        upstream = HTTPServer(('127.0.0.1', 0), FakeBadUpstream)
+        up_port = upstream.server_address[1]
+        import threading as _threading
+        up_thread = _threading.Thread(target=upstream.serve_forever, daemon=True)
+        up_thread.start()
+
+        orig_model = server.CONFIG.get('embed_model', '')
+        orig_base = server.CONFIG.get('base_url', '')
+        orig_key = server.CONFIG.get('api_key', '')
+        orig_loopback = server.CONFIG.get('_test_allow_loopback')
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            server.CONFIG['base_url'] = f'http://127.0.0.1:{up_port}'
+            server.CONFIG['api_key'] = 'secret'
+            server.CONFIG['_test_allow_loopback'] = True
+            with self.assertRaises(ValueError):
+                server.generate_embeddings(['hello world'])
+        finally:
+            server.CONFIG['embed_model'] = orig_model
+            server.CONFIG['base_url'] = orig_base
+            server.CONFIG['api_key'] = orig_key
+            if orig_loopback is None:
+                server.CONFIG.pop('_test_allow_loopback', None)
+            else:
+                server.CONFIG['_test_allow_loopback'] = orig_loopback
+            upstream.shutdown()
 
     def test_post_embeddings_happy_path_proxies_upstream(self):
         """POST /embeddings with loopback allowed returns upstream response."""
@@ -1329,6 +1670,130 @@ class RawResponsesPathTraversalDeleteTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(body['ok'])
         self.assertFalse((self._raw_dir / 'abc.json').exists())
+
+
+class ServerHelperDirectUnitTests(unittest.TestCase):
+    """Direct unit tests for pure server.py helpers that are hard to reach via
+    HTTP. Each test saves/restores the CONFIG keys it mutates so tests remain
+    order-independent.
+    """
+
+    def setUp(self):
+        self._saved_config = dict(server.CONFIG)
+
+    def tearDown(self):
+        server.CONFIG = self._saved_config
+
+    def test_get_project_memory_dir_none_when_vault_unconfigured(self):
+        """get_project_memory_dir returns None when the vault is unconfigured
+        (get_memory_dir() is None → line 133)."""
+        server.CONFIG['obsidian_vault_path'] = ''
+        self.assertIsNone(server.get_project_memory_dir('proj_abc'))
+
+    def test_get_project_memory_dir_none_for_bad_id(self):
+        """A project id that fails the slug guard returns None (line 130)."""
+        server.CONFIG['obsidian_vault_path'] = '/tmp/some-vault'
+        self.assertIsNone(server.get_project_memory_dir('../escape'))
+
+    def test_resolve_memory_file_none_for_empty(self):
+        """_resolve_memory_file returns None for an empty rel_path."""
+        self.assertIsNone(server._resolve_memory_file(Path('/tmp'), ''))
+
+    def test_resolve_memory_file_strips_traversal_to_basename(self):
+        """_resolve_memory_file collapses traversal to a basename inside the dir
+        (covers the safe-resolution path around lines 160-165)."""
+        base = Path(self._tmp_dir())
+        resolved = server._resolve_memory_file(base, '../../etc/passwd')
+        # Path(...).name strips directories, so the result stays inside base.
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.parent, base.resolve())
+        self.assertEqual(resolved.name, 'passwd')
+
+    def _tmp_dir(self):
+        import tempfile as _tf
+        d = _tf.mkdtemp()
+        self.addCleanup(lambda: __import__('shutil').rmtree(d, ignore_errors=True))
+        return d
+
+    def test_mcp_enabled_false_when_path_missing(self):
+        """_mcp_enabled returns False when OBSIDIAN_MCP_PATH points at a file
+        that does not exist (line 190)."""
+        server.CONFIG['obsidian_mcp_path'] = '/nonexistent/path/to/mcp.js'
+        self.assertFalse(server._mcp_enabled())
+
+    def test_mcp_enabled_false_when_path_unset(self):
+        """_mcp_enabled returns False when OBSIDIAN_MCP_PATH is unset (line 188)."""
+        server.CONFIG['obsidian_mcp_path'] = ''
+        self.assertFalse(server._mcp_enabled())
+
+    def test_is_safe_upstream_url_false_for_non_http_scheme(self):
+        """is_safe_upstream_url rejects non-http(s) schemes (line 302-303)."""
+        server.CONFIG.pop('_test_allow_loopback', None)
+        self.assertFalse(server.is_safe_upstream_url('file:///etc/passwd'))
+
+    def test_is_safe_upstream_url_false_for_missing_host(self):
+        """is_safe_upstream_url rejects URLs with no host (line 306)."""
+        server.CONFIG.pop('_test_allow_loopback', None)
+        self.assertFalse(server.is_safe_upstream_url('http://'))
+
+    def test_is_safe_upstream_url_false_for_private_ip(self):
+        """is_safe_upstream_url rejects a private IP literal (lines 313-315)."""
+        server.CONFIG.pop('_test_allow_loopback', None)
+        self.assertFalse(server.is_safe_upstream_url('http://10.0.0.5/v1/'))
+
+    def test_is_safe_upstream_url_true_for_public_host(self):
+        """is_safe_upstream_url accepts a public hostname (line 320 → True)."""
+        server.CONFIG.pop('_test_allow_loopback', None)
+        self.assertTrue(server.is_safe_upstream_url('https://api.example.com/v1/'))
+
+    def test_generate_embeddings_raises_when_embed_model_unset(self):
+        """generate_embeddings raises ValueError when EMBED_MODEL is unset
+        (line 428)."""
+        server.CONFIG['embed_model'] = ''
+        with self.assertRaises(ValueError):
+            server.generate_embeddings(['hello'])
+
+    def test_generate_embeddings_raises_when_base_url_unset(self):
+        """generate_embeddings raises ValueError when BASE_URL is unset while a
+        model is present (line 430)."""
+        server.CONFIG['embed_model'] = 'text-embedding-3-small'
+        server.CONFIG['base_url'] = ''
+        with self.assertRaises(ValueError):
+            server.generate_embeddings(['hello'])
+
+    def test_generate_embeddings_wraps_upstream_http_error(self):
+        """generate_embeddings maps an upstream HTTPError into a ValueError
+        (covers the HTTPError branch, lines 464-467)."""
+        import json as _json
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+
+        err_body = _json.dumps({'error': 'boom'}).encode()
+
+        class FailingUpstream(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(err_body)))
+                self.end_headers()
+                self.wfile.write(err_body)
+
+            def log_message(self, *a):  # silence
+                pass
+
+        upstream = HTTPServer(('127.0.0.1', 0), FailingUpstream)
+        up_port = upstream.server_address[1]
+        import threading as _threading
+        up_thread = _threading.Thread(target=upstream.serve_forever, daemon=True)
+        up_thread.start()
+        try:
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            server.CONFIG['base_url'] = f'http://127.0.0.1:{up_port}'
+            server.CONFIG['api_key'] = 'secret'
+            server.CONFIG['_test_allow_loopback'] = True
+            with self.assertRaises(ValueError):
+                server.generate_embeddings(['hello'])
+        finally:
+            upstream.shutdown()
 
 
 if __name__ == '__main__':

@@ -18,9 +18,74 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import MagicMock, patch
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+
+# Try to import optional deps for PDF/DOCX tests; skip tests if they are not installed.
+try:
+    from docx import Document
+    import pypdf  # noqa: F401  (import proves the backend dep is present so the test runs)
+    _EXTRACT_TEST_DEPS_INSTALLED = True
+except ImportError:
+    _EXTRACT_TEST_DEPS_INSTALLED = False
+
+
+def _create_dummy_pdf(path, text):
+    """Write a minimal, spec-valid PDF whose single page draws ``text``.
+
+    We build the PDF by hand as raw bytes rather than driving pypdf's writer
+    internals. This is the most robust way to guarantee that ``pypdf``'s
+    ``page.extract_text()`` (which the backend uses) can recover the text: the
+    page's content stream contains a real ``BT ... (text) Tj ... ET`` block that
+    references an embedded Type1 Helvetica font. Byte offsets in the xref table
+    are computed as we assemble the file so the result is a well-formed PDF.
+    """
+    # The content stream draws the text using the standard PDF text operators.
+    content = (
+        b"BT\n/F1 24 Tf\n72 700 Td\n("
+        + text.encode("ascii")
+        + b") Tj\nET\n"
+    )
+
+    # Each PDF object, in order. We fill in the content-stream length below.
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        b"<< /Length " + str(len(content)).encode("ascii") + b" >>\nstream\n"
+        + content + b"endstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+
+    buf = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objects, start=1):
+        offsets.append(len(buf))
+        buf += str(i).encode("ascii") + b" 0 obj\n" + body + b"\nendobj\n"
+
+    xref_pos = len(buf)
+    n = len(objects) + 1  # +1 for the free object 0
+    buf += b"xref\n0 " + str(n).encode("ascii") + b"\n"
+    buf += b"0000000000 65535 f \n"
+    for off in offsets:
+        buf += ("%010d 00000 n \n" % off).encode("ascii")
+    buf += (
+        b"trailer\n<< /Size " + str(n).encode("ascii")
+        + b" /Root 1 0 R >>\nstartxref\n"
+        + str(xref_pos).encode("ascii") + b"\n%%EOF\n"
+    )
+
+    with open(path, "wb") as f:
+        f.write(buf)
+
+
+def _create_dummy_docx(path, text):
+    doc = Document()
+    doc.add_paragraph(text)
+    doc.save(path)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT / 'backend'))
@@ -100,6 +165,7 @@ class ServerHTTPTestBase(unittest.TestCase):
             'context7_method': 'GET',
             'obsidian_vault_path': str(cls._vault),
             'obsidian_memory_subdir': 'USAi',
+            'embed_model': 'test-embed-model',
         }
 
         cls._httpd = ThreadingHTTPServer(('127.0.0.1', 0),
@@ -476,8 +542,8 @@ class ProjectsCRUDTests(ServerHTTPTestBase):
         self.assertIn('Alpha', names)
         self.assertIn('Beta', names)
 
-    def test_pr3_update_name_and_pin(self):
-        """PR-3: PUT /projects/:id updates name and pinned; memoryMode ignored."""
+    def test_pr3_update_name_pin_and_memory_mode(self):
+        """PR-3: PUT /projects/:id updates name, pinned, and memoryMode."""
         _, created = _request('POST', self.url('/projects'),
                                {'name': 'Original', 'memoryMode': 'project-only'})
         pid = created['id']
@@ -486,8 +552,17 @@ class ProjectsCRUDTests(ServerHTTPTestBase):
         self.assertEqual(status, 200)
         self.assertEqual(body['name'], 'Renamed')
         self.assertTrue(body['pinned'])
-        # memoryMode must NOT change — immutable after creation
-        self.assertEqual(body['memoryMode'], 'project-only')
+        self.assertEqual(body['memoryMode'], 'default')
+
+    def test_get_single_project(self):
+        """GET /projects/<id> returns a single project."""
+        _, created = _request('POST', self.url('/projects'),
+                               {'name': 'Single', 'memoryMode': 'default'})
+        pid = created['id']
+        status, body = _request('GET', self.url(f'/projects/{pid}'))
+        self.assertEqual(status, 200)
+        self.assertEqual(body['id'], pid)
+        self.assertEqual(body['name'], 'Single')
 
     def test_pr4_delete_removes_project_and_clears_session_projectid(self):
         """PR-4: DELETE /projects/:id removes project file and clears projectId from sessions."""
@@ -648,8 +723,8 @@ class ProjectInstructionsTests(ProjectsCRUDTests):
                                  {'instructions': 'Be concise.', 'memoryMode': 'default'})
         self.assertEqual(status, 200)
         self.assertEqual(body['instructions'], 'Be concise.')
-        # memoryMode must NOT change — immutable after creation
-        self.assertEqual(body['memoryMode'], 'project-only')
+        # memoryMode is mutable as of Slice 3.
+        self.assertEqual(body['memoryMode'], 'default')
 
     def test_pr11_create_instructions_too_long_returns_400(self):
         """PR-11: POST /projects with instructions > 8 192 bytes → 400 'instructions too long'."""
@@ -1073,6 +1148,270 @@ class ProjectChunkCacheTests(ProjectsSlice3MemoryModeTests):
                           'global cache list must still include pf7_global.txt')
         finally:
             global_file.unlink(missing_ok=True)
+
+
+class FileExtractionAndEmbeddingTests(ServerHTTPTestBase):
+    """FE-1, FE-2: PDF/DOCX extraction. EMB-1, EMB-2: embedding generation."""
+
+    def _post_multipart(self, url, file_path, file_content_type):
+        """POST a multipart/form-data request with a single file."""
+        from urllib.request import Request, urlopen
+        import mimetypes
+
+        boundary = '----TestBoundary12345'
+        body = (
+            f'--{boundary}\r\n'
+            f'Content-Disposition: form-data; name="file"; filename="{file_path.name}"\r\n'
+            f'Content-Type: {file_content_type}\r\n'
+            f'\r\n'
+        ).encode('utf-8')
+        body += file_path.read_bytes()
+        body += f'\r\n--{boundary}--\r\n'.encode('utf-8')
+
+        headers = {
+            'Content-Type': f'multipart/form-data; boundary={boundary}',
+            'Content-Length': str(len(body))
+        }
+
+        req = Request(url, data=body, headers=headers, method='POST')
+        try:
+            with urlopen(req) as resp:
+                raw = resp.read().decode('utf-8')
+                status = resp.status
+                return status, json.loads(raw)
+        except HTTPError as err:
+            return err.code, json.loads(err.read().decode('utf-8'))
+
+    # @unittest.skipIf(not _EXTRACT_TEST_DEPS_INSTALLED, "pypdf or python-docx not installed")
+    def test_fe1_extract_text_from_pdf_and_docx(self):
+        """FE-1: POST /extract-text returns plain text for PDF and DOCX."""
+        if not _EXTRACT_TEST_DEPS_INSTALLED:
+            self.skipTest("pypdf or python-docx not installed")
+
+        pdf_path = Path(self._tmp.name) / 'test.pdf'
+        docx_path = Path(self._tmp.name) / 'test.docx'
+        _create_dummy_pdf(pdf_path, "Hello PDF world")
+        _create_dummy_docx(docx_path, "Hello DOCX world")
+
+        status, body = self._post_multipart(
+            self.url('/extract-text'),
+            pdf_path,
+            'application/pdf'
+        )
+        self.assertEqual(status, 200, f'PDF extraction failed: {body}')
+        self.assertIn("Hello PDF world", body.get('text', ''))
+
+        status, body = self._post_multipart(
+            self.url('/extract-text'),
+            docx_path,
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+        self.assertEqual(status, 200, f'DOCX extraction failed: {body}')
+        self.assertIn("Hello DOCX world", body.get('text', ''))
+
+    def test_fe1b_extract_text_from_txt(self):
+        """POST /extract-text returns plain text for .txt files."""
+        txt_path = Path(self._tmp.name) / 'test.txt'
+        txt_path.write_text("Hello TXT world", encoding='utf-8')
+
+        status, body = self._post_multipart(
+            self.url('/extract-text'),
+            txt_path,
+            'text/plain'
+        )
+        self.assertEqual(status, 200, f'TXT extraction failed: {body}')
+        self.assertIn("Hello TXT world", body.get('text', ''))
+
+    def test_fe1c_binary_safety(self):
+        """POST /extract-text with binary file is safe."""
+        bin_path = Path(self._tmp.name) / 'test.bin'
+        bin_content = b'\x80\x81\x82'
+        bin_path.write_bytes(bin_content)
+
+        status, body = self._post_multipart(
+            self.url('/extract-text'),
+            bin_path,
+            'application/octet-stream'
+        )
+        self.assertEqual(status, 200, f'Binary file upload failed: {body}')
+        # The file parser will return an empty string for unknown file types, which is fine.
+        # The main thing is that the server doesn't crash on binary content.
+        self.assertEqual(body.get('text', 'ERROR'), '')
+
+    @patch('server.urlopen')
+    def test_emb1_generate_embeddings_endpoint(self, mock_urlopen):
+        """EMB-1: POST /generate-embeddings creates embeddings for a cached file."""
+        # Mock the embedding API response
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            'data': [{'embedding': [0.1, 0.2, 0.3], 'index': 0}]
+        }).encode('utf-8')
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        # 1. Create a project and a cached file with no embeddings
+        _, proj = _request('POST', self.url('/projects'), {'name': 'EmbeddingTest'})
+        pid = proj['id']
+        _request('POST', self.url(f'/chunk-cache?projectId={pid}'),
+                 {'filename': 'embed_me.txt', 'chunks': [{'chunkId': 0, 'text': 'some text', 'embedding': None}]})
+
+        # 2. Call the new endpoint. The handler reads projectId from the query
+        # string and filename/chunkIds from the JSON body.
+        status, body = _request('POST', self.url(f'/generate-embeddings?projectId={pid}'),
+                                  {'filename': 'embed_me.txt', 'chunkIds': [0]})
+        self.assertEqual(status, 200)
+        self.assertTrue(body['ok'])
+
+        # 3. Verify the chunk now has an embedding vector
+        _, chunk_data = _request('GET', self.url(f'/chunk-cache?projectId={pid}&file=embed_me.txt'))
+        self.assertIsNotNone(chunk_data['chunks'][0]['embedding'])
+        self.assertIsInstance(chunk_data['chunks'][0]['embedding'], list)
+
+    def test_emb3_full_project_upload_round_trip(self):
+        """EMB-3: full project file upload and embedding generation round trip."""
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        import threading
+
+        canned_embedding = [0.1, 0.2, 0.3]
+        upstream_received_request = threading.Event()
+
+        class FakeUpstream(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                response = {
+                    "object": "list",
+                    "data": [{
+                        "object": "embedding",
+                        "index": 0,
+                        "embedding": canned_embedding,
+                    }],
+                    "model": "text-embedding-3-small",
+                }
+                self.wfile.write(json.dumps(response).encode('utf-8'))
+                upstream_received_request.set()
+
+            def log_message(self, format, *args):
+                return  # Suppress logs
+
+        # Start the fake upstream server in a separate thread
+        upstream_server = HTTPServer(('127.0.0.1', 0), FakeUpstream)
+        upstream_port = upstream_server.server_address[1]
+        upstream_thread = threading.Thread(target=upstream_server.serve_forever)
+        upstream_thread.daemon = True
+        upstream_thread.start()
+
+        orig_base_url = server.CONFIG.get('base_url')
+        orig_embed_model = server.CONFIG.get('embed_model')
+        orig_allow_loopback = server.CONFIG.get('_test_allow_loopback')
+
+        try:
+            # Configure server to use the fake upstream and allow loopback
+            server.CONFIG['base_url'] = f'http://127.0.0.1:{upstream_port}'
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            server.CONFIG['_test_allow_loopback'] = True
+
+            # 1. Create a project
+            status, body = _request('POST', self.url('/projects'), {'name': 'Test Project EMB3'})
+            self.assertEqual(status, 201)
+            project_id = body['id']
+
+            # 2. Upload a file chunk
+            chunk_content = 'This is a test chunk.'
+            chunk_id = 'c1'
+            status, body = _request(
+                'POST',
+                self.url(f'/chunk-cache?projectId={project_id}'),
+                {'filename': 'test.txt', 'chunks': [{'text': chunk_content, 'chunkId': chunk_id}]}
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(body['savedAs'], 'test.txt')
+
+            # 3. Trigger embedding generation
+            status, body = _request(
+                'POST',
+                self.url(f'/generate-embeddings?projectId={project_id}'),
+                {'filename': 'test.txt', 'chunkIds': [chunk_id]}
+            )
+            self.assertEqual(status, 200)
+            self.assertTrue(upstream_received_request.wait(timeout=2), "Upstream server did not receive the request.")
+
+            # 4. Verify the chunk now has an embedding
+            status, body = _request('GET', self.url(f'/chunk-cache?projectId={project_id}&file=test.txt'))
+            self.assertEqual(status, 200)
+            self.assertIn('chunks', body)
+            self.assertEqual(len(body['chunks']), 1)
+            chunk_data = body['chunks'][0]
+            self.assertEqual(chunk_data['chunkId'], chunk_id)
+            self.assertEqual(chunk_data['embedding'], canned_embedding)
+
+        finally:
+            # Clean up
+            upstream_server.shutdown()
+            upstream_thread.join()
+            server.CONFIG['base_url'] = orig_base_url
+            server.CONFIG['embed_model'] = orig_embed_model
+            server.CONFIG['_test_allow_loopback'] = orig_allow_loopback
+
+    def test_emb3_negative_regression_project_id_in_body(self):
+        """EMB-3 Negative: POSTing projectId in body (old way) is ignored."""
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        import threading
+
+        upstream_received_request = threading.Event()
+
+        class FakeUpstream(BaseHTTPRequestHandler):
+            def do_POST(self):
+                # This should not be called.
+                upstream_received_request.set()
+                self.send_response(500)
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                return
+
+        upstream_server = HTTPServer(('127.0.0.1', 0), FakeUpstream)
+        upstream_port = upstream_server.server_address[1]
+        upstream_thread = threading.Thread(target=upstream_server.serve_forever)
+        upstream_thread.daemon = True
+        upstream_thread.start()
+
+        orig_base_url = server.CONFIG.get('base_url')
+        orig_embed_model = server.CONFIG.get('embed_model')
+        orig_allow_loopback = server.CONFIG.get('_test_allow_loopback')
+
+        try:
+            server.CONFIG['base_url'] = f'http://127.0.0.1:{upstream_port}'
+            server.CONFIG['embed_model'] = 'text-embedding-3-small'
+            server.CONFIG['_test_allow_loopback'] = True
+
+            # 1. Create a project and a cached file with null embedding
+            _, proj = _request('POST', self.url('/projects'), {'name': 'EmbeddingNegTest'})
+            pid = proj['id']
+            _request('POST', self.url(f'/chunk-cache?projectId={pid}'),
+                     {'filename': 'embed_neg.txt', 'chunks': [{'chunkId': 'c1', 'text': 'some text', 'embedding': None}]})
+
+            # 2. Call generate-embeddings the *old, broken way*
+            # projectId is in the body, and chunkIds is missing.
+            # The server should reject this (currently by doing nothing).
+            status, body = _request('POST', self.url(f'/generate-embeddings?projectId={pid}'),
+                                  {'filename': 'embed_neg.txt', 'projectId': pid})
+            self.assertEqual(status, 200) # The handler returns 200 but does nothing.
+
+            # 3. Assert that the upstream was NOT called
+            self.assertFalse(upstream_received_request.is_set(),
+                             "Upstream server should not have been called for a legacy request.")
+
+            # 4. Verify the chunk embedding is still null
+            _, chunk_data = _request('GET', self.url(f'/chunk-cache?projectId={pid}&file=embed_neg.txt'))
+            self.assertIsNone(chunk_data['chunks'][0]['embedding'])
+
+        finally:
+            upstream_server.shutdown()
+            upstream_thread.join()
+            server.CONFIG['base_url'] = orig_base_url
+            server.CONFIG['embed_model'] = orig_embed_model
+            server.CONFIG['_test_allow_loopback'] = orig_allow_loopback
 
 
 if __name__ == '__main__':

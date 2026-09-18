@@ -504,6 +504,11 @@ class ProxyIncrementalStreamingTests(unittest.TestCase):
         cls._up.shutdown(); cls._up.server_close()
         server.CONFIG = cls._saved_config
 
+    def setUp(self):
+        """Ensure the correct base_url is set for this test class to avoid flakiness."""
+        server.CONFIG['base_url'] = f'http://127.0.0.1:{self.__class__._up_port}'
+        server.CONFIG['_test_allow_loopback'] = True
+
     def test_first_chunk_arrives_before_last(self):
         # Use a raw socket so we can time when individual chunks arrive, rather
         # than urlopen which may buffer until the response is complete.
