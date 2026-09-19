@@ -10,6 +10,22 @@
   local/CI threshold consistency plus the inclusive 5.00-point advisory boundary.
 
 ### Fixed
+- **The Python CI job no longer fails on a missing JS dev dependency.** `tests/js-coverage.mjs`
+  enumerated *every* `frontend/tests/js/*.test.mjs` file, including the jsdom-only
+  `app.behavior.test.mjs`. The GitHub Actions **Python** job installs no npm packages, yet it
+  runs that script through the `#37` sentinel tests (T-10a/T-10b) in
+  `backend/tests/python/test_scripts.py`. `node --test` therefore aborted with
+  `ERR_MODULE_NOT_FOUND: jsdom`, the gate exited 1, and both sentinel tests failed
+  (`FAILED (failures=2, skipped=4)`) — a red Python job caused entirely by an absent
+  *JavaScript* dev dependency, which is why it never reproduced locally where
+  `node_modules/` exists. The gate now applies the same `node_modules/jsdom` guard
+  `run-tests.sh` already used, excludes the behavior suite with a visible warning when
+  jsdom is absent, and is pinned by a new regression test (T-10c,
+  `TestJsCoverageWithoutJsdom`) that runs the gate in a synthetic jsdom-free tree.
+  **Coverage is unchanged, not weakened:** the behavior suite loads `app.js` via
+  `vm.runInContext`, so it contributes nothing to the measured branch % — verified
+  identical at **75.19%** with and without it. The two sentinel tests additionally
+  `skipUnless(node)` so a Node-less Python environment skips rather than fails.
 - **GitHub Actions now mirrors the local coverage and security contracts.** CI
   installs the lockfile-pinned jsdom test dependency, measures Python explicitly
   with `--source=backend`, and invokes the canonical production-only Bandit/CVE

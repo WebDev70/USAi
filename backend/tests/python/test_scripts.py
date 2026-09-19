@@ -11,6 +11,7 @@ spec-check.sh is implemented to make them pass (Green).
 """
 import os
 import subprocess
+import shutil
 import sys
 import tempfile
 import textwrap
@@ -699,6 +700,10 @@ import re as _re
 JS_COVERAGE = os.path.join(REPO_ROOT, "tests", "js-coverage.mjs")
 SENTINEL_FILE = "/tmp/usai-js-branch-pct"
 
+# `node` is a DEV-ONLY prerequisite for the JS gate. Skip (never fail) when the
+# runner has no Node so a Python-only environment stays green.
+NODE_BIN = shutil.which("node")
+
 
 def _run_js_coverage(min_pct=None):
     """
@@ -717,6 +722,7 @@ def _run_js_coverage(min_pct=None):
     return result.returncode, result.stdout + result.stderr
 
 
+@unittest.skipUnless(NODE_BIN, "node not installed — JS coverage gate is dev-only")
 class TestJsSentinelWritten(unittest.TestCase):
     """
     T-10a: tests/js-coverage.mjs writes the measured branch % to
@@ -748,6 +754,7 @@ class TestJsSentinelWritten(unittest.TestCase):
         self.assertLessEqual(value, 100.0, msg=f"Sentinel value should be ≤ 100, got {value}")
 
 
+@unittest.skipUnless(NODE_BIN, "node not installed — JS coverage gate is dev-only")
 class TestJsSentinelMatchesOutput(unittest.TestCase):
     """
     T-10b: the branch % written to the sentinel matches what js-coverage.mjs
@@ -778,6 +785,46 @@ class TestJsSentinelMatchesOutput(unittest.TestCase):
             sentinel_pct, reported_pct, places=1,
             msg=f"Sentinel {sentinel_pct} != reported {reported_pct}",
         )
+
+
+@unittest.skipUnless(NODE_BIN, "node not installed — JS coverage gate is dev-only")
+class TestJsCoverageWithoutJsdom(unittest.TestCase):
+    """
+    T-10c (CI regression): the coverage gate must pass in a tree with no
+    node_modules/jsdom.
+
+    WHY: the GitHub Actions *Python* job installs no npm packages, yet T-10a/T-10b
+    above invoke tests/js-coverage.mjs. Before the guard, `node --test` aborted with
+    ERR_MODULE_NOT_FOUND for jsdom (imported only by app.behavior.test.mjs), the gate
+    exited 1, and both sentinel tests failed — turning a missing JS dev dependency
+    into a red Python job. run-tests.sh already skips the behavior suite the same way.
+    """
+
+    def test_gate_passes_when_jsdom_absent(self):
+        """Excludes the jsdom-only suite, warns, and still reports branch %."""
+        with tempfile.TemporaryDirectory() as tmp:
+            # Mirror the repo layout the script expects (tests/ + frontend/) without
+            # a node_modules directory, so existsSync(node_modules/jsdom) is false.
+            os.makedirs(os.path.join(tmp, "tests"))
+            shutil.copy(JS_COVERAGE, os.path.join(tmp, "tests", "js-coverage.mjs"))
+            # Symlink frontend/ rather than copying app.js (193 KB) + its test suites.
+            os.symlink(os.path.join(REPO_ROOT, "frontend"), os.path.join(tmp, "frontend"))
+
+            result = subprocess.run(
+                ["node", os.path.join(tmp, "tests", "js-coverage.mjs"), "75"],
+                capture_output=True, text=True, cwd=tmp,
+            )
+            out = result.stdout + result.stderr
+
+            self.assertEqual(result.returncode, 0,
+                             msg=f"Gate must pass without jsdom, exited "
+                                 f"{result.returncode}:\n{out}")
+            self.assertIn("jsdom not installed", out,
+                          msg=f"Expected a skip warning naming jsdom:\n{out}")
+            self.assertNotIn("ERR_MODULE_NOT_FOUND", out,
+                             msg=f"jsdom must not be imported at all:\n{out}")
+            self.assertRegex(out, r"branch\s+[\d.]+%",
+                             msg=f"Gate must still report a branch %:\n{out}")
 
 
 # ---------------------------------------------------------------------------

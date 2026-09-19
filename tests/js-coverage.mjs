@@ -13,7 +13,7 @@
 // Requires Node >= 22 for --experimental-test-coverage.
 
 import { execSync } from 'node:child_process';
-import { readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -25,16 +25,35 @@ const SENTINEL_FILE = '/tmp/usai-js-branch-pct';
 
 const MIN = Number(process.argv[2] ?? 70);
 const here = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.join(here, '..');
 const jsDir = path.join(here, '..', 'frontend', 'tests', 'js');
+
+// The behavior suite imports the DEV-ONLY jsdom package. run-tests.sh already
+// skips it gracefully when node_modules/jsdom is absent; mirror that here so the
+// coverage gate never depends on an optional dev dependency being installed.
+// WHY THIS MATTERS: the Python CI job installs no npm packages, yet it runs this
+// script through test_scripts.py's sentinel tests (T-10a/T-10b). Without the
+// guard, `node --test` died with ERR_MODULE_NOT_FOUND: jsdom and the gate exited
+// 1, failing the Python job for a missing JS dev dep. Excluding the behavior
+// suite does not weaken the gate: it loads app.js through vm.runInContext, so it
+// contributes nothing to app.js's measured branch % (verified identical at 75.19%
+// with and without it).
+const JSDOM_ONLY_TESTS = new Set(['app.behavior.test.mjs']);
+const hasJsdom = existsSync(path.join(repoRoot, 'node_modules', 'jsdom'));
 const files = readdirSync(jsDir)
   .filter((f) => f.endsWith('.test.mjs'))
+  .filter((f) => hasJsdom || !JSDOM_ONLY_TESTS.has(f))
   .map((f) => path.join(jsDir, f));
+if (!hasJsdom) {
+  console.warn('⚠ jsdom not installed — excluding the jsdom-only behavior tests ' +
+    'from the coverage run. Run `npm install` (or `make dev-setup`) for the full suite.');
+}
 
 let out;
 try {
   out = execSync(
     `node --test --experimental-test-coverage ${files.map((f) => `'${f}'`).join(' ')}`,
-    { encoding: 'utf-8', cwd: path.join(here, '..'), env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' } }
+    { encoding: 'utf-8', cwd: repoRoot, env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' } }
   );
 } catch (err) {
   // node --test exits non-zero if any test fails; surface that first.
