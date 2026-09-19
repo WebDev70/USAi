@@ -71,10 +71,6 @@ jobs:
         #   • Line coverage:   fail_under=90% (coverage.py --fail-under)
         #   • Branch coverage: PY_BRANCH_MIN=90% (extracted from coverage JSON)
           PYTHONPATH=backend python -m unittest discover -s backend/tests/python -p 'test_*.py'
-              sys.exit(1)
-          else:
-              print(f'PASS: branch coverage >= 90%')
-          EOF
 
   security:
     name: DevSecOps scan (secrets + SAST + dependency CVEs)
