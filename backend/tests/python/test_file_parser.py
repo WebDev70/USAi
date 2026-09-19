@@ -62,6 +62,17 @@ def _docx_bytes(body, include_document=True):
     return buffer
 
 
+def _docx_with_document_xml(document_xml):
+    """Build a DOCX whose main part is supplied verbatim for parser-security tests."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('[Content_Types].xml', CONTENT_TYPES)
+        archive.writestr('_rels/.rels', RELS)
+        archive.writestr('word/document.xml', document_xml)
+    buffer.seek(0)
+    return buffer
+
+
 def _paragraphs(*texts):
     """Build simple single-run paragraphs from plain strings."""
     return ''.join(
@@ -161,6 +172,21 @@ class ExtractDocxTests(unittest.TestCase):
         """FP-7b: random bytes are not a ZIP, so zipfile refuses them."""
         with self.assertRaises(zipfile.BadZipFile):
             file_parser.extract_text_from_docx(io.BytesIO(b'not a zip at all'))
+
+    def test_fp7c_dtd_or_entity_declarations_are_rejected(self):
+        """FP-7c: untrusted DOCX XML cannot declare entities or external resources."""
+        document_xml = (
+            '<?xml version="1.0"?>'
+            '<!DOCTYPE document [<!ENTITY sample "unsafe">]>'
+            f'<w:document xmlns:w="{W_NS}"><w:body>'
+            '<w:p><w:r><w:t>&sample;</w:t></w:r></w:p>'
+            '</w:body></w:document>'
+        )
+        with self.assertRaises(ValueError) as ctx:
+            file_parser.extract_text_from_docx(
+                _docx_with_document_xml(document_xml)
+            )
+        self.assertIn('unsafe XML declaration', str(ctx.exception))
 
 
 class ExtractDispatchTests(unittest.TestCase):

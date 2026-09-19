@@ -26,8 +26,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           # Node >= 22 so the built-in --experimental-test-coverage is available
-          # (used by the dev-only coverage gate; no third-party deps).
+          # (used by the dev-only coverage gate).
           node-version: "22"
+          cache: npm
+      - name: Install dev-only JS test dependencies
+        # jsdom powers browser-behavior tests only; it is not shipped at runtime.
+        run: npm ci
       - name: Syntax check (app.js)
         run: node --check frontend/app.js
       - name: Run JS unit tests
@@ -70,16 +74,14 @@ jobs:
         # requires bash 4+ which is not guaranteed on all CI images; the two gates
         # above are sufficient to catch regressions in CI. (#39)
         run: |
-          PYTHONPATH=backend python -m coverage run --branch -m unittest discover -s backend/tests/python -p 'test_*.py'
+          PYTHONPATH=backend python -m coverage run --branch --source=backend -m unittest discover -s backend/tests/python -p 'test_*.py'
           python -m coverage report -m
           python -m coverage report --fail-under=90
           python -m coverage json -o /tmp/coverage.json
           python - <<'EOF'
           import json, sys
           d = json.load(open('/tmp/coverage.json'))
-          # Coverage stores the key using the source path; with PYTHONPATH=backend
-          # and source=server the key will be 'server.py'.
-          s = d['files']['server.py']['summary']
+          s = d['files']['backend/server.py']['summary']
           nb = s['num_branches']
           cb = s['covered_branches']
           pct = (cb / nb * 100) if nb > 0 else 100.0
@@ -112,11 +114,7 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: SAST (bandit on backend/)
-        # -ll = report medium+ severity; all first-party Python lives in backend/.
-        run: bandit -ll -r backend/
-      - name: Dependency CVE audit (pip-audit)
-        # GHSA-mf9w-mj56-hr94 is ignored with justification (see
-        # scripts/security-scan.sh): python-dotenv set_key/unset_key symlink issue
-        # fixed in 1.2.2 and not exploitable here (app only calls load_dotenv).
-        run: pip-audit --ignore-vuln GHSA-mf9w-mj56-hr94 -r requirements.txt
+      - name: Canonical SAST + dependency CVE audit
+        # Gitleaks ran in the dedicated action above. Reuse the local strict gate
+        # for production-only Bandit scope and centrally justified CVE ignores.
+        run: SKIP_GITLEAKS=1 ./scripts/security-scan.sh --strict

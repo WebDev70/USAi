@@ -43,5 +43,4 @@ Library/
 
 # Node dev-only dependencies (jsdom for behavior tests). Never shipped in app.
 node_modules/
-package-lock.json
 

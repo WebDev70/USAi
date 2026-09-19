@@ -6,7 +6,7 @@
 #   needs DETERMINISTIC, machine-enforced scanning that fails the same way every
 #   time. This script shifts security left into three classic gates:
 #     1. SECRET SCANNING  — gitleaks: no secret ever reaches git history.
-#     2. SAST             — bandit:   static analysis of server.py and all handler modules for insecure code.
+#     2. SAST             — bandit:   recursive static analysis of production backend code.
 #     3. DEPENDENCY AUDIT — pip-audit: CVE check of our (tiny) runtime dependency.
 #
 #   All three are DEV/CI tooling per docs/principles.md §1 — none is imported by
@@ -58,14 +58,16 @@ else
 fi
 
 echo
-echo "══ 2/4 SAST (bandit on server.py + handler modules) ══════════════"
+echo "══ 2/4 SAST (bandit on production backend code) ══════════════════"
 # Prefer the venv's bandit so it matches the dev environment.
 PY=".venv/bin/python"; [ -x "$PY" ] || PY="python3"
 if [ "${SKIP_BANDIT:-0}" = "1" ]; then
   echo "  ⚠ bandit skipped (SKIP_BANDIT=1)"
 elif "$PY" -m bandit --version >/dev/null 2>&1; then
-  # -ll = report medium+ severity; server.py is the only first-party Python file.
-  if "$PY" -m bandit -ll -r backend/server.py backend/proxy_handlers.py backend/session_handlers.py backend/memory_handlers.py backend/mcp_handlers.py backend/projects_handlers.py ; then
+  # Scan production recursively so new modules cannot silently escape SAST.
+  # Test fixtures are excluded because intentional unsafe inputs belong to the
+  # test harness, not the shipped application's attack surface.
+  if "$PY" -m bandit -ll -r backend/ -x backend/tests ; then
     echo "  ✓ no medium+ severity issues"
   else
     echo "  ✕ bandit found issue(s) — see above"

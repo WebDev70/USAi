@@ -66,7 +66,15 @@ def extract_text_from_docx(file_stream):
 
         xml_bytes = archive.read('word/document.xml')
 
-    root = ET.fromstring(xml_bytes)
+    # ElementTree does not fetch external entities, but rejecting declarations
+    # explicitly keeps untrusted DOCX input fail-closed and makes that security
+    # assumption auditable before using the stdlib parser.
+    upper_xml = xml_bytes.upper()
+    if b'<!DOCTYPE' in upper_xml or b'<!ENTITY' in upper_xml:
+        raise ValueError('DOCX document contains an unsafe XML declaration')
+
+    # B314 is narrowly suppressed because both declaration forms are rejected above.
+    root = ET.fromstring(xml_bytes)  # nosec B314
 
     paragraphs = []
     for paragraph in root.iter(f'{{{_W_NS}}}p'):

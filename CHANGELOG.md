@@ -10,6 +10,12 @@
   local/CI threshold consistency plus the inclusive 5.00-point advisory boundary.
 
 ### Fixed
+- **GitHub Actions now mirrors the local coverage and security contracts.** CI
+  installs the lockfile-pinned jsdom test dependency, measures Python explicitly
+  with `--source=backend`, and invokes the canonical production-only Bandit/CVE
+  gate rather than scanning test fixtures. The canonical Bandit scope is now
+  recursive, so new backend modules cannot escape SAST. DOCX parsing explicitly
+  rejects DTD/entity declarations before its reviewed stdlib XML parse.
 - **`#76(a)` pre-commit verification contract corrected.** A direct source audit found
   that `scripts/quality-gate.sh` is a 50-line neutral review-manifest validator, while
   live Cline/Continue docs falsely claimed it ran coverage, security, doc consistency,

@@ -561,6 +561,17 @@ class TestDocConsistencyFail(unittest.TestCase):
 SECURITY_SCAN = os.path.join(REPO_ROOT, "scripts", "security-scan.sh")
 
 
+class TestSecurityScanScope(unittest.TestCase):
+    """The canonical SAST gate covers production recursively without test fixtures."""
+
+    def test_bandit_scans_backend_and_excludes_tests(self):
+        with open(SECURITY_SCAN) as fh:
+            script = fh.read()
+        self.assertIn('-r backend/', script)
+        self.assertIn('-x backend/tests', script)
+        self.assertNotIn('backend/server.py backend/proxy_handlers.py', script)
+
+
 def _run_memory_scan(obsidian_vault_path):
     """
     Run security-scan.sh with SKIP_GITLEAKS, SKIP_BANDIT, SKIP_PIP_AUDIT set so
