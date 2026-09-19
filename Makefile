@@ -21,7 +21,7 @@ PY := .venv/bin/python
 PORT ?= 8000
 
 .DEFAULT_GOAL := help
-.PHONY: help setup run stop test coverage scan check docker-up docker-down clean hooks
+.PHONY: help setup run stop test coverage scan check ci-local ci-local-coverage docker-up docker-down clean hooks
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -54,6 +54,12 @@ scan-strict: ## Run the DevSecOps scan in --strict mode (fails if any scanner is
 
 check: coverage scan-strict ## Full QA gate (RAIL Step 4): tests+coverage then strict security scan
 	@echo "✓ make check complete — tests, coverage, and security scan passed"
+
+ci-local: ## Simulate CI Python job (no node_modules)
+	./run-tests.sh --ci-python
+
+ci-local-coverage: ## Simulate CI Python job with coverage
+	./run-tests.sh --ci-python --coverage
 
 docker-up: ## Build + start via docker compose (declarative, reproducible)
 	docker compose up --build

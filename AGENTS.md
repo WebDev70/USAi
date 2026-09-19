@@ -146,6 +146,7 @@ Validate changes with the zero-dependency test suite:
 ```bash
 ./run-tests.sh                     # syntax gates + JS (node --test) + Python (unittest)
 ./run-tests.sh --coverage          # the above + coverage gates (server.py ≥ 90%, JS branch ≥ 70%)
+./run-tests.sh --ci-python         # reproduce the CI Python job (node_modules hidden, JS skipped)
 ```
 
 Or run the pieces individually:

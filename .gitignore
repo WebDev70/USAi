@@ -44,3 +44,8 @@ Library/
 # Node dev-only dependencies (jsdom for behavior tests). Never shipped in app.
 node_modules/
 
+# Staging directory used by `run-tests.sh --ci-python` while node_modules is
+# hidden. The script's EXIT trap removes it, but ignore it so an interrupted run
+# can never stage this tree for commit.
+.tmp_node_modules_*/
+

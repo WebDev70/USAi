@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+### Added
+- **`make ci-local` / `make ci-local-coverage` — reproduce the CI Python job locally.**
+  The new `run-tests.sh --ci-python` flag temporarily moves `node_modules` aside and
+  skips the JS suites, so the Python tests are proven to pass with no npm packages
+  installed — exactly the environment of the GitHub Actions `python` job. This closes
+  the gap where a test passed locally only because it reached into `node_modules`,
+  then failed in CI. `node_modules` is restored by an `EXIT`/`INT`/`TERM` trap even
+  when a test fails or the run is interrupted. Flags are order-independent and an
+  unknown flag now exits `2` rather than being silently ignored. Covered by nine
+  hermetic tests in `backend/tests/python/test_ci_local.py` (T-16a–T-16d), each run
+  against a throw-away tree so the suite never recurses into itself.
+
 ### Changed
 - **`#74` coverage floors ratcheted to current reproducible coverage.** Python line
   remains **90%**, Python branch rises **80% → 90%**, and JS branch rises

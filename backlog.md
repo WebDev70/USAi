@@ -10,7 +10,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **87**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **88**.
 >
 > Before assigning a new ID, confirm the current maximum (see #85):
 > ```bash
@@ -1175,6 +1175,18 @@ Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
 ## Completed / Archive
 
 ### Testing & agent automation
+
+- [x] **88. `--ci-python` — reproduce the CI Python job locally** *(S)* — Done (2026-09-19):
+  `run-tests.sh --ci-python` (plus `make ci-local` / `make ci-local-coverage`) hides
+  `node_modules` and skips the JS suites so the Python suite is proven to pass with no
+  npm packages installed, matching the GitHub Actions `python` job. Restore happens in a
+  single `EXIT`/`INT`/`TERM` trap; flag parsing is order-independent and an unknown flag
+  exits 2. Also fixed a latent `mktemp /tmp/coverage-XXXXXX.json` bug — BSD mktemp only
+  substitutes trailing `X`s, so the literal file persisted and every *second*
+  `--coverage` run failed with "File exists". 9 hermetic tests
+  (`backend/tests/python/test_ci_local.py`, T-16a–T-16d) run the script against a
+  throw-away tree so the suite never recurses into itself; all 5 mutants caught.
+  Follow-on to #39 and the `REQUIRE_JSDOM` CI hardening in `aeadec6`.
 
 - [x] **25. Test-Driven Development workflow + thorough QA (coverage-gated)**
   - Raise the quality bar to TDD-first with measured, **enforced** coverage —

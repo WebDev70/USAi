@@ -4,6 +4,11 @@
 # Usage:
 #   ./run-tests.sh             syntax gates + JS + Python unit/integration tests
 #   ./run-tests.sh --coverage  also measure coverage and enforce thresholds
+#   ./run-tests.sh --ci-python simulate the CI Python job locally: temporarily hide
+#                              node_modules and skip the JS suites, so the Python
+#                              tests are proven to pass with no npm packages present
+#                              (exactly what the GitHub Actions `python` job does).
+#                              Combinable with --coverage.
 #
 # Coverage tooling is DEV-ONLY (never shipped in the app):
 #   • Python: coverage.py installed in .venv (not in requirements.txt)
@@ -22,7 +27,45 @@ set -x
 cd "$(dirname "$0")"
 
 COVERAGE=0
-[ "${1:-}" = "--coverage" ] && COVERAGE=1
+CI_PYTHON=0
+# Parse flags positionally-agnostically so `--ci-python --coverage` and
+# `--coverage --ci-python` behave identically. Unknown flags are rejected loudly
+# rather than silently ignored — a typo'd gate flag must never look like a pass.
+for arg in "$@"; do
+  case "$arg" in
+    --coverage)  COVERAGE=1 ;;
+    --ci-python) CI_PYTHON=1 ;;
+    *)
+      echo "run-tests.sh: unknown option '$arg'" >&2
+      echo "Usage: ./run-tests.sh [--coverage] [--ci-python]" >&2
+      exit 2
+      ;;
+  esac
+done
+
+# --ci-python: reproduce the CI Python job by hiding node_modules for the run.
+# Moved to a sibling directory in the repo root so the rename stays on one
+# filesystem (atomic, unlike a copy to /tmp). The EXIT trap restores it even if
+# a test fails, the script exits early via `set -e`, or the user hits Ctrl-C.
+#
+# ONE trap for the whole script: bash replaces (not appends) EXIT handlers, so the
+# coverage branch below must NOT install its own `trap ... EXIT` — doing so would
+# silently drop the node_modules restore and leave the tree broken.
+TMP_NM_DIR=""
+COVERAGE_JSON=""
+cleanup() {
+  [ -n "$COVERAGE_JSON" ] && rm -f "$COVERAGE_JSON"
+  if [ -n "$TMP_NM_DIR" ] && [ -d "$TMP_NM_DIR" ]; then
+    rm -rf node_modules
+    mv "$TMP_NM_DIR" node_modules
+  fi
+  return 0
+}
+trap cleanup EXIT INT TERM
+if [ "$CI_PYTHON" -eq 1 ] && [ -d node_modules ]; then
+  TMP_NM_DIR=".tmp_node_modules_ci_local_$$"
+  mv node_modules "$TMP_NM_DIR"
+fi
 
 # Coverage thresholds (ratchet UP over time; never lower to make a change pass).
 # Also committed in .coverage-thresholds for the machine-enforced ratchet guard.
@@ -35,6 +78,8 @@ PY=".venv/bin/python"
 [ -x "$PY" ] || PY="python3"
 
 echo "── Syntax gates ───────────────────────────────────────────"
+# The JS syntax gate needs node but not node_modules, so it still runs in
+# --ci-python mode — it mirrors the CI `javascript` job's `node --check` step.
 node --check frontend/app.js
 # Compile every backend module, not just a hand-maintained list — new modules
 # from the server split (#64) were silently escaping the syntax gate.
@@ -45,8 +90,14 @@ echo "  ✓ syntax OK"
 # must not invoke a script it doesn't ship.
 
 if [ "$COVERAGE" -eq 1 ]; then
-  echo "── JS unit tests + coverage gate (Node built-in) ──────────"
-  node tests/js-coverage.mjs "$JS_MIN"
+  # --ci-python mirrors the CI `python` job, which installs no npm packages and
+  # therefore never runs the JS coverage gate (that lives in the `javascript` job).
+  if [ "$CI_PYTHON" -eq 0 ]; then
+    echo "── JS unit tests + coverage gate (Node built-in) ──────────"
+    node tests/js-coverage.mjs "$JS_MIN"
+  else
+    echo "── JS coverage gate skipped (--ci-python) ─────────────────"
+  fi
 
   echo "── Python unit/integration tests + coverage gate ─────────"
   if ! "$PY" -c "import coverage" 2>/dev/null; then
@@ -69,8 +120,14 @@ if [ "$COVERAGE" -eq 1 ]; then
 
   # --- Branch coverage gate (RAIL Phase 2) ---
   # Extract branch % from coverage JSON report and enforce PY_BRANCH_MIN.
-  COVERAGE_JSON=$(mktemp /tmp/coverage-XXXXXX.json)
-  trap 'rm -f "$COVERAGE_JSON"' EXIT
+  # Trailing X's only: BSD/macOS mktemp substitutes the Xs solely at the END of
+  # the template, so a `...XXXXXX.json` pattern is taken LITERALLY and the second
+  # run dies with "File exists". Keep the random part last (no suffix) so the
+  # template is portable across BSD and GNU mktemp.
+  COVERAGE_JSON=$(mktemp "/tmp/usai-coverage-json.XXXXXX")
+  # No `trap` here — the single `cleanup` EXIT handler installed above removes
+  # this file. Installing another EXIT trap would replace it and skip the
+  # node_modules restore that --ci-python depends on.
   "$PY" -m coverage json -o "$COVERAGE_JSON" >/dev/null
   PY_BRANCH_PCT=$("$PY" -c "
 import json, sys
@@ -105,16 +162,21 @@ print('%.2f' % pct)
     --python-branch "$PY_BRANCH_INT" \
     --js-branch "$JS_BRANCH_LIVE"
 else
-  echo "── JS unit tests (node --test) ────────────────────────────"
-  # Pure-helper unit tests (no jsdom). Behavior tests run separately below.
-  node --test $(find frontend/tests/js -name '*.test.mjs' ! -name 'app.behavior.test.mjs')
+  # --ci-python mirrors the CI `python` job: no npm packages, so no JS suites.
+  if [ "$CI_PYTHON" -eq 0 ]; then
+    echo "── JS unit tests (node --test) ────────────────────────────"
+    # Pure-helper unit tests (no jsdom). Behavior tests run separately below.
+    node --test $(find frontend/tests/js -name '*.test.mjs' ! -name 'app.behavior.test.mjs')
 
-  echo "── JS behavior tests (jsdom, dev-only) ────────────────────"
-  if [ -d "node_modules/jsdom" ]; then
-    node --test frontend/tests/js/app.behavior.test.mjs
+    echo "── JS behavior tests (jsdom, dev-only) ────────────────────"
+    if [ -d "node_modules/jsdom" ]; then
+      node --test frontend/tests/js/app.behavior.test.mjs
+    else
+      echo "  ⚠ jsdom not installed — skipping behavior tests."
+      echo "    Run: npm install  (or: make dev-setup)"
+    fi
   else
-    echo "  ⚠ jsdom not installed — skipping behavior tests."
-    echo "    Run: npm install  (or: make dev-setup)"
+    echo "── JS suites skipped (--ci-python) ────────────────────────"
   fi
 
   echo "── Python unit/integration tests (unittest) ──────────────"

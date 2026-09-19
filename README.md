@@ -143,6 +143,7 @@ make help        # list targets
 make run         # start locally (venv Python)
 make test        # zero-dep test suite
 make coverage    # tests + coverage gates
+make ci-local    # simulate the CI Python job (Python tests with no node_modules)
 make scan        # DevSecOps security scan (gitleaks + bandit + pip-audit)
 make check       # full QA gate: coverage + security scan
 ```
@@ -158,12 +159,21 @@ script:
 ```bash
 ./run-tests.sh             # syntax gates + JS tests + Python tests
 ./run-tests.sh --coverage  # also measure coverage and enforce gates
+./run-tests.sh --ci-python # simulate the CI Python job (no node_modules)
 ```
 
 The `--coverage` mode enforces thresholds (**`server.py` ≥ 90%**, **JS branch ≥ 70%**
 of the exported helpers) using **dev-only** tooling — `coverage.py` (installed in
 the venv: `.venv/bin/pip install coverage`) and Node ≥ 22's built-in coverage. This
 tooling is never added to `requirements.txt` and never ships in the app.
+
+The `--ci-python` mode (also `make ci-local`, or `make ci-local-coverage` to add the
+coverage gates) reproduces the GitHub Actions **`python`** job on your machine: it
+temporarily moves `node_modules` aside and skips the JS suites, so the Python tests
+are proven to pass with no npm packages installed. Use it before pushing to catch a
+test that only passes locally because it accidentally reached into `node_modules`.
+`node_modules` is always restored afterwards — including when a test fails or you
+interrupt the run with Ctrl-C.
 
 Or run the pieces individually:
 

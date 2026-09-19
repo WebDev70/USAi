@@ -152,7 +152,12 @@ tests/
 ```bash
 ./run-tests.sh             # syntax gates + JS + Python (unit + integration)
 ./run-tests.sh --coverage  # the above + coverage measurement and gates
+./run-tests.sh --ci-python # reproduce the CI Python job: hide node_modules, skip JS
 ```
+
+Use `--ci-python` (or `make ci-local` / `make ci-local-coverage`) before pushing when
+a change touches Python tests or test tooling — it proves the Python suite passes with
+no npm packages installed, which is the environment the CI `python` job runs in.
 
 ---
 
