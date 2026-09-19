@@ -35,8 +35,13 @@ PY=".venv/bin/python"
 
 echo "── Syntax gates ───────────────────────────────────────────"
 node --check frontend/app.js
-"$PY" -m py_compile backend/server.py backend/proxy_handlers.py backend/session_handlers.py backend/memory_handlers.py backend/mcp_handlers.py backend/projects_handlers.py
+# Compile every backend module, not just a hand-maintained list — new modules
+# from the server split (#64) were silently escaping the syntax gate.
+"$PY" -m py_compile backend/*.py
 echo "  ✓ syntax OK"
+# NOTE: the delegation-policy check (scripts/delegation-policy-check.py) lives on
+# the feat/zoo-migration branch and is wired in by backlog #86, not here — main
+# must not invoke a script it doesn't ship.
 
 if [ "$COVERAGE" -eq 1 ]; then
   echo "── JS unit tests + coverage gate (Node built-in) ──────────"
@@ -55,7 +60,7 @@ if [ "$COVERAGE" -eq 1 ]; then
   #   Two test classes in test_server_proxy.py are sensitive to CONFIG state
   #   set by other classes in the same discover batch.
   #   WORKAROUND: run the two sensitive classes separately if intermittent failures occur.
-  PYTHONPATH="$(pwd)/backend" "$PY" -m coverage run --branch --source=server -m unittest discover -s backend/tests/python -p 'test_*.py'
+  PYTHONPATH="$(pwd)/backend" "$PY" -m coverage run --branch --source=backend -m unittest discover -s backend/tests/python -p 'test_*.py'
   "$PY" -m coverage report -m
   "$PY" -m coverage report --fail-under="$PY_MIN" >/dev/null \
     && echo "  ✓ server.py line coverage ≥ ${PY_MIN}%" \

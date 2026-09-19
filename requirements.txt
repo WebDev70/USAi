@@ -1,7 +1,19 @@
-# Runtime dependency. Kept deliberately tiny (see docs/principles.md §1 — minimal,
-# audited runtime surface). Only python-dotenv is needed at runtime; everything
-# else (coverage, bandit, pip-audit, Docker, make) is DEV/CI tooling and is NEVER
-# listed here.
+# Runtime dependencies. Kept deliberately tiny (see docs/principles.md §1 —
+# minimal, audited runtime surface). Everything else (coverage, bandit,
+# pip-audit, Docker, make) is DEV/CI tooling, lives in requirements-dev.txt, and
+# is NEVER listed here.
+#
+# Hash pins (supply-chain integrity): exact version + sha256 of the published
+# artifacts. pip refuses to install if the bytes don't match. Because ANY --hash
+# line turns on pip's --require-hashes mode for the whole file, every transitive
+# dependency must also be pinned+hashed here — that is why typing_extensions
+# appears below even though no first-party code imports it.
+#
+# Regenerate a hash after a version bump with:
+#   pip download <pkg>==<ver> --no-deps -d /tmp/wheels && pip hash /tmp/wheels/<whl>
+#
+# ---------------------------------------------------------------------------
+# python-dotenv — .env loading (backend/server.py).
 #
 # Version note + security posture:
 #   GHSA-mf9w-mj56-hr94 (CVE-2026-28684) affects python-dotenv's set_key()/
@@ -11,10 +23,24 @@
 #   project supports the 3.9 baseline (CI tests 3.9 + 3.11). Instead,
 #   scripts/security-scan.sh and CI carry a documented, reviewed ignore for this
 #   specific advisory ID. Revisit when the 3.9 baseline is dropped.
-#
-# Hash pin (supply-chain integrity): exact version + sha256 of the published
-# wheel. pip refuses to install if the bytes don't match. Generated with:
-#   pip download python-dotenv==1.0.1 --no-deps
-#   pip hash python_dotenv-1.0.1-py3-none-any.whl
 python-dotenv==1.0.1 \
-    --hash=sha256:f7b63ef50f1b690dddf550d03497b66d609393b40b564ed0d674909a68ebf16a
+    --hash=sha256:f7b63ef50f1b690dddf550d03497b66d609393b40b564ed0d674909a68ebf16a \
+    --hash=sha256:e324ee90a023d808f1959c46bcbc04446a10ced277783dc6ee09987c37ec10ca
+
+# pypdf — PDF text extraction (backend/file_parser.py). Justified runtime dep:
+# the PDF binary format cannot reasonably be parsed with the stdlib. Pure
+# Python, no compiled extensions, single transitive dep (typing_extensions).
+#
+# DOCX deliberately does NOT get a library: .docx is a ZIP of XML, so
+# backend/file_parser.py reads it with stdlib zipfile + xml.etree instead of
+# python-docx, which would drag in the large, platform-specific lxml wheel.
+pypdf==6.18.1 \
+    --hash=sha256:ee93a2665670ecf57ee81d197a4ca548f3dc15f9cefc56e59b8140866aaa3de5 \
+    --hash=sha256:2441fc839053745638d9b9ddb38ed66beed8d611f47a3036c9838fc4e3074dea
+
+# typing_extensions — TRANSITIVE (required by pypdf), listed only because
+# --require-hashes mode demands every installed package be pinned + hashed.
+# 4.15.0 is the last release supporting the Python 3.9 CI baseline.
+typing_extensions==4.15.0 \
+    --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548 \
+    --hash=sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466

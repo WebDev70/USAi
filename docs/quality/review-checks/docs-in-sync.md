@@ -4,7 +4,7 @@ description: Documentation was updated in the same change, per the keep-docs-in-
 ---
 
 Review this change for **documentation sync**, per
-`.continue/rules/keep-docs-in-sync.md`. Docs are part of "done."
+`docs/rail-pipeline.md`. Docs are part of "done."
 
 Pass the check only if the docs that this change *actually affects* were updated in
 the same change:
@@ -17,7 +17,7 @@ the same change:
   high-level architecture changed.
 - **backlog.md** — relevant items checked off (`[x]`) or marked in progress (`[~]`),
   and new follow-ups recorded.
-- **.continue/rules/CONTINUE.md** — updated when project structure, key concepts,
+- **`docs/tooling/zoo.md`** — updated when project structure, key concepts,
   conventions, common tasks, or troubleshooting changed.
 - **AGENTS.md** — updated when agent operating rules, security rules, conventions,
   or the memory directive changed.

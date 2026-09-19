@@ -4,8 +4,7 @@ description: Feature work has a user story, testable acceptance criteria, a vert
 ---
 
 Review whether this **feature / user-facing change** was *ready* to build, per the
-Product Owner role (`.continue/rules/product-owner.md`) and the Agile workflow
-(`.continue/rules/agile-workflow.md`).
+Product Owner role (see `docs/rail-pipeline.md`).
 
 Apply this check only to **features / non-trivial user-facing work**. For pure
 bugfixes, refactors, chores, and docs-only changes, **pass** (Definition of Ready

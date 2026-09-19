@@ -134,11 +134,13 @@ Scan every `[x]` Done item in `backlog.md`:
 
 7a. Check `Cline/memories/` for duplicate same-date session notes — they should have been appended rather than creating new files. Flag any pair of notes that share the same date prefix without a unique time suffix.
 
-7b. Re-run the memory-note secret scan (the same scan as in `security-scan.sh`):
+7b. Re-run the canonical memory-note secret scan (check 4/4) rather than maintaining
+    a duplicate regex:
     ```bash
-    grep -rn "sk-\|Bearer \|password\s*=" "/Users/ronaldbblake/Documents/Obsidian Vault/Cline/memories/" 2>/dev/null | head -20
+    OBSIDIAN_VAULT_PATH="${OBSIDIAN_VAULT_PATH:?export the vault path}" \
+      SKIP_GITLEAKS=1 SKIP_BANDIT=1 SKIP_PIP_AUDIT=1 ./scripts/security-scan.sh
     ```
-    If any matches: BLOCKING finding — vault memory may contain secrets.
+    A check-4/4 failure is BLOCKING; its output is deliberately redacted.
 
 **Emit:** duplicate note pairs (ADVISORY), secret hits (BLOCKING).
 
@@ -185,6 +187,11 @@ cleanup item** before closing the report.
     Cline/memories/YYYY-MM-DD-HHMMSS-housekeeping-sweep.md
     ```
     Frontmatter: `tags: [usai-chat, housekeeping, hygiene, shk]`
+
+9e. Emit the closing **`Recommended Next Step`** section. `/housekeep` is a
+    *terminal* workflow — the task ends here — so the mandatory closing section
+    applies. The recommended step is normally the highest-severity BLOCKING
+    finding from Step 8. See `.clinerules/recommended-next-step.md`.
 
 ---
 

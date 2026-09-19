@@ -18,6 +18,7 @@ USAi Chat. Nothing in `.clinerules/` is part of the running application.
 | Path | Role |
 |------|------|
 | `.clinerules/rail-pipeline.md` | Always-on RAIL rule — Cline's operating contract for this project |
+| `.clinerules/recommended-next-step.md` | Always-on rule — Cline wiring for the mandatory `Recommended Next Step` closing section (canonical: `docs/rail-pipeline.md`) |
 | `.clinerules/workflows/spec.md` | `/spec` workflow — PLAN MODE interview → writes `docs/specs/<feature>.md` |
 | `.clinerules/workflows/build.md` | `/build` workflow — ACT MODE implementation engine |
 | `.clinerules/workflows/review.md` | `/review` workflow — compares build vs spec, runs QA gates |
@@ -50,27 +51,27 @@ Done (tests green, security scan clean, docs updated, memory note written)
 |----------|------|--------------|
 | **`/spec`** | PLAN MODE | Interviews the user, captures requirements, produces a `docs/specs/<feature>.md` with goal, acceptance criteria, affected files, test plan, and risks. Serves as the Definition of Ready. |
 | **`/build`** | ACT MODE | Executes the spec TDD-style: plan → Red → Green → Refactor → security check. |
-| **`/review`** | ACT MODE | Compares the implementation against the spec, runs `./scripts/cli-check.sh --review` (tests + security + doc-consistency + AI review), `./scripts/spec-check.sh`, reports a gap list. Returns to `/build` if anything fails. |
+| **`/review`** | ACT MODE | Compares the implementation against the spec; explicitly runs the manifest, coverage, security, doc-consistency, and spec gates; then reports a gap list. Returns to `/build` if anything fails. |
 | **`/loop`** | ACT MODE | Calls `/build` then `/review`; repeats until `/review` passes with zero gaps. |
 | **`/self-improve`** | Either | Post-cycle retro: identifies patterns, proposes new rules/checks/tests, records a learning note to Obsidian. |
 
 ### Running QA gates in Cline
 
-Cline's equivalent of Continue's `/check` is the **`/review`** workflow, which runs:
+Cline's equivalent of Continue's `/check` is the **`/review`** workflow, which runs
+each gate explicitly:
 
 ```bash
-# Primary gate — runs tests + coverage + security + doc-consistency + AI review
-./scripts/cli-check.sh --review
-
-# Spec↔build compliance (run with the current spec path)
+./scripts/quality-gate.sh              # validate the neutral review-check manifest
+./run-tests.sh --coverage              # syntax, tests, and coverage thresholds
+./scripts/security-scan.sh             # gitleaks + bandit + pip-audit
+./scripts/doc-consistency-check.sh      # live-policy consistency
 ./scripts/spec-check.sh docs/specs/<feature>.md
 ```
 
-`./scripts/cli-check.sh --review` internally runs:
-1. `./run-tests.sh --coverage` — syntax gates + JS + Python + coverage thresholds
-2. `./scripts/security-scan.sh --strict` — gitleaks + bandit + pip-audit
-3. `./scripts/doc-consistency-check.sh` — convention-duplication guard
-4. `cn review` — AI review with all `.continue/checks/*.md` criteria as rules
+`quality-gate.sh` checks only that every file listed by
+`docs/quality/review-checks/README.md` exists and is non-empty. It does not invoke
+the other commands or perform AI review. `/review` applies those manifested criteria
+and records current-run command output, test totals, and coverage values as evidence.
 
 Pass criteria (same as the shared RAIL Definition of Done):
 - Tests green + coverage gates met

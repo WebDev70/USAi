@@ -4,7 +4,7 @@
 **Type:** feature
 **Created:** 2026-06-25
 **Author:** Cline / user
-**Prior context:** Phase 1 (direct filesystem I/O, `/memory/*` endpoints, `search_memory`/`save_memory` tools) fully complete. Obsidian-mcp timeout issue (#23, #24) resolved in Cline by using globally-installed `node` binary directly. `obsidian-mcp` is already running as PID 12548 in Cline's MCP context. See `implementation_plan.md` for full architecture detail.
+**Prior context:** Phase 1 (direct filesystem I/O, `/memory/*` endpoints, `search_memory`/`save_memory` tools) fully complete. Obsidian-mcp timeout issue (#23, #24) resolved in Cline by using globally-installed `node` binary directly. `obsidian-mcp` is already running as PID 12548 in Cline's MCP context. (Architecture detail originally lived in a root `implementation_plan.md`, removed as a scratch artifact under #76(d) — the surviving architecture record is `docs/specs/server-module-split.md`.)
 
 ---
 

@@ -1,7 +1,10 @@
 #!/bin/bash
-# Neutral quality gate script
+# Neutral review-check manifest validator.
 #
 # Reads a manifest of quality check files and verifies they exist and are not empty.
+# It deliberately does NOT run tests, scanners, doc consistency, or AI review; callers
+# must invoke those gates explicitly. Keeping this validator narrow also avoids
+# recursion when Python tests invoke it through test_migration.py.
 # The manifest is expected to be a README.md file in the target directory,
 # with each check file referenced in a line like:
 # 1. `my-check.md` - A description of the check.

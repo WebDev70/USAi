@@ -85,10 +85,16 @@ sub-cycle before handing off to the next.
 - Never weaken or disable a scanner to make it pass — fix the finding instead.
 
 ### 6. Reviewer (QA)
-- Run the full check suite:
+- Run every deterministic gate explicitly; `quality-gate.sh` validates only the
+  neutral review-check manifest and does not run the other commands:
   ```bash
-  ./scripts/cli-check.sh --review
+  ./scripts/quality-gate.sh
+  ./run-tests.sh --coverage
+  ./scripts/security-scan.sh
+  ./scripts/doc-consistency-check.sh
   ```
+- Preserve current-run output as evidence (exit statuses, test totals, and coverage
+  values); never reuse PASS claims or counts from an earlier session.
 - Compare implementation against spec line-by-line; emit a gap list for any
   missing or broken items.
 - **Pass only when ALL of:** tests green + coverage gates met + security scan
@@ -106,6 +112,7 @@ sub-cycle before handing off to the next.
 | 🧠 **Memory** | Recall at task start from all three vault subfolders. Record session note to `Cline/memories/YYYY-MM-DD-HHMMSS-<title>.md` at task end. |
 | 🎨 **CSS cache bust** | Any `styles.css` edit → bump `?v=N` in `index.html`. |
 | 🧹 **Housekeeping** | Per-item: leave-no-trace gate runs in every `/loop` Done criteria check and `/review §6h`. Sprint-close: SHK (Senior Housekeeping & Hygiene Steward) runs automatically as the 5th role in `/govern`. On-demand standalone sweep: `/housekeep` (`.clinerules/workflows/housekeep.md`). See `docs/governance.md` §5 for the full SHK charter and checklist. |
+| 🧭 **Recommended Next Step** | **Every** task ends with a `Recommended Next Step` section immediately after the Completed Summary — never omitted. Format and selection criteria: `.clinerules/recommended-next-step.md`. |
 
 ---
 

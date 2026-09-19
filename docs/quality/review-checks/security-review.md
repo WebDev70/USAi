@@ -8,7 +8,7 @@ Review this change for **security issues** specific to USAi Chat.
 Flag as **failing** if any of these are true:
 
 - **Secrets leak.** Hardcoded API keys/tokens/passwords in any committed file
-  (source, config, `.continue/**`), or a secret value added to `.env.example`/docs.
+  (source, config), or a secret value added to `.env.example` or docs.
   (Real secrets belong only in the git-ignored `.env`.)
 - **`/config` exposes secrets.** `_get_config` in `server.py` returns anything
   beyond non-secret fields + `has_*` boolean flags (it must never return `api_key`

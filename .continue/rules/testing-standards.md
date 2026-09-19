@@ -12,9 +12,9 @@ turn as the code. Full strategy: `docs/rail-pipeline.md`.
 
 | Layer | Tool | Command |
 |-------|------|---------|
-| Python (`server.py`) | `unittest` (stdlib) | `.venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'` |
-| JS (`app.js`) | `node --test` (Node 18+) | `node --test "tests/js/**/*.test.mjs"` |
-| Syntax gates | `node --check`, `py_compile` | `node --check app.js && python3 -m py_compile server.py` |
+| Python (`server.py`) | `unittest` (stdlib) | `PYTHONPATH=backend .venv/bin/python -m unittest discover -s backend/tests/python -p 'test_*.py'` |
+| JS (`app.js`) | `node --test` (Node 18+) | `node --test "frontend/tests/js/**/*.test.mjs"` |
+| Syntax gates | `node --check`, `py_compile` | `node --check frontend/app.js && python3 -m py_compile backend/server.py` |
 
 The easiest way to run everything is the repo's `./run-tests.sh` (syntax gates +
 both suites).

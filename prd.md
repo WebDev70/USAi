@@ -242,7 +242,7 @@ Needs:
 | PROJ-3 | The user shall be able to rename projects. | Project updates support name changes. |
 | PROJ-4 | The user shall be able to pin and unpin projects. | Pinned projects appear in a dedicated sidebar section. |
 | PROJ-5 | The user shall be able to delete projects safely. | Deletion removes project metadata and project chunk cache, clears project membership from sessions, and preserves Obsidian notes. |
-| PROJ-6 | Project memory mode shall be immutable. | Memory mode is chosen at creation and is not updated later. |
+| PROJ-6 | The user shall be able to change a project's memory mode after creation. | Memory mode is chosen at creation and can be updated later via project settings (PUT /projects/<id>); the new mode takes effect immediately because scope is resolved per-request. |
 | PROJ-7 | Projects shall support instructions. | Project instructions are included before per-chat prompts in project chats. |
 | PROJ-8 | Projects shall support shared files. | Project file chunks are saved under project-scoped chunk cache storage. |
 | PROJ-9 | The sidebar shall organize work clearly. | Sidebar sections separate pinned items, projects, and chats. |

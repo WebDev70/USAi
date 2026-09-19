@@ -48,8 +48,8 @@ SME work). See `docs/continue-config.sample.yaml` and `docs/rail-pipeline.md` §
 ## Validate before declaring done
 
 ```bash
-node --check app.js
-python3 -m py_compile server.py
-node --test tests/js
-.venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'
+node --check frontend/app.js
+python3 -m py_compile backend/server.py
+node --test $(find frontend/tests/js -name '*.test.mjs')
+PYTHONPATH=backend .venv/bin/python -m unittest discover -s backend/tests/python -p 'test_*.py'
 ```

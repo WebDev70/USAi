@@ -106,6 +106,11 @@ If the build has not passed `/review` after 5 iterations:
 
 4. Do not keep looping without user input.
 
+5. **Emit the closing `Recommended Next Step` section** after the escalation report.
+   The rule applies to escalations too — in this case the recommended step is the
+   concrete action that would unblock the top unresolved gap. See
+   `.clinerules/recommended-next-step.md`.
+
 ### Clean-state guarantee (after escalation)
 
 Before awaiting user input, leave the working tree in a clean, recoverable state.
@@ -162,6 +167,10 @@ note's `## Working-tree state` section (see template above).
       If any of these are not yet satisfied, emit them as `[housekeeping]` GAPs before
       declaring Done.
 - [ ] Memory note written (see below)
+- [ ] **`Recommended Next Step` section emitted** immediately after the Completed
+      Summary, with all four labelled parts (`Next Step`, `Why this should happen
+      next`, `What this enables`, `Impact if not completed`). Mandatory on every
+      task — including escalations. See `.clinerules/recommended-next-step.md`.
 
 ---
 

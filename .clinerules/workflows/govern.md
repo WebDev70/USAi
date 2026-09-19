@@ -359,6 +359,11 @@ One paragraph: overall health, top 3 findings, recommended next actions.
 
 6. **If this is a sprint-close audit:** update `Cline/scrum/sprint-index.md` with governance outcome column.
 
+7. **Emit the closing `Recommended Next Step` section.** `/govern` is a *terminal*
+   workflow — the task ends here — so the mandatory closing section applies. The
+   recommended step is normally the highest-severity confirmed BLOCKING finding.
+   See `.clinerules/recommended-next-step.md`.
+
 ---
 
 ## Non-negotiables

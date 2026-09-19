@@ -19,8 +19,9 @@ default but is easy to misread. The real principle is:
 - **Supply-chain security (DevSecOps).** Every runtime dependency is attack surface
   (cf. `event-stream`, `colors.js`, Log4Shell). USAi Chat is a proxy that handles
   an API key, so a tiny, readable surface is a genuine security control.
-- **Longevity / no bit-rot.** Vanilla JS + Python stdlib + `python-dotenv` will run
-  for years with no `npm install` to break and no transitive-dep churn.
+- **Longevity / no bit-rot.** Vanilla JS + Python stdlib + a two-package backend
+  surface will run for years with no `npm install` to break and almost no
+  transitive-dep churn.
 - **Auditability.** A reviewer can read the *entire* runtime codebase — no
   `node_modules` black box. (This matters for the government-adjacent deployment
   target implied by the gateway URL.)
@@ -30,8 +31,28 @@ default but is easy to misread. The real principle is:
 
 | Category | Rule | Examples |
 |----------|------|----------|
-| **Runtime** (ships in / is imported by the running app) | **Forbidden** to add without strong justification. Frontend = plain HTML/CSS/JS. Backend = Python stdlib + `python-dotenv`. | a JS framework, an icon pack, `requests`, `flask`, a CSS bundler |
+| **Runtime** (ships in / is imported by the running app) | **Forbidden** to add without strong justification. Frontend = plain HTML/CSS/JS. Backend = Python stdlib + the two approved packages below. | a JS framework, an icon pack, `requests`, `flask`, a CSS bundler |
 | **Dev / CI** (runs only on a developer/CI machine, ships nothing to production) | **Allowed and encouraged**, especially for quality & security. | `coverage.py`, Node's built-in coverage, `gitleaks`, `bandit`, `pip-audit`, `osv-scanner`, Docker, `make` |
+
+### The approved runtime allow-list (backend)
+
+Exactly two first-party runtime packages are sanctioned. Every entry in
+`requirements.txt` is version-pinned **and** sha256 hash-pinned, so pip refuses an
+install whose bytes don't match:
+
+| Package | Why it earns its place |
+|---------|------------------------|
+| `python-dotenv` | Loads `.env` so the API key never has to live in a shell profile or in code. |
+| `pypdf` | PDF text extraction. The PDF binary format cannot reasonably be parsed with the stdlib. Pure Python, no compiled extensions, one transitive dep. |
+| `typing_extensions` | Not chosen by us — it is `pypdf`'s transitive dependency, listed only because a single `--hash` line switches pip into `--require-hashes` mode for the whole file, which demands every installed package be pinned and hashed. |
+
+**Worked example of the rule doing its job — DOCX.** Reading `.docx` looked like an
+obvious case for `python-docx`, but that library pulls in the large,
+platform-specific `lxml` wheel (176 published artifacts, painful to hash-pin
+reproducibly across platforms). A `.docx` is just a ZIP of XML, so
+`backend/file_parser.py` reads it with stdlib `zipfile` + `xml.etree` instead —
+same user-visible behaviour, no new attack surface, hash pinning stays honest.
+That is the "justify or find a stdlib way" litmus test resolving to *stdlib way*.
 
 **Litmus test for a new tool:** *Does it get imported by `app.js`/`server.py`, or
 add a `node_modules`/transitive runtime dependency the app needs to run?*

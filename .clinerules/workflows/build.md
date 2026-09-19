@@ -231,3 +231,8 @@ When all of the following are true, announce completion and trigger `/review`:
 
 > **Next step:** Run `/review` to compare this build against the spec and run all
 > quality gates. Do not declare done until `/review` passes cleanly.
+
+> **No `Recommended Next Step` here.** `/build` is a *non-terminal* workflow — it
+> hands off to `/review` inside the same task rather than back to the user. The
+> mandatory closing section is emitted by the terminal step (`/loop`, or a
+> standalone `/review`). See `.clinerules/recommended-next-step.md` § Scope.

@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-    <link rel="stylesheet" href="styles.css?v=29">
+    <link rel="stylesheet" href="styles.css?v=32">
 
   </head>
   <body>
@@ -161,8 +161,9 @@
             <div class="settings-body">
 
               <label for="fileUpload" class="sidebar-btn" id="uploadFilesBtn" title="Upload text files for context or images for vision models">Upload Files / Images</label>
-              <input id="fileUpload" type="file" multiple accept="image/*,text/*,.txt,.md,.json,.csv,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log" style="display:none;" />
-              <div id="uploadedFilesDisplay" style="font-size:0.8rem;color:var(--color-text-secondary);margin-top:4px;"></div>
+              <input id="fileUpload" type="file" multiple accept="image/*,text/*,.txt,.md,.json,.csv,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.pdf,.docx" style="display:none;" />
+              <!-- Attachment chips now render in #composerAttachments above the
+                   composer (#80); the old sidebar #uploadedFilesDisplay div is gone. -->
 
               <label for="chunkSize" class="settings-label">Chunk size</label>
               <input id="chunkSize" type="number" min="50" max="1000" value="200" style="width:70px;" title="Lines per chunk" />
@@ -213,11 +214,29 @@
             <div id="responseLog" class="message-stats" aria-live="polite"></div>
           </div>
 
+          <!-- Project Detail View (hidden by default, shown when a project is opened) -->
+          <div id="projectDetailView" class="project-detail-view" hidden>
+            <div class="project-detail-header">
+              <div class="project-detail-title-row">
+                <span class="project-detail-icon" aria-hidden="true">📁</span>
+                <h2 id="projectDetailName" class="project-detail-name">Project</h2>
+              </div>
+              <p id="projectDetailInstructions" class="project-detail-hint"></p>
+              <div class="project-detail-actions">
+                <button id="projectNewChatBtn" class="modal-btn modal-btn--primary" type="button">＋ New chat</button>
+                <button id="projectSettingsBtn" class="modal-btn" type="button">⚙ Settings</button>
+              </div>
+            </div>
+            <div class="project-detail-sessions-heading">Recent chats</div>
+            <div id="projectDetailSessions" class="project-detail-sessions"></div>
+          </div>
+
         </div>
 
         <!-- Input Area -->
         <div class="input-area">
           <div class="input-wrapper">
+            <div id="composerAttachments" class="composer-attachments"></div>
             <div id="pendingImages" class="pending-images"></div>
             <div class="message-input">
               <label for="content" class="sr-only">Message USAi</label>
@@ -279,7 +298,7 @@
           <label for="projectMemoryMode" class="modal-label">Memory mode</label>
           <select id="projectMemoryMode" class="modal-select">
             <option value="default">Default</option>
-            <option value="isolated">Isolated</option>
+            <option value="project-only">Project-only</option>
           </select>
         </div>
         <div class="project-modal-instructions-row">

@@ -4,7 +4,7 @@ description: New or changed logic in app.js / server.py ships with corresponding
 ---
 
 Review this change for **test coverage** under the project's **TDD** workflow
-(`.continue/rules/tdd-workflow.md`) and zero-dependency test stack
+and zero-dependency test stack
 (`docs/rail-pipeline.md`).
 
 Pass the check only if all of these hold:
@@ -13,11 +13,11 @@ Pass the check only if all of these hold:
   fixes include a **regression test** that would fail without the fix. (Ideally the
   test was written before the implementation per TDD.)
 - New or modified **pure/testable functions** in `app.js` have corresponding cases
-  in `tests/js/*.test.mjs`, and any importable helper is added to the Node-only
+  in `frontend/tests/js/*.test.mjs`, and any importable helper is added to the Node-only
   `module.exports` block at the end of `app.js`.
 - New or modified **logic in `server.py`** has corresponding cases. Prefer **HTTP
-  integration tests** (`tests/python/test_server_http.py` /
-  `test_server_branches.py` / `test_server_proxy.py`) for handler/routing changes,
+  integration tests** (`backend/tests/python/test_server_http.py` /
+  `backend/tests/python/test_server_branches.py` / `backend/tests/python/test_server_proxy.py`) for handler/routing changes,
   and unit tests for pure helpers (`get_memory_dir`, `_slugify`,
   `_resolve_memory_file`, `add_log`, `load_config`, `_get_config` redaction).
 - Tests follow the existing conventions: `node:test`/`node:assert` for JS,

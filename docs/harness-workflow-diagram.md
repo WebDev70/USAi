@@ -26,7 +26,7 @@ flowchart LR
         direction TB
         B1["Rules\n(.continue/rules/) — always-on guidance"]
         B2["Agents\n(.continue/agents/) — role modes"]
-        B3["/check\n(.continue/checks/ · cli-check.sh) — QA gate"]
+        B3["Quality Gate\n(docs/quality/review-checks/ · scripts/quality-gate.sh) — QA gate"]
         B1 --> B2 --> B3
     end
 

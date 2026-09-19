@@ -312,7 +312,21 @@ Force the AI to return valid JSON.
 
 ## 7. File & Image Uploads
 
-Open the **File Uploads** section and click **Upload Files / Images**.
+Click the **📎** button in the composer toolbar to attach files or images.
+
+### The attachment tray
+
+Attached files appear as **chips** in a tray directly above the message box:
+
+- Attaching more files **adds** to the tray — earlier attachments are kept.
+- Re-attaching a file with the same name **replaces** its content (no duplicate chip).
+- Click the **✕** on a chip to remove just that file.
+- After you send a message, the tray clears and the message shows a
+  `📄 <filenames>` note recording which files were attached to that turn.
+
+> **Note:** The attachment record shown on a restored chat is **provenance only** —
+> the file's text is not re-loaded into context when you reopen an old chat.
+> Re-attach the file if you want to keep asking questions about it.
 
 ### Images (for vision models)
 - Upload images to ask the AI about them.
@@ -321,17 +335,46 @@ Open the **File Uploads** section and click **Upload Files / Images**.
 
 ### Text files (for context / RAG)
 Supported types include `.txt`, `.md`, `.json`, `.csv`, `.js`, `.ts`, `.py`,
-`.html`, `.css`, `.xml`, `.yaml`/`.yml`, and `.log`.
+`.html`, `.css`, `.xml`, `.yaml`/`.yml`, `.log`, plus **`.pdf`** and **`.docx`**.
 
-Text files are split into **chunks**, and the most relevant chunks are added to your
-message automatically. Two settings control this:
+PDF and DOCX files are sent to the server, which extracts their plain text before
+chunking (the chip shows the extracted `.txt` name).
+
+#### How retrieval works
+
+Text files are split into **chunks** at structural boundaries (Markdown headings,
+paragraph breaks, and whole code blocks). *Chunk size* is an **upper bound** — most
+chunks are smaller because splitting stops at the nearest boundary at or below the
+limit. This is **structure-aware chunking**, so a code fence or heading never ends
+up mid-chunk.
+
+When you send a message, USAi runs a **hybrid search** over your uploaded files:
+
+1. **Lexical pass** — BM25-style keyword overlap between your query and each chunk.
+2. **Semantic pass** — embedding-vector cosine similarity, using a per-chunk
+   fallback to a section-level embedding if the chunk lacks its own (e.g. very
+   short chunks).
+3. **Reciprocal Rank Fusion (RRF)** — the two ranked lists are fused into a single
+   ranking so neither lexical nor semantic results dominate.
+
+The **top-N chunks** from the fused ranking are selected, then **neighbor expansion**
+adds the chunk immediately before and after each winner so context is never cut off
+mid-thought.
+
+Every added excerpt is **labelled** with its file name, section heading, and line
+range (provenance) — you can always see exactly which part of which file contributed
+to an answer.
+
+Two settings control retrieval depth:
 
 | Setting | Meaning |
 |---------|---------|
-| **Chunk size** | Number of lines per chunk (default 200) |
-| **Top chunks** | Max number of chunks added per message (default 5) |
+| **Chunk size** | Upper bound on lines per chunk (default 200). Actual chunks are usually smaller — splitting stops at the nearest structural boundary. |
+| **Top chunks** | Max number of chunks selected before neighbour-expansion is applied (default 5) |
 
-Uploaded/processed files are cached, and a panel lists your cached files.
+Uploaded/processed files are cached, and a panel in the sidebar lists your cached
+files. **Restore** on a cached file **replaces** the current attachment set (it is not
+additive, unlike the 📎 button) — the tray always shows exactly what is attached.
 
 ---
 
@@ -351,7 +394,7 @@ organise work by topic, client, or context.
 2. Enter a **project name** in the modal.
 3. Optionally, enter **Project instructions** — free-text that is automatically
    prepended to every system prompt in this project (see [Project instructions](#project-instructions) below).
-4. Choose a **Memory mode** (cannot be changed later):
+4. Choose a **Memory mode** (this can be changed later from project settings):
    - **Default** — project chats share the global Obsidian memory pool (notes
      written here are visible everywhere, and global notes are visible here).
    - **Project-only** — project chats use a private memory scope, isolated from
@@ -359,14 +402,38 @@ organise work by topic, client, or context.
 5. Click **Create**.
 
 #### Open a project
-Click any project name in the **Projects** section of the sidebar. A new chat is
-started inside that project, and its name appears at the top of the conversation.
+Click any project name in the **Projects** section of the sidebar. A **project
+detail view** opens in the main pane showing:
+- The project name and a snippet of its instructions.
+- A list of all saved chats in this project (click any row to restore that chat).
+- A **"＋ New chat"** button to start a fresh conversation in this project.
+- A **"⚙ Settings"** button to edit the project name, instructions, memory mode,
+  and shared files.
+
+Project chats also appear **grouped under their project row** in the sidebar as
+a collapsible sub-list, so you can jump directly to any chat without opening the
+detail view first.
 
 #### Rename or pin a project
 Hover over the project in the sidebar and click **⋯** to open the context menu:
 - **Rename** — change the project name.
 - **Pin / Unpin** — pinned projects appear at the top of the sidebar in a **Pinned**
   section.
+
+#### Move a chat into a project
+You can reassign any existing chat to a different project (or remove it from
+its current project) at any time:
+
+1. Hover over the chat row in the **Chats** section of the sidebar.
+2. Click the **⋯** button that appears on the right side.
+3. Select **📂 Move to project…**.
+4. A picker shows all your projects, plus a **"No project"** option to detach
+   the chat from any project.
+5. Click the desired target — the sidebar refreshes instantly.
+
+> **Note:** Existing Obsidian memory notes for a chat stay in their original
+> vault folder and are **not** moved when you reassign the chat. Only the
+> chat's `projectId` metadata is updated.
 
 #### Delete a project
 In the ⋯ context menu, click **Delete**. A confirmation prompt appears.
@@ -378,7 +445,7 @@ In the ⋯ context menu, click **Delete**. A confirmation prompt appears.
 
 #### Memory Modes
 
-Every project has a **Memory mode** that is chosen at creation and **cannot be changed later**. It governs how Obsidian memory searches and saves are scoped for all chats in that project.
+Every project has a **Memory mode** that is chosen at creation and **can be changed later** from the project settings (⋯ → **Settings** on the project row). It governs how Obsidian memory searches and saves are scoped for all chats in that project.
 
 | Mode | Search behaviour | Save behaviour |
 |------|-----------------|----------------|
@@ -392,8 +459,13 @@ Every project has a **Memory mode** that is chosen at creation and **cannot be c
 
 **Global notes** are still accessible from any non-project chat, and from chats in projects set to **Default** mode.
 
-> 💡 Use **Default** when you want the project's AI context to benefit from (and contribute to) your general knowledge base.  
+> 💡 Use **Default** when you want the project's AI context to benefit from (and contribute to) your general knowledge base.
 > Use **Project-only** when the project contains sensitive or domain-specific content you want kept entirely separate.
+
+> **Note:** A memory-mode change takes effect **immediately**. Memory scope is
+> resolved fresh on every search and save (the server reads the current mode
+> per-request), so the next memory search or save uses the new mode — you do not
+> need to reopen the project or start a new chat.
 
 #### Project instructions
 
@@ -455,11 +527,12 @@ The sidebar is organised into three collapsible sections:
 | Section | Contents |
 |---------|----------|
 | **Pinned** | Pinned projects and pinned chats |
-| **Projects** | All your projects (shows up to 5; click "Show more" to see the rest) |
+| **Projects** | All your projects (shows up to 5; click "Show more" to see the rest). Each project row lists its own chats in a sub-list beneath it. |
 | **Chats** | Ungrouped conversations (no project, or whose project was deleted) |
 
 Chats started outside a project, and chats whose project has been deleted, always
-appear in the **Chats** section.
+appear in the **Chats** section. Chats that belong to a project appear in that
+project's sub-list under **Projects**, not in **Chats**.
 
 ### Chat history
 - Past conversations appear in the sidebar list (most recent first).

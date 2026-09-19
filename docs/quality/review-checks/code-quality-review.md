@@ -4,14 +4,16 @@ description: Change follows USAi Chat conventions — no new deps, correct patte
 ---
 
 Review this change against USAi Chat's **coding conventions** (`AGENTS.md`,
-`.continue/rules/development-sme.md`, `CONTINUE.md`).
+and `docs/rail-pipeline.md`).
 
 Flag as **failing** if any of these are true:
 
 - **New runtime dependency introduced.** Frontend must stay plain HTML/CSS/JS (no
-  framework, no build step); backend must use the Python standard library +
-  `python-dotenv` only. (Dev-only test tooling that ships no runtime dep is fine,
-  but adding pytest/jest/vitest/etc. is not.)
+  framework, no build step); backend must use the Python standard library plus only
+  the approved, hash-pinned packages (`python-dotenv`, `pypdf`, and `pypdf`'s
+  transitive `typing_extensions`) — see `docs/principles.md` §1 and
+  `dependency-and-supply-chain-review.md`. (Dev-only test tooling that ships no
+  runtime dep is fine, but adding pytest/jest/vitest/etc. is not.)
 - **Tool not gated.** A new entry in `TOOL_REGISTRY` (`app.js`) is not gated in
   `getEnabledTools()` on its config + toggle.
 - **Endpoint pattern violated.** A new server route is not implemented as a

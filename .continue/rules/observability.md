@@ -51,9 +51,9 @@ wired to analyze session logs as part of its QA and self-improvement process:
 
 ## Testing observability
 
-- `add_log` rotation is already unit-tested (`tests/python/test_server.py`). If you
+- `add_log` rotation is already unit-tested (`backend/tests/python/test_server.py`). If you
   change logging behavior (levels, rotation, redaction), add/adjust a test.
-- The log analyzer has its own test suite: `tests/python/test_analyze_logs.py`
+- The log analyzer has its own test suite: `backend/tests/python/test_analyze_logs.py`
   (AL-1…AL-8 covering empty dirs, error detection, scrubbing, malformed lines).
 
 This role has no dedicated `/check`; the `code-quality-review` and `security-review`

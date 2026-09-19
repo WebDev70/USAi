@@ -30,8 +30,9 @@ human must remember. See `docs/principles.md` §3.
 ## When you change infra/config, you MUST
 
 1. **Keep `.env.example` in sync.** If `load_config()` reads a new variable,
-   document it in `.env.example` — the `tests/python/test_env_example_sync.py`
-   drift guard enforces this; don't weaken it to hide drift.
+   document it in `.env.example`. The
+   `backend/tests/python/test_env_example_sync.py` drift guard enforces this —
+   never weaken it to hide drift.
 2. **Keep Docker/compose/Makefile/CI aligned.** A new run/setup/deploy step must be
    expressed as a target/stage, not just prose. Update the `Dockerfile` `COPY` list
    if the app gains a file it needs at runtime.

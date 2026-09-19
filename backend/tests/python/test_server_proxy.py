@@ -1023,6 +1023,133 @@ class ProxyReasoningStreamTests(unittest.TestCase):
                       msg='T-11d-4: [DONE] sentinel not relayed by proxy')
 
 
+class _CoalescedHeaderStreamUpstreamHandler(BaseHTTPRequestHandler):
+    """Sends the response head AND the first SSE frame in a single TCP write.
+
+    This is the exact upstream behaviour that exposed the dropped-first-frame
+    bug: http.client parses the status line + headers through the *buffered*
+    socket reader, so any body bytes that arrive in the same segment are already
+    sitting in the BufferedReader. A relay that reads from `resp.fp.raw` bypasses
+    that buffer and loses the first frame.
+
+    We bypass send_response/end_headers and write the raw bytes ourselves so the
+    coalescing is deterministic rather than a timing race (the pre-existing
+    _StreamUpstreamHandler only hit it intermittently, ~8% of runs).
+    """
+
+    def log_message(self, *args):  # silence
+        pass
+
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length', 0))
+        if length:
+            self.rfile.read(length)
+        # HTTP/1.0 + no Content-Length ⇒ end-of-body is connection close, which
+        # matches _StreamUpstreamHandler and how real SSE upstreams behave.
+        head_plus_first_frame = (
+            b'HTTP/1.0 200 OK\r\n'
+            b'Content-Type: text/event-stream\r\n'
+            b'\r\n'
+            b'data: {"id": "1", "choices": [{"delta": {"content": "FIRST"}}]}\n\n'
+        )
+        self.wfile.write(head_plus_first_frame)  # single write ⇒ single segment
+        self.wfile.flush()
+        time.sleep(0.05)
+        self.wfile.write(b'data: [DONE]\n\n')
+        self.wfile.flush()
+        time.sleep(0.02)
+
+
+class ProxyFirstFrameNotDroppedTests(unittest.TestCase):
+    """Regression: the proxy must not drop an SSE frame that arrived in the same
+    TCP segment as the upstream response headers.
+
+    Root cause of the intermittent ProxyReasoningStreamTests /
+    ProxyIncrementalStreamingTests failures: the relay read from
+    `resp.fp.raw.read`, bypassing the BufferedReader that http.client had
+    already used to parse the headers — so pre-buffered body bytes were lost.
+    The fix reads via `resp.fp.read1`, which drains the buffer first.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._saved_config = dict(server.CONFIG)
+        cls._up = ThreadingHTTPServer(
+            ('127.0.0.1', 0), _CoalescedHeaderStreamUpstreamHandler)
+        cls._up_port = cls._up.server_address[1]
+        cls._up_thread = threading.Thread(
+            target=cls._up.serve_forever, daemon=True)
+        cls._up_thread.start()
+        server.CONFIG = dict(cls._saved_config)
+        server.CONFIG.update({
+            'api_key': 'k',
+            'base_url': f'http://127.0.0.1:{cls._up_port}',
+            '_test_allow_loopback': True,
+        })
+        cls._app = ThreadingHTTPServer(
+            ('127.0.0.1', 0), server.EnvConfigHTTPRequestHandler)
+        cls._port = cls._app.server_address[1]
+        cls._thread = threading.Thread(
+            target=cls._app.serve_forever, daemon=True)
+        cls._thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._app.shutdown(); cls._app.server_close()
+        cls._up.shutdown(); cls._up.server_close()
+        server.CONFIG = cls._saved_config
+
+    def _relay(self):
+        """POST a streaming request over a raw socket; return all bytes read."""
+        import socket
+        body = json.dumps({'stream': True, 'messages': []}).encode('utf-8')
+        request = (
+            f'POST /api/v1/chat/completions HTTP/1.1\r\n'
+            f'Host: 127.0.0.1:{self._port}\r\n'
+            f'Content-Type: application/json\r\n'
+            f'Content-Length: {len(body)}\r\n'
+            f'Connection: close\r\n\r\n'
+        ).encode('utf-8') + body
+        s = socket.create_connection(('127.0.0.1', self._port), timeout=10)
+        s.sendall(request)
+        s.settimeout(10)
+        received = b''
+        while True:
+            try:
+                data = s.recv(4096)
+            except socket.timeout:
+                break
+            if not data:
+                break
+            received += data
+            if b'[DONE]' in received:
+                break
+        s.close()
+        return received
+
+    def test_frame_coalesced_with_headers_is_relayed(self):
+        """The first SSE frame must survive even when it shares the header segment."""
+        received = self._relay()
+        self.assertIn(b'http/1.1 200', received.split(b'\r\n\r\n', 1)[0].lower())
+        self.assertIn(
+            b'"content": "FIRST"', received,
+            msg='first SSE frame was dropped — the relay is bypassing the '
+                'BufferedReader that http.client used to parse the headers')
+        self.assertIn(b'[DONE]', received, msg='[DONE] sentinel not relayed')
+
+    def test_frame_not_dropped_across_repeated_requests(self):
+        """Repeat the relay so a partial regression cannot pass by luck.
+
+        The original `.raw` implementation lost the frame in roughly 1-in-12
+        runs, so a single-shot assertion was not enough to keep it red.
+        """
+        for attempt in range(12):
+            received = self._relay()
+            self.assertIn(
+                b'"content": "FIRST"', received,
+                msg=f'first SSE frame dropped on attempt {attempt + 1}')
+
+
 class _MalformedJsonUpstreamHandler(BaseHTTPRequestHandler):
     """Replies with invalid JSON (non-streaming) to test proxy robustness."""
 

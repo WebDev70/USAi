@@ -67,6 +67,31 @@ class ProjectsHandlersMixin:
         )
         self._json_response(200, projects)
 
+    def _get_project(self, project_id):
+        """GET /projects/<id> — fetch a single project by id.
+
+        Returns 400 on traversal attempt, 404 if the project file doesn't exist,
+        otherwise 200 + the project JSON. Used by the frontend when opening a
+        project (openProject) and when restoring a session that belongs to a
+        project (restoreSession) so both flows see the same, single source of
+        project metadata instead of relying on a list-scan the client has to
+        do itself.
+        """
+        safe_id = self._safe_project_id(project_id)
+        if safe_id is None:
+            self._json_response(400, {'error': 'Invalid project id'})
+            return
+        proj_file = _server.PROJECTS_DIR / f'{safe_id}.json'
+        if not proj_file.exists():
+            self._json_response(404, {'error': 'Project not found'})
+            return
+        try:
+            data = json.loads(proj_file.read_text(encoding='utf-8'))
+        except Exception as err:
+            self._json_response(500, {'error': str(err)})
+            return
+        self._json_response(200, data)
+
     def _post_projects(self):
         """POST /projects — create a new project.
 
@@ -117,11 +142,20 @@ class ProjectsHandlersMixin:
         _server.add_log('info', 'projects', f'Created project "{name}" ({project_id})')
         self._json_response(201, project)
 
-    def _put_project(self, project_id):
-        """PUT /projects/<id> — update name and/or pinned.
+    # Valid values for a project's memoryMode field. Any other value in a PUT
+    # body is rejected with 400 rather than silently ignored, so the frontend
+    # gets clear feedback instead of a mismatch that only surfaces later when
+    # memory search/save behaves unexpectedly.
+    _VALID_MEMORY_MODES = ('default', 'project-only')
 
-        memoryMode is immutable after creation and is silently ignored.
-        Returns 400 on traversal attempt, 404 if not found.
+    def _put_project(self, project_id):
+        """PUT /projects/<id> — update name, pinned, instructions, and/or memoryMode.
+
+        memoryMode was previously immutable after creation; it is now editable
+        so users can switch a project between shared ("default") and private
+        ("project-only") memory scoping without recreating the project. Only
+        the values in _VALID_MEMORY_MODES are accepted.
+        Returns 400 on traversal attempt or invalid memoryMode, 404 if not found.
         """
         safe_id = self._safe_project_id(project_id)
         if safe_id is None:
@@ -155,7 +189,12 @@ class ProjectsHandlersMixin:
                 self._json_response(400, {'error': 'instructions too long'})
                 return
             project['instructions'] = inst
-        # memoryMode is intentionally NOT updated here — it is immutable.
+        if 'memoryMode' in updates:
+            mode = (updates['memoryMode'] or '').strip()
+            if mode not in self._VALID_MEMORY_MODES:
+                self._json_response(400, {'error': "memoryMode must be 'default' or 'project-only'"})
+                return
+            project['memoryMode'] = mode
         project['updatedAt'] = datetime.now().isoformat()
         proj_file.write_text(json.dumps(project), encoding='utf-8')
         _server.add_log('info', 'projects', f'Updated project {safe_id}')

@@ -100,10 +100,12 @@ fi
 
 echo
 echo "══ 4/4 Memory-note secret scan (Obsidian Cline/memories/) ════════"
-# Scans agent memory notes for accidentally-committed secret patterns (API keys,
-# Bearer tokens, etc.). Scoped to Cline/memories/ only — the harness we write to.
-# Skips cleanly when OBSIDIAN_VAULT_PATH is unset (e.g. CI without a vault).
-# Patterns: sk-* (OpenAI-style keys), Bearer tokens, bare api_key=/password= lines.
+# Scans agent memory notes for accidentally-committed secret-shaped values (API
+# keys, Bearer tokens, etc.). Scoped to Cline/memories/ only — the harness we write
+# to. Skips cleanly when OBSIDIAN_VAULT_PATH is unset (e.g. CI without a vault).
+# Patterns require a bounded value (min length + boundary) so checklist prose
+# ("No API keys, Bearer tokens, or passwords in this note") and benign identifier
+# substrings (e.g. `task-1234567890123456`) do not false-positive (backlog #72).
 VAULT_PATH="${OBSIDIAN_VAULT_PATH:-}"
 if [ -z "$VAULT_PATH" ]; then
   echo "  ⚠ OBSIDIAN_VAULT_PATH not set — memory-note scan skipped"
@@ -111,14 +113,22 @@ elif [ ! -d "$VAULT_PATH/Cline/memories" ]; then
   echo "  ⚠ $VAULT_PATH/Cline/memories not found — memory-note scan skipped"
 else
   MEM_DIR="$VAULT_PATH/Cline/memories"
-  # grep -rn returns 0 (found) or 1 (not found); we want exit 0 only when NOT found
-  if grep -rn \
-      -e 'sk-[A-Za-z0-9]' \
-      -e 'Bearer [A-Za-z0-9]' \
-      -e 'api_key\s*=' \
-      -e 'password\s*=' \
+  # Require a bounded, secret-shaped value rather than a checklist word or an
+  # identifier substring (for example, `task-…`). Keep findings redacted: echoing
+  # grep's matching line would itself leak a discovered secret into CI logs.
+  MEMORY_SECRET_PATTERNS=(
+    '(^|[^[:alnum:]_-])sk-[[:alnum:]_-]{16,}'
+    'Bearer[[:space:]]+[[:alnum:]._%+/-]{16,}'
+    '(^|[^[:alnum:]_])(api_key|password)[[:space:]]*=[[:space:]]*[[:alnum:]._%+/-]{8,}'
+  )
+  MATCHES=$(grep -rEn \
+      -e "${MEMORY_SECRET_PATTERNS[0]}" \
+      -e "${MEMORY_SECRET_PATTERNS[1]}" \
+      -e "${MEMORY_SECRET_PATTERNS[2]}" \
       --include="*.md" \
-      "$MEM_DIR" 2>/dev/null; then
+      "$MEM_DIR" 2>/dev/null || true)
+  if [ -n "$MATCHES" ]; then
+    printf '%s\n' "$MATCHES" | sed 's/:[0-9][0-9]*:.*/: [REDACTED]/'
     echo "  ✕ secret pattern found in memory notes — redact before committing"
     FAILED=1
   else

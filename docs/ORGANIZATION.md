@@ -65,7 +65,7 @@ Controlled by `.env → OBSIDIAN_MEMORY_SUBDIR=USAi`.
 | File / Directory | Role |
 |------------------|------|
 | `.continue/rules/` | Always-on (or glob-scoped) behavioral rules — the "how to work" |
-| `.continue/checks/` | `/check` QA pass/fail gates — the "verify it was done" |
+| `.continue/rules/recommended-next-step.md` | Always-on rule — Continue wiring for the mandatory `Recommended Next Step` closing section (canonical: `docs/rail-pipeline.md`) |
 | `.continue/agents/` | Selectable agent modes (product-owner, planner, security, improver) |
 | `.continue/mcpServers/` | MCP server connections (Obsidian, etc.) |
 | `.continue/rules/CONTINUE.md` | Full architecture reference + troubleshooting (Continue-specific) |
@@ -76,7 +76,7 @@ Controlled by `.env → OBSIDIAN_MEMORY_SUBDIR=USAi`.
 
 The **RAIL pipeline** in Continue is expressed as:
 - **Rules** (`.continue/rules/*.md`) — always-on behavioral guidance for each role
-- **Checks** (`.continue/checks/*.md`) — `/check` pass/fail gates run at QA Review
+- **Checks** (defined in `docs/quality/review-checks/`) — QA pass/fail gates run by `scripts/quality-gate.sh`
 - **Agents** (`.continue/agents/*.yaml`) — optional dedicated modes per role
 
 ### Obsidian memory (Continue's own)
@@ -97,6 +97,7 @@ Governed by the memory directive in `AGENTS.md`.
 | File / Directory | Role |
 |------------------|------|
 | `.clinerules/rail-pipeline.md` | Always-on RAIL rule — Cline's operating contract |
+| `.clinerules/recommended-next-step.md` | Always-on rule — Cline wiring for the mandatory `Recommended Next Step` closing section (canonical: `docs/rail-pipeline.md`) |
 | `.clinerules/workflows/spec.md` | `/spec` workflow — PLAN MODE interview → writes `docs/specs/<feature>.md` |
 | `.clinerules/workflows/build.md` | `/build` workflow — ACT MODE implementation engine |
 | `.clinerules/workflows/review.md` | `/review` workflow — compares build vs spec, runs gates |
@@ -182,7 +183,7 @@ Cline `/spec`→`/loop`) lives in its own config directory.
 |--------------------|--------------|
 | A new feature / bug fix in the app | `frontend/index.html`, `frontend/app.js`, `backend/server.py`, `frontend/styles.css`, `frontend/tests/js/`, `backend/tests/python/` |
 | A new Continue rule (behavioral guidance) | `.continue/rules/` |
-| A new Continue QA check | `.continue/checks/` |
+| A new Continue QA check | `docs/quality/review-checks/` |
 | A new Continue agent mode | `.continue/agents/` |
 | A new Cline workflow | `.clinerules/workflows/` |
 | A spec for a new feature | `docs/specs/<feature>.md` (written by `/spec`) |

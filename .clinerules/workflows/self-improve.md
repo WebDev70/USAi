@@ -202,3 +202,12 @@ Link related notes with `[[wikilinks]]`. Keep it ≤ 2 pages.
 
 Missing a User Summary does **not** fail `/review` or block `/loop` completion.
 It is a value-add output, not a quality gate.
+
+---
+
+## Closing section
+
+`/self-improve` is a *terminal* workflow, so it must end with the mandatory
+**`Recommended Next Step`** section after its summary. The recommended step is
+normally the highest-value improvement proposal this retro surfaced. See
+`.clinerules/recommended-next-step.md`.

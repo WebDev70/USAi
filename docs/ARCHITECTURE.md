@@ -10,8 +10,9 @@
 ## 1. System overview
 
 USAi Chat is a **static vanilla-JS frontend** (`index.html` + `app.js` + `styles.css`)
-served by a **small Python stdlib backend** (`server.py`). There is no build step, no
-framework, and no runtime dependencies beyond `python-dotenv`.
+served by a **small Python stdlib backend** (`server.py`). There is no build step and
+no framework. The only runtime dependencies are two approved, hash-pinned packages:
+`python-dotenv` (`.env` loading) and `pypdf` (PDF text extraction).
 
 ```
 ┌────────────────────────────────┐
@@ -32,7 +33,10 @@ framework, and no runtime dependencies beyond `python-dotenv`.
 ```
 
 **Key design constraints** (see [`docs/principles.md`](principles.md) for full rationale):
-- Minimal, audited **runtime** surface — vanilla JS + Python stdlib + `python-dotenv` only.
+- Minimal, audited **runtime** surface — vanilla JS + Python stdlib + only two
+  approved, hash-pinned backend packages (`python-dotenv`, `pypdf`; plus `pypdf`'s
+  transitive `typing_extensions`). DOCX is read with stdlib `zipfile`/`xml.etree`
+  rather than adding `python-docx`. See [`docs/principles.md`](principles.md) §1.
 - API key injected **server-side**; never sent to or stored in the browser.
 - Container-deployable via `Dockerfile` / `docker-compose.yml`; one-word entry points
   via `Makefile`.
@@ -56,6 +60,16 @@ sequenceDiagram
     S-->>B: Relay SSE chunks verbatim
     Note over B: streamChatApi() assembles<br/>text, renders Markdown on done
 ```
+
+> **Relay implementation note.** The relay upgrades the response to HTTP/1.1 with
+> `Transfer-Encoding: chunked` (HTTP/1.0 has no streaming framing, so `fetch()`
+> would withhold every byte until connection close) and reads upstream bytes via
+> `resp.fp.read1(n)`. `read1` is required on both counts: `resp.read(n)` blocks
+> until it can return exactly *n* bytes (killing incrementality), while
+> `resp.fp.raw.read(n)` bypasses the `BufferedReader` that `http.client` already
+> used to parse the response headers — dropping any first SSE frame that arrived
+> in the same TCP segment as those headers. See
+> `ProxyFirstFrameNotDroppedTests` in `backend/tests/python/test_server_proxy.py`.
 
 ### 2b. Tool-calling loop
 
@@ -114,8 +128,8 @@ routes = {
     ...
 }
 
-# do_PUT dispatches to self._put_projects()  for PUT /projects?id=<id>
-# do_DELETE dispatches to self._delete_projects() for DELETE /projects?id=<id>
+# do_PUT dispatches to self._put_projects()  for PUT /projects/<id>
+# do_DELETE dispatches to self._delete_projects() for DELETE /projects/<id>
 ```
 
 Unmatched paths fall through to `SimpleHTTPRequestHandler` (static file serving).
@@ -126,7 +140,7 @@ Unmatched paths fall through to `SimpleHTTPRequestHandler` (static file serving)
 |--------|------|---------|
 | `GET` | `/config` | Non-secret config + `has_api_key` / `has_context7` / `has_obsidian` / `has_projects` flags |
 | `GET` | `/models` | Proxied model list from upstream |
-| `GET` | `/sessions` | List archived chat sessions |
+| `GET` | `/sessions` | List archived chat sessions; accepts `?projectId=<id>` to filter by project (traversal-safe) |
 | `GET` | `/memory/list` | List Obsidian memory notes (accepts `?projectId=` for project-scoped listing) |
 | `GET` | `/memory/search` | Full-text search across memory notes (accepts `?projectId=` for project-scoped search) |
 | `GET` | `/memory/read` | Read a single memory note |
@@ -137,12 +151,13 @@ Unmatched paths fall through to `SimpleHTTPRequestHandler` (static file serving)
 | `DELETE` | `/raw-responses` | Clear all raw-response capture records |
 | `DELETE` | `/raw-responses?id=` | Delete one raw-response capture record |
 | `GET` | `/projects` | List all projects |
-| `POST` | `/projects` | Create a new project (`{name, icon?, instructions?, memoryMode?}`) |
-| `PUT` | `/projects?id=<id>` | Update project name, icon, instructions, or pinned state (`memoryMode` immutable after creation) |
-| `DELETE` | `/projects?id=<id>` | Delete a project and cascade-delete its chunk cache; orphans chats to "Chats"; preserves Obsidian memory notes |
+| `POST` | `/projects` | Create a new project (`{name, instructions?, memoryMode?}`) |
+| `PUT` | `/projects/<id>` | Update project name, instructions, pinned state, or memoryMode |
+| `DELETE` | `/projects/<id>` | Delete a project and cascade-delete its chunk cache; orphans chats to "Chats"; preserves Obsidian memory notes |
 | `POST` | `/proxy` | Proxy chat completions to upstream (streaming + non-streaming) |
 | `POST` | `/context7` | Proxy Context7 documentation queries |
 | `POST` | `/memory/save` | Save a new Obsidian memory note (accepts `projectId` in body for project-scoped save) |
+| `PATCH` | `/sessions/<id>` | Update a session's `projectId` field (move a chat into or out of a project). Body: `{ projectId: string | null }`. Path-traversal-safe in both the URL segment and the `projectId` body value. |
 | `POST` | `/sessions` | Archive current session; start a new chat (stamps `projectId` on archived session) |
 | `GET` | `/chunk-cache` | List or retrieve file chunks (accepts `?projectId=` for project-scoped listing) |
 | `POST` | `/chunk-cache` | Store file chunks server-side (accepts `?projectId=` to scope to a project) |
@@ -172,7 +187,7 @@ and **never reach the browser**.
 | Archived sessions | `.chat_sessions/<id>.json` | JSON | Saved chat sessions; includes optional `projectId` field |
 | File chunks (global) | `.chunk_cache/` | JSON files | Per-file text chunks for RAG (ungrouped / legacy) |
 | Project file chunks | `.chunk_cache/projects/<projectId>/` | JSON files | Per-file text chunks scoped to a project |
-| Project metadata | `.projects/<projectId>.json` | JSON | `{id, name, icon, instructions, memoryMode, pinned, createdAt, updatedAt}` |
+| Project metadata | `.projects/<projectId>.json` | JSON | `{id, name, instructions, memoryMode, pinned, createdAt, updatedAt}` |
 | Obsidian memory (global) | `<OBSIDIAN_VAULT_PATH>/<OBSIDIAN_MEMORY_SUBDIR>/memories/` | Markdown | Long-term memory notes with YAML frontmatter |
 | Obsidian memory (project) | `<OBSIDIAN_VAULT_PATH>/<OBSIDIAN_MEMORY_SUBDIR>/projects/<projectId>/memories/` | Markdown | Project-scoped memory notes (used when `memoryMode='project-only'`) |
 | Raw API responses | `.raw_responses/<timestamp>_<uid>.json` | JSON | Full upstream response envelopes (opt-in; `CAPTURE_RAW_RESPONSES=true`) |
@@ -212,7 +227,7 @@ Layers 2 and 3 are mutually exclusive (per-chat takes precedence). The result is
 no project is active). Applied consistently across `sendMessage`, regenerate,
 edit-resend, and session restore paths.
 
-**Cascade-delete on project removal (`DELETE /projects?id=<id>`):**
+**Cascade-delete on project removal (`DELETE /projects/<id>`):**
 - Deletes `.projects/<id>.json`.
 - Removes `.chunk_cache/projects/<id>/` (project file chunks).
 - Orphans all sessions with `projectId == id` by nulling their field (chats remain,
@@ -298,11 +313,40 @@ Project instructions are always prepended; layers 2 and 3 are mutually exclusive
 
 ### 4d. RAG / file chunking
 
-Uploaded files are chunked by `chunkText()` (sliding-window, configurable size and
-overlap) and stored server-side via `POST /chunk-cache`. At message-build time,
-`getRelevantChunks()` scores chunks against the current query using
-`scoreChunkByKeywords()` (TF-style keyword overlap) and injects the top-N as
-`role: 'user'` context messages via `prepareContextMessages()`.
+Uploaded files are chunked by `chunkTextStructured()` on **structural boundaries**
+— Markdown ATX headings, blank-line paragraph breaks, and whole fenced code blocks
+— with the user's chunk-size setting (default 200 lines, 50–1000) acting as an
+**upper bound** rather than an exact window. Every chunk carries schema-v2
+metadata (`schemaVersion: 2`, `ordinal`, `startLine`/`endLine`, `headingPath`,
+`sectionType`, `previousChunkId`/`nextChunkId`) and is stored server-side via
+`POST /chunk-cache`. Legacy (pre-v2) cache files are normalized in memory on read
+by `normalizeChunkCache()` — ordinal from array position, empty `headingPath`,
+`sectionType: 'unknown'`, adjacency-linked neighbours — and only persist forward in
+the new shape on the next write; there is no batch migration. The legacy
+`chunkText()` splitter is retained as a reference/rollback path.
+
+At message-build time, `getRelevantChunks()` scores **every** chunk lexically with
+`scoreChunkByKeywords()` and, when semantic search is on, additionally scores the
+subset of chunks that carry an `embedding` whose `embedModel` matches the model
+returned by `/embeddings` (a mismatch is treated as "no embedding" so incompatible
+vector spaces are never mixed). The two rankings are combined by **Reciprocal Rank
+Fusion** (`k = 60`, ties broken by `ordinal` then `fileName`) instead of comparing
+raw keyword counts to cosine similarities — so a single un-embedded chunk no longer
+disables semantic ranking for the whole set. The fused top-N seeds are then passed
+through `expandChunkNeighbors()`, which pulls each seed's immediate
+previous/next chunk from the same file, deduplicates, enforces the 120,000-char
+`CONTEXT_CHAR_LIMIT` by dropping whole low-score seed groups (never truncating
+mid-chunk), and returns the result in `(fileName, ordinal)` source order. Blocks
+are injected as `role: 'system'` context messages via `prepareContextMessages()`,
+each labelled by `formatChunkLabel()` with its file, heading path, line range, and
+a `(context)` marker on expanded neighbours.
+
+Not yet implemented: the adaptive full-document context path, whole-document
+intent routing / hierarchical map-reduce (**#70**), and optional second-stage
+reranking (**#71**) — large files are still answered from the fused top-N excerpt.
+See `docs/specs/advanced-document-retrieval.md` §4.6–4.8 for those designs; this
+section will be updated again as each slice ships.
+
 
 **Project files (`projectChunks`):** When a project is active, the project's shared
 files are loaded into a separate `projectChunks` array (from
@@ -352,8 +396,7 @@ flowchart TD
   are hidden from outside chats. `_memory_search` and `_memory_list` only scan the
   project directory. Global searches (no `projectId`) never include project-only
   directories. New saves go to the project directory.
-- **`memoryMode` is immutable after creation** — the server rejects any PUT request
-  that attempts to change `memoryMode`.
+- **`memoryMode` is mutable** — the server accepts PUT requests that change `memoryMode`.
 - **Memory notes are never deleted** — project deletion does not remove
   `<vault>/.../projects/<id>/memories/`; vault content is preserved.
 
@@ -370,8 +413,17 @@ flowchart TD
 - **`showSessionsList()`** — fetches `GET /sessions` + `GET /projects`, then
   renders the sidebar as three collapsible sections:
   - **Pinned** — projects with `pinned: true`.
-  - **Projects** — all non-pinned projects (collapsible `<details>`).
+  - **Projects** — all non-pinned projects (collapsible `<details>`). Each project
+    row is followed by a `.project-sub-list` containing that project's own sessions
+    (grouped by `projectId`), so project chats are reachable from the sidebar.
   - **Chats** — sessions with no `projectId` (legacy and newly-created ungrouped chats).
+- **`openProject(id)` / `showProjectDetail(id)`** — opening a project no longer
+  wipes the canvas. `openProject` sets `currentProjectId`, loads project chunks and
+  instructions, then calls `showProjectDetail`, which renders `#projectDetailView`
+  (name, instructions snippet, chat list, **＋ New chat**, **⚙ Settings**) and hides
+  the chat area via `_showProjectDetailView()`. `startNewProjectChat()` is what
+  **＋ New chat** calls — it archives/clears and returns to the chat view with
+  `_showChatView()`. Clicking a chat row calls `_showChatView()` then `restoreSession`.
 
 **`currentProjectId`** is a module-level variable in `app.js` that tracks the active
 project for new chats, archives, memory calls, and chunk lookups. Set when the user
@@ -452,19 +504,20 @@ docker compose up
 
 ## 8. Python module structure (backlog #45)
 
-`server.py` has been split into 6 focused Python modules to keep each file under 1,500 lines
+`server.py` has been split into 7 focused Python modules to keep each file under 1,500 lines
 while preserving all existing module-level names in `server.py` so that no test files require modification.
 
 ### Module overview
 
 | Module | Class / Role | Methods | ~Lines |
 |--------|-------------|---------|--------|
-| `server.py` | `EnvConfigHTTPRequestHandler` — scaffold, config, routing, helpers, entrypoint | `_json_response`, `_get_config`, `do_GET`, `do_POST`, `do_PUT`, `do_DELETE` | ~630 |
+| `server.py` | `EnvConfigHTTPRequestHandler` — scaffold, config, routing, helpers, entrypoint | `_json_response`, `_get_config`, `do_GET`, `do_POST`, `do_PUT`, `do_DELETE`, `do_PATCH` | ~640 |
 | `proxy_handlers.py` | `ProxyHandlersMixin` | `_proxy_api`, `_get_context7`, `_post_embeddings`, `_get_raw_responses`, `_delete_raw_responses` | ~430 |
 | `session_handlers.py` | `SessionHandlersMixin` | `_resolve_chunk_cache_dir`, `_get/post/delete_chunk_cache`, `_get/post_sessions`, `_get/post_chat_history`, `_get/post_logs`, `_get_log_files`, `_post_logs_clear`, `_post_new_chat_session`, `_delete_sessions` | ~400 |
 | `memory_handlers.py` | `MemoryHandlersMixin` | `_project_memory_dirs`, `_memory_search`, `_memory_list`, `_memory_read`, `_memory_save` | ~265 |
 | `mcp_handlers.py` | `McpHandlersMixin` | `_read_mcp_body`, `_post_mcp_tool`, `_post_mcp_rename_tag`, `_post_mcp_move_note`, `_get_mcp_vaults` | ~127 |
 | `projects_handlers.py` | `ProjectsHandlersMixin` | `_safe_project_id`, `_get_projects`, `_post_projects`, `_put_project`, `_delete_project` | ~178 |
+| `file_parser_handlers.py` | `FileParserHandlerMixin` | `_post_extract_text` | ~80 |
 
 ### Class declaration (MRO)
 
@@ -475,6 +528,7 @@ class EnvConfigHTTPRequestHandler(
     MemoryHandlersMixin,
     McpHandlersMixin,
     ProjectsHandlersMixin,
+    FileParserHandlerMixin,
     SimpleHTTPRequestHandler
 ):
 ```

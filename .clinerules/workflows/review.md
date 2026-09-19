@@ -53,30 +53,39 @@ If any item fails: add it to the Gap List (§ below) and stop further gates.
 
 ## Role 6 — Reviewer / QA (spec vs. build diff + check gates)
 
-### 6a. Full check-suite gate (mandatory)
+### 6a. Deterministic check-suite gates (mandatory)
 
-Run the full Cline check suite *before* the spec-compliance review — this is
-the canonical QA gate for Cline's `/review`:
+Run every command below explicitly *before* the spec-compliance review. No command
+is a proxy for another: `quality-gate.sh` validates the neutral review-check
+manifest; it does **not** run tests, security scanners, doc consistency, or AI review.
 
 ```bash
-./scripts/cli-check.sh --review
+./scripts/quality-gate.sh
+./run-tests.sh --coverage
+./scripts/security-scan.sh
+./scripts/doc-consistency-check.sh
 ```
 
-This runs: `./run-tests.sh --coverage` (syntax + tests + coverage gates) +
-`./scripts/security-scan.sh --strict` + `./scripts/doc-consistency-check.sh` +
-the `cn review` AI review pass against all `.continue/checks/*.md` criteria.
+| Command | Pass condition | Action on failure |
+|---|---|---|
+| `quality-gate.sh` | Exit 0; every manifested review-check file exists and is non-empty | **FAIL** — review criteria are incomplete |
+| `run-tests.sh --coverage` | Exit 0; all tests and coverage thresholds pass | **FAIL** — report failing test/gate |
+| `security-scan.sh` | Exit 0; findings clean (record any unavailable scanner) | **FAIL** — report the finding; never weaken a scanner |
+| `doc-consistency-check.sh` | Exit 0 | **FAIL** — report each live-policy drift finding |
 
-| cli-check.sh result | Action |
-|---|---|
-| Exit 0 | ✅ Full check suite — PASS; proceed to spec compliance checks below |
-| Exit non-zero (any stage) | **FAIL** — add to Gap List, do not proceed to spec checks |
+**Evidence requirement (fail closed):** preserve the current invocation's output in
+the review response. At minimum, report each command and exit status, measured JS and
+Python test totals, and measured line/branch coverage values. Never carry counts or
+PASS claims forward from an earlier session. If output was not captured, the gate is
+**unverified** and must be rerun; substitute commands such as bare `unittest discover`
+do not satisfy the coverage gate.
 
-> **Note:** `./scripts/cli-check.sh --review` **always attempts the AI review** as part
-> of the full gate, using `cn` (Continue CLI) if available, or an `npx @continuedev/cli`
-> fallback if `cn` is not on PATH. Because the script runs under `set -euo pipefail`, the
-> full `--review` gate **fails if the AI review command fails** — there is no skip path.
-> To control which CLI is used, pre-install `cn` (`npm i -g @continuedev/cli`) or set the
-> `CN_CMD` env var to override the default.
+After the deterministic commands pass, apply every criterion listed in
+`docs/quality/review-checks/README.md` during the Reviewer analysis. The script only
+validates that this criteria set is present; the Reviewer performs the evaluation.
+
+> `./scripts/cli-check.sh` is a compatibility wrapper for the manifest validator;
+> it is not a full-suite alias.
 
 ### 6b. Spec compliance check
 
@@ -107,10 +116,9 @@ After the script passes (exit 0), manually verify the remaining items:
 
 ### 6c. Test suite gate
 
-> Note: `./run-tests.sh --coverage` is already run as part of `./scripts/cli-check.sh --review`
-> above (§6a). This gate confirms the reported values meet the thresholds:
+`./run-tests.sh --coverage` is run directly in §6a. Confirm its captured output meets
+all pass criteria:
 
-Pass criteria (verified from §6a output):
 - All tests green (zero failures)
 - `server.py` ≥ **90%** line coverage
 - JS exported helpers ≥ **70%** branch coverage
@@ -237,6 +245,11 @@ Then:
 1. Check off all items in the spec's **§8 Review checklist**.
 2. Update spec **Status → Done**.
 3. Trigger the memory note (or remind the `/loop` orchestrator to do so).
+4. Confirm the closing **`Recommended Next Step`** section will be emitted after
+   the Completed Summary — required when `/review` is run **standalone** (it is the
+   terminal step of the task). When `/review` was invoked by `/loop`, the
+   orchestrator emits it instead; do not duplicate. See
+   `.clinerules/recommended-next-step.md`.
 
 ### If ANY gate fails → GAP LIST
 

@@ -81,8 +81,15 @@ log via `add_log`, never log secrets.
 
 **How each harness runs the RAIL QA gate:**
 - **Continue:** run **`/check`** (VS Code) or `./scripts/cli-check.sh` (CLI).
-  Checks live in `.continue/checks/`.
+  Check definitions live in `docs/quality/review-checks/`.
 - **Cline:** run **`/review`** workflow. See `.clinerules/workflows/review.md`.
+
+**Closing hand-off (both harnesses):** every *terminal* task — one that hands control
+back to the user — ends with a mandatory **`Recommended Next Step`** section stating
+one action, why it comes next, what it enables, and the impact of skipping it. Canonical
+definition: [`docs/rail-pipeline.md`](docs/rail-pipeline.md) § "Recommended Next Step".
+Harness wiring: `.clinerules/recommended-next-step.md` (Cline) ·
+`.continue/rules/recommended-next-step.md` (Continue).
 
 ---
 
@@ -108,7 +115,11 @@ handling) see [`docs/rail-pipeline.md` §3](docs/rail-pipeline.md).
 > pointer — the rail-pipeline doc is the single source of truth.
 
 - **Minimal, audited *runtime* surface:** frontend is plain HTML/CSS/JS (no
-  framework/build/runtime deps); backend is Python **stdlib + `python-dotenv` only**.
+  framework/build/runtime deps); backend is Python **stdlib + two approved,
+  hash-pinned packages only** — `python-dotenv` (`.env` loading) and `pypdf` (PDF
+  text extraction), plus `pypdf`'s transitive `typing_extensions`. DOCX is read
+  with stdlib `zipfile`/`xml.etree`, **not** `python-docx`. Allow-list + rationale:
+  [`docs/principles.md`](docs/principles.md) §1.
   Dev/CI tooling that ships nothing into the app is allowed/encouraged (coverage,
   bandit, pip-audit, gitleaks, Docker, make) — see `docs/principles.md` §1.
 - **Comments explain _why_,** not just _what_ — match the existing descriptive style.

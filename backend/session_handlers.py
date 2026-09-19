@@ -115,9 +115,26 @@ class SessionHandlersMixin:
                         'createdAt': data.get('createdAt', ''),
                         'updatedAt': data.get('updatedAt', ''),
                         'messageCount': len(data.get('turns', [])),
+                        # projectId is included so the frontend can group sessions
+                        # by project (showSessionsList) without a second round-trip
+                        # per session. None when the session is uncategorised or
+                        # its project was later deleted (see _delete_project).
+                        'projectId': data.get('projectId'),
                     })
                 except Exception:
                     pass
+
+            # PD-5: optional ?projectId= filter — returns only sessions belonging
+            # to the given project.  Uses _safe_project_id for traversal safety;
+            # an invalid id yields 400, a valid but unmatched id yields 200 + [].
+            project_id_filter = params.get('projectId', [None])[0]
+            if project_id_filter is not None:
+                safe_pid = self._safe_project_id(project_id_filter)
+                if safe_pid is None:
+                    self._json_response(400, {'error': 'Invalid project id'})
+                    return
+                sessions = [s for s in sessions if s.get('projectId') == safe_pid]
+
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -380,6 +397,79 @@ class SessionHandlersMixin:
         self.end_headers()
         self.wfile.write(json.dumps({'ok': True, 'archivedId': archived_id}).encode('utf-8'))
 
+    def _post_generate_embeddings(self):
+        """POST /generate-embeddings — generate and store embeddings for specified chunks.
+
+        Body: {
+            projectId?: string,
+            filename: string,
+            chunkIds: number[]
+        }
+        Updates the stored chunk file in place with the generated embeddings.
+        This is a separate, async-friendly endpoint so the UI can trigger it
+        post-upload without blocking, and so it can be retried on failure.
+        """
+        params = parse_qs(urlparse(self.path).query)
+        cache_dir, err = self._resolve_chunk_cache_dir(params)
+        if err:
+            self._json_response(400, {'error': 'Invalid project id'})
+            return
+
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 1024 * 1024:  # 1 MB max
+                self._json_response(413, {'error': 'Payload too large'})
+                return
+            body = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(body)
+            filename = Path(data.get('filename', 'unknown')).name
+            chunk_ids = data.get('chunkIds', [])
+        except Exception as err:
+            self._json_response(400, {'error': f'Bad request: {err}'})
+            return
+
+        cache_file = cache_dir / (filename + '.json')
+        if not cache_file.exists():
+            self._json_response(404, {'error': f'Cache file not found for {filename}'})
+            return
+
+        try:
+            cache_data = json.loads(cache_file.read_text(encoding='utf-8'))
+            all_chunks = cache_data.get('chunks', [])
+
+            texts_to_embed = []
+            indices_to_update = []
+
+            for i, chunk in enumerate(all_chunks):
+                if chunk.get('chunkId') in chunk_ids and chunk.get('embedding') is None:
+                    texts_to_embed.append(chunk.get('text', ''))
+                    indices_to_update.append(i)
+
+            if not texts_to_embed:
+                self._json_response(200, {'ok': True, 'embedded': 0, 'message': 'No chunks required embedding.'})
+                return
+
+            embeddings = _server.generate_embeddings(texts_to_embed)
+
+            if len(embeddings) != len(indices_to_update):
+                 self._json_response(500, {'error': 'Mismatch between embeddings and chunks.'})
+                 return
+
+            embed_model = _server.CONFIG.get('embed_model')
+            for i, embedding_index in enumerate(indices_to_update):
+                all_chunks[embedding_index]['embedding'] = embeddings[i]
+                # Retrieval must not compare vectors produced by different models.
+                all_chunks[embedding_index]['embedModel'] = embed_model
+
+            cache_data['chunks'] = all_chunks
+            cache_file.write_text(json.dumps(cache_data), encoding='utf-8')
+
+            self._json_response(200, {'ok': True, 'embedded': len(embeddings)})
+
+        except Exception as err:
+            _server.add_log('error', 'embeddings', f'Failed to process {filename}', {'error': str(err)})
+            self._json_response(500, {'error': str(err)})
+
     def _delete_chunk_cache(self):
         params = parse_qs(urlparse(self.path).query)
         cache_dir, err = self._resolve_chunk_cache_dir(params)
@@ -396,6 +486,66 @@ class SessionHandlersMixin:
             for p in cache_dir.glob('*.json'):
                 p.unlink()
         self._json_response(200, {'ok': True})
+
+    def _patch_session(self, session_id):
+        """PATCH /sessions/<id> — update a session's projectId field.
+
+        Body: { "projectId": "<id>" | null | "" }
+
+        Traversal guard: rejects session ids containing '/', '\\', or '.'
+        prefix (consistent with _safe_project_id). Returns 400 on traversal
+        in either the session id or the supplied projectId, 404 when the
+        session file doesn't exist, 200 { ok, id } on success.
+        """
+        # Guard: session id must not be a traversal attempt.
+        safe_id = Path(session_id).name
+        if safe_id != session_id or not safe_id:
+            self._json_response(400, {'error': 'Invalid session id'})
+            return
+
+        session_file = _server.SESSIONS_DIR / (safe_id + '.json')
+        if not session_file.exists():
+            self._json_response(404, {'error': 'Session not found'})
+            return
+
+        # Parse body (required, capped at 64 KiB).
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 64 * 1024:
+                self._json_response(413, {'error': 'Payload too large'})
+                return
+            body_raw = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else '{}'
+            body_data = json.loads(body_raw) if body_raw else {}
+        except Exception as err:
+            self._json_response(400, {'error': f'Bad request: {err}'})
+            return
+
+        # Resolve target projectId — blank / missing / null → clear.
+        raw_pid = body_data.get('projectId')
+        if raw_pid:
+            project_id = self._safe_project_id(str(raw_pid).strip())
+            if project_id is None:
+                self._json_response(400, {'error': 'Invalid project id'})
+                return
+        else:
+            project_id = None
+
+        # Load, mutate, and persist the session file.
+        try:
+            data = json.loads(session_file.read_text(encoding='utf-8'))
+            if project_id is not None:
+                data['projectId'] = project_id
+            else:
+                data['projectId'] = None
+            data['updatedAt'] = datetime.now().isoformat()
+            session_file.write_text(json.dumps(data), encoding='utf-8')
+        except Exception as err:
+            self._json_response(500, {'error': str(err)})
+            return
+
+        _server.add_log('info', 'sessions',
+                        f'Moved session {safe_id} → project {project_id!r}')
+        self._json_response(200, {'ok': True, 'id': safe_id})
 
     def _delete_sessions(self):
         params = parse_qs(urlparse(self.path).query)

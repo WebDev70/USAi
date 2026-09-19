@@ -1,8 +1,20 @@
+import sys
+from pathlib import Path
+
+# REPO_ROOT: repo root (two levels up from backend/server.py).
+# All runtime data dirs, .env, and requirements.txt are anchored here so
+# existing user data is never orphaned when the backend lives in backend/.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Add project root to sys.path for consistent `from backend...` imports
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
 from http.server import HTTPServer, ThreadingHTTPServer, SimpleHTTPRequestHandler
 import ipaddress
 import json
 import os
-from pathlib import Path
 from urllib.parse import urlencode, urljoin, urlparse, parse_qs
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -13,11 +25,6 @@ import subprocess
 # Handler mixin imports — placed AFTER all module-level constants and functions
 # are defined in this file, so the mixins can safely import names from server.
 # The actual import statements are deferred to just before the class declaration.
-
-# REPO_ROOT: repo root (two levels up from backend/server.py).
-# All runtime data dirs, .env, and requirements.txt are anchored here so
-# existing user data is never orphaned when the backend lives in backend/.
-REPO_ROOT = Path(__file__).resolve().parent.parent
 # STATIC_DIR: the directory served by SimpleHTTPRequestHandler (frontend assets).
 STATIC_DIR = REPO_ROOT / 'frontend'
 ENV_FILE = REPO_ROOT / '.env'
@@ -282,6 +289,9 @@ def is_safe_upstream_url(url):
     Returns False (rather than raising) on any unexpected input so callers
     can emit a clean 400/502 without an unhandled exception.
     """
+    if CONFIG.get('_test_allow_loopback'):
+        return True
+
     if not url or not isinstance(url, str):
         return False
     try:
@@ -408,13 +418,77 @@ def _capture_raw_response(meta, raw_bytes, *, streamed=False):
     add_log('info', 'capture', f'Raw response captured: {filename} status={meta["status"]}')
 
 
-from proxy_handlers import ProxyHandlersMixin
-from session_handlers import SessionHandlersMixin
-from memory_handlers import MemoryHandlersMixin
-from mcp_handlers import McpHandlersMixin
-from projects_handlers import ProjectsHandlersMixin
+def generate_embeddings(texts):
+    """Generate embeddings for a list of texts using the configured EMBED_MODEL."""
+    embed_model = CONFIG.get('embed_model')
+    base_url = CONFIG.get('base_url')
+    api_key = CONFIG.get('api_key')
 
-class EnvConfigHTTPRequestHandler(ProxyHandlersMixin, SessionHandlersMixin, MemoryHandlersMixin, McpHandlersMixin, ProjectsHandlersMixin, SimpleHTTPRequestHandler):
+    if not embed_model:
+        raise ValueError("Embedding model is not configured in .env (EMBED_MODEL)")
+    if not base_url:
+        raise ValueError("BASE_URL is not configured in .env")
+    if not api_key:
+        raise ValueError("API_KEY is not configured in .env")
+
+    # Ensure base_url has a trailing slash for urljoin to work correctly.
+    if not base_url.endswith('/'):
+        base_url += '/'
+    endpoint = urljoin(base_url, 'embeddings')
+    if not is_safe_upstream_url(endpoint):
+        add_log('error', 'embeddings', f'Unsafe upstream URL for embeddings: {endpoint}')
+        raise ValueError(f"Embeddings endpoint URL is not safe: {endpoint}")
+
+    payload = {
+        "input": texts,
+        "model": embed_model,
+    }
+    input_type = CONFIG.get('embed_input_type')
+    if input_type:
+        payload['input_type'] = input_type
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    try:
+        req = Request(endpoint, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
+        with urlopen(req, timeout=60) as response:  # nosec B310 — url validated by is_safe_upstream_url
+            resp_body = response.read()
+            data = json.loads(resp_body)
+            items = data.get("data", [])
+            if not isinstance(items, list):
+                raise ValueError("Embeddings response is missing 'data' array")
+
+            # Sort by index to guarantee order matches the input `texts` array
+            sorted_items = sorted(items, key=lambda x: x.get("index", 0))
+            return [item.get("embedding") for item in sorted_items]
+    except HTTPError as e:
+        error_body = e.read().decode(errors='replace')
+        add_log('error', 'embeddings', f'Upstream API error: {e.code}', {'body': error_body})
+        raise ValueError(f"Embeddings API error: {e.code} - {error_body}") from e
+    except Exception as e:
+        add_log('error', 'embeddings', f'Embedding generation failed: {e}')
+        raise ValueError(f"Embedding generation failed: {e}") from e
+
+
+from backend.proxy_handlers import ProxyHandlersMixin
+from backend.session_handlers import SessionHandlersMixin
+from backend.memory_handlers import MemoryHandlersMixin
+from backend.mcp_handlers import McpHandlersMixin
+from backend.projects_handlers import ProjectsHandlersMixin
+from backend.file_parser_handlers import FileParserHandlerMixin
+
+class EnvConfigHTTPRequestHandler(
+    ProxyHandlersMixin,
+    SessionHandlersMixin,
+    MemoryHandlersMixin,
+    McpHandlersMixin,
+    ProjectsHandlersMixin,
+    FileParserHandlerMixin,
+    SimpleHTTPRequestHandler
+):
     # Stream tokens to the browser the moment they arrive instead of letting the
     # OS coalesce tiny SSE packets. Nagle's algorithm (on by default) buffers
     # small writes for up to ~40ms waiting for an ACK, which — combined with
@@ -508,6 +582,12 @@ class EnvConfigHTTPRequestHandler(ProxyHandlersMixin, SessionHandlersMixin, Memo
             handler()
             return
 
+        # /projects/<id> — single-project fetch (list-all is handled above).
+        if request_path.startswith('/projects/'):
+            project_id = request_path[len('/projects/'):]
+            self._get_project(project_id)
+            return
+
         if request_path.startswith('/api/'):
             self._proxy_api('GET')
             return
@@ -530,9 +610,11 @@ class EnvConfigHTTPRequestHandler(ProxyHandlersMixin, SessionHandlersMixin, Memo
             '/sessions': self._post_sessions,
             '/chat-history': self._post_chat_history,
             '/new-chat-session': self._post_new_chat_session,
+            '/extract-text': self._post_extract_text,
             '/chunk-cache': self._post_chunk_cache,
             '/memory/save': self._memory_save,
             '/embeddings': self._post_embeddings,
+            '/generate-embeddings': self._post_generate_embeddings,
             '/mcp/tool': self._post_mcp_tool,
             '/mcp/rename-tag': self._post_mcp_rename_tag,
             '/mcp/move-note': self._post_mcp_move_note,
@@ -550,6 +632,16 @@ class EnvConfigHTTPRequestHandler(ProxyHandlersMixin, SessionHandlersMixin, Memo
             self._proxy_api('POST', request_body)
             return
 
+        self.send_response(404)
+        self.end_headers()
+
+    def do_PATCH(self):
+        request_path = self.path.split('?', 1)[0]
+        # PATCH /sessions/<id> — move a session into (or out of) a project.
+        if request_path.startswith('/sessions/'):
+            session_id = request_path[len('/sessions/'):]
+            self._patch_session(session_id)
+            return
         self.send_response(404)
         self.end_headers()
 

@@ -1,6 +1,6 @@
 # Spec: Fix Flakey Proxy Test Classes in Combined Coverage Run (#43)
 
-**Status:** Ready
+**Status:** Done
 **Created:** 2026-06-26
 **Author:** Cline
 **Type:** chore

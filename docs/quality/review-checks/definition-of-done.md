@@ -4,7 +4,7 @@ description: The change satisfies the full finish line — tests+coverage, secur
 ---
 
 Meta-check that asserts the **single finish line** from the Agile workflow
-(`.continue/rules/agile-workflow.md`). It confirms the *other* gates and the
+(see `docs/rail-pipeline.md`). It confirms the *other* gates and the
 non-code "done" obligations were satisfied — so nothing ships half-finished.
 
 Pass only if **all applicable** items hold (skip the ones that genuinely don't
@@ -21,11 +21,12 @@ apply to this change, e.g. acceptance criteria for a pure bugfix):
 4. **Infra/config sane** (if touched). `.env.example` is in sync; no secrets in
    infra; commands declarative. *(Overlaps `iac-review`.)*
 5. **Acceptance criteria met** (features). *(Overlaps `acceptance-criteria`.)*
-6. **Docs in sync.** CHANGELOG always; USER_GUIDE/README/backlog/CONTINUE/AGENTS as
+6. **Docs in sync.** CHANGELOG always; `docs/USER_GUIDE.md`, `README.md`, `backlog.md`, `AGENTS.md` as
    applicable. *(Overlaps `docs-in-sync`.)*
 7. **Memory note recorded.** A learning/session note was (or will be) written to
-   `Continue Extension/memories/` per the Continuous Improvement role and
-   `AGENTS.md`.
+   `Zoo/memories/` per the Continuous Improvement role and `AGENTS.md`,
+   while old `Continue Extension/memories/` and `Cline/memories/` are preserved
+   as read-only historical context.
 
 Flag as **failing** if any applicable item above is clearly unmet — most commonly:
 a feature with no CHANGELOG/USER_GUIDE update, code with no tests, a skipped

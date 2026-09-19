@@ -25,7 +25,7 @@ Test Suite, QA Review). Keep it concise — a scannable outline, not an essay.
    - No new runtime dependencies (vanilla JS / Python stdlib + `python-dotenv`).
    - CSS changes bump `styles.css?v=N` in `index.html`.
 4. **Test plan** — the specific cases to cover and which test file they go in
-   (`tests/js/*.test.mjs` or `tests/python/test_*.py`). Prefer pure functions.
+   (`frontend/tests/js/*.test.mjs` or `backend/tests/python/test_*.py`). Prefer pure functions.
 5. **Docs to update** — which of CHANGELOG / USER_GUIDE / README / backlog /
    CONTINUE.md / AGENTS.md this change touches (per `keep-docs-in-sync`).
 6. **Risks / edge cases** — failure modes, security implications, backward-compat.

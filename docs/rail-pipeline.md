@@ -53,10 +53,13 @@ browser), but any real logic should be pushed into a tested pure helper.
 
 - **Minimal, audited *runtime* surface (the "zero-dependency" rule, correctly
   framed).** USAi Chat is intentionally dependency-light (vanilla JS frontend +
-  Python stdlib backend + `python-dotenv`). What we protect is the *shipped*
+  Python stdlib backend + two approved, hash-pinned packages: `python-dotenv` and
+  `pypdf`, plus `pypdf`'s transitive `typing_extensions`). Anything else must be
+  justified or done with the stdlib — e.g. DOCX is parsed via `zipfile`/`xml.etree`
+  instead of adding `python-docx`/`lxml`. What we protect is the *shipped*
   surface — **dev/CI tooling that ships nothing into the running app is allowed and
   encouraged** (coverage, gitleaks, bandit, pip-audit, Docker, make). The full
-  rationale + the RUNTIME-vs-DEV/CI litmus test live in
+  rationale, the approved allow-list, and the RUNTIME-vs-DEV/CI litmus test live in
   **[`docs/principles.md`](principles.md)** (the canonical reference for this and
   the DevSecOps/IaC/Agile principles below).
 - **Test the logic, not the framework.** Focus on pure, deterministic functions
@@ -173,6 +176,8 @@ Product Owner (Definition of Ready)
 
 ### Sequential roles (per-item)
 
+The RAIL roles (0-6) apply in order.
+
 The sequential roles run for **every backlog item** in order:
 
 | # | Role | Responsibility |
@@ -273,11 +278,11 @@ and [`docs/tooling/cline.md`](tooling/cline.md) (Cline's `/review` workflow).
 
 ### Harness-parity table
 
-The table below maps each of the 10 Continue check files (`.continue/checks/*.md`)
+The table below maps each of the 10 review check files (`docs/quality/review-checks/*.md`)
 to the step in Cline's `/review` workflow that enforces the same criterion. This is
 the single reference for parity status; update it whenever a check is added or renamed.
 
-| `.continue/checks/` file | Cline `/review` gate step |
+| Review Check File | Cline `/review` gate step |
 |--------------------------|--------------------------|
 | `definition-of-ready.md` | §1 — Product Owner start gate: confirms user story + testable AC before planning |
 | `test-coverage.md` | §3 — run `./run-tests.sh --coverage`; gates Python line ≥ 90%, branch ≥ 80%, JS branch ≥ 70% |
@@ -327,6 +332,66 @@ sub-disciplines** that must both be satisfied:
 - **Record a learning note** to the Obsidian vault each cycle (what shipped, what
   failed QA, what we automated, follow-ups) so the next task's Planner can
   **recall** it.
+
+### Recommended Next Step — the closing hand-off (mandatory)
+
+Every RAIL cycle ends by telling the user **what should happen next and why**. This is
+the pipeline's hand-off artifact: it converts "work finished" into "work sequenced."
+Both harnesses implement it; each wires it to its own terminal steps.
+
+**When:** at the end of every *terminal* task — one complete user-facing turn that ends
+with the assistant handing control back to the user. It follows the closing summary of
+finished work, whatever that summary's heading happens to be (`## Completed Summary`,
+a QA verdict, a governance report, an escalation report, or plain prose).
+
+It is **not** emitted on an internal pipeline hand-off — a step that passes work to
+another role inside the same task rather than back to the user. A recommendation made
+mid-cycle would rest on unverified state, contradicting the "grounded in current state"
+constraint below.
+
+**Required shape —** a section titled exactly `Recommended Next Step`, containing all
+four labelled parts (none may be dropped as "obvious"):
+
+| Part | Content |
+|------|---------|
+| `Next Step` | One clearly stated action |
+| `Why this should happen next` | Reasoning grounded in the verified current project state |
+| `What this enables` | The capability, decision, validation, or downstream work it unlocks |
+| `Impact if not completed` | The risk, delay, technical debt, or uncertainty of skipping it |
+
+**Choosing the step — analysis, not reflex.** Weigh what was just completed, the
+working-tree state, `backlog.md`, open specs, and failing gates; then pick the single
+action strongest on: dependency importance, risk reduction, project value, sequencing
+necessity, and unblocking power.
+
+**Constraints:**
+- **One primary action** — not a menu of options.
+- **Grounded in verified state** — not a generic roadmap item.
+- **Risk- and foundation-first** — prefer removing blockers and validating assumptions.
+- **No premature work** — never recommend something whose prerequisites are unfinished.
+- **Not coding-biased** — requirements clarification, architecture, data modeling,
+  security design, validation, testing, documentation, or infrastructure are equally
+  valid next steps. Pick what is *logically required next*.
+- **Plain language** — a non-technical stakeholder must understand it.
+- **No filler** — "continue development", "add more features", "add more tests", and
+  "review the code" are rejected; name the item, the file, or the gap.
+
+**Anti-patterns (reject these):**
+
+| ❌ Rejected | Why it fails | ✅ Replace with |
+|-------------|--------------|-----------------|
+| "Continue development." | No analysis, no action. | A named item with a named outcome. |
+| "Add more tests." | Not specific; no file or gap named. | "Cover the untested branches in the attachment tray of `frontend/app.js` to restore the JS branch gate." |
+| "Fix the tests, then ship, or maybe refactor first." | Multiple competing options. | The one action with the strongest dependency/risk case. |
+| "Implement backlog #82." *(when #76 blocks the suite)* | Recommends work behind an unfinished prerequisite. | The blocking item first. |
+| "Refactor the handler registry for elegance." | No stated risk reduction or unblocking value. | A step with an articulated benefit and a stated cost of skipping. |
+
+**Harness wiring:**
+
+| Harness | Rule file | Terminal steps that emit it |
+|---------|-----------|-----------------------------|
+| **Cline** | `.clinerules/recommended-next-step.md` | `/spec`, `/loop` (incl. escalation), standalone `/review`, `/govern`, `/housekeep`, `/self-improve`, ad-hoc tasks |
+| **Continue** | `.continue/rules/recommended-next-step.md` | End of a task turn, after the QA gate passes (Continuous Improvement, Role 5) |
 
 ---
 

@@ -1,6 +1,525 @@
 ## [Unreleased]
 
+### Fixed
+- **`#76(a)` pre-commit verification contract corrected.** A direct source audit found
+  that `scripts/quality-gate.sh` is a 50-line neutral review-manifest validator, while
+  live Cline/Continue docs falsely claimed it ran coverage, security, doc consistency,
+  and AI review. That mismatch was the process-level cause of the prior unverified gate
+  report. `/review` now invokes all four deterministic commands explicitly and requires
+  current-run exit statuses, test totals, and coverage values; inherited PASS claims or
+  substitute commands fail closed. Tooling docs now describe the validator truthfully,
+  and two policy regression tests pin the command list and evidence requirement.
+
+
+- **`#87` follow-up 2 — `docs/` tier added to the stale-path guard; a documented-but-nonexistent
+  test guard was implemented rather than the docs downgraded.**
+  `SCAN_DIRS` gained `docs/quality`, and a new `SCAN_EXTRA_FILES` list adds `README.md`
+  plus the nine top-level `docs/*.md` files. Wide-guard scope: **29 → 49 files**.
+
+  `docs/specs/` is deliberately **excluded** — those are completed specs, i.e. historical
+  records that legitimately cite the paths and commands correct at the time of writing.
+  Scanning them would force rewriting the record to satisfy a guard. Pinned by
+  `test_docs_specs_are_excluded_as_historical` so a future "just scan all of `docs/`"
+  change has to confront the boundary rather than silently falsify history.
+
+  Notably, this put **`docs/rail-pipeline.md` — the canonical source every other file is
+  told to defer to — inside the scan for the first time.** It had never been checked
+  against its own rules.
+
+- **The `.env.example` drift guard now exists.** Six live-policy references across four
+  files (`docs/rail-pipeline.md` lines 70/234/291, `docs/principles.md`,
+  `docs/quality/review-checks/iac-review.md`, `.continue/rules/infrastructure-as-code.md`)
+  asserted that `backend/tests/python/test_env_example_sync.py` enforces config sync, and
+  `iac-review.md` instructed reviewers not to "weaken" it. Confirmed absent from **every
+  commit in git history** (`git rev-list --all` tree scan, not just `git log`). Because the
+  invariant was sound and already held — 23 env vars read, 23 documented — the guard was
+  **written** rather than those docs downgraded. It walks `server.py`'s AST for
+  `os.getenv()` calls (no `.env` needed, no server started, and it catches the `HOST`/`PORT`
+  reads outside `load_config()`), and includes two extractor sanity tests so a silent parse
+  failure cannot make it vacuously pass. Verified by planting an undocumented `os.getenv`
+  read: fails with the offending name, passes once documented. `os.getenv`/`os.environ`
+  appears in `server.py` only across all non-test backend modules, so walking that one
+  file is complete coverage today — revisit if the #45 module split moves config reads
+  into a handler.
+
+- **Stale-path matcher rewritten as boundary-aware EREs — two defects found by *running*
+  the widened guard, not by reading it.**
+  1. **False positive:** `tests/js-coverage.mjs` (a real file at the repo root, used by
+     `run-tests.sh`) was reported as stale `tests/js`. The previous trailing-slash phrase
+     had prevented this *by accident*; dropping the slash in follow-up 1 removed the
+     protection along with the bug it was hiding.
+  2. **False negative:** the `grep -F stale | grep -vF correct` pipeline discarded any line
+     containing *both* a stale and a correct reference, masking genuine drift.
+
+  Patterns now require a non-path character before the match (so `backend/tests/python` is
+  excluded structurally, not by subtraction) and a non-identifier character after it (so
+  `js-coverage.mjs` is excluded). **Both fixes verified by mutation** — reverting the matcher
+  makes exactly the two new `TestStalePathMatcherBoundaries` tests fail. The same-line test
+  initially survived mutation because the fixture also tripped the referenced-path guard, so
+  its assertion was tightened from exit-code-only to the specific stale-path message.
+
+- **Stale paths fixed:** `docs/quality/review-checks/iac-review.md`
+  (`tests/python/` → `backend/tests/python/`) and `.continue/rules/infrastructure-as-code.md`
+  (manual-review note → the now-real guard).
+
+  `_setup_drift_tree` now creates a minimal repo skeleton (`scripts/quality-gate.sh`,
+  `frontend/app.js`, `backend/server.py`) because the canonical doc it writes cites them and
+  is now itself scanned. 7 new tests (`TestLiveDocsInScanScope`, `TestStalePathMatcherBoundaries`);
+  `test_scripts.py` 48 tests OK; full Python suite **429 OK**; guard PASSes; security scan clean.
+
+- **`#87` follow-up — `.continue/rules/` added to the guard scope + 12 stale paths fixed.**
+  The repaired guard was asymmetric: it watched all 13 `.clinerules/*.md` files and
+  **zero** `.continue/rules/*.md` files, even though `AGENTS.md` treats both harnesses
+  as equal peers. That blind spot had let 12 stale paths accumulate across 7 files.
+
+  Corrected in `.continue/rules/`: `CONTINUE.md`, `testing-standards.md`,
+  `tdd-workflow.md`, `code-planner.md`, `development-sme.md`, `observability.md`
+  (`tests/js/` → `frontend/tests/js/`, `tests/python/` → `backend/tests/python/`,
+  `node --check app.js` → `node --check frontend/app.js`, `py_compile server.py` →
+  `py_compile backend/server.py`, plus `PYTHONPATH=backend` on the `unittest discover`
+  invocations so the documented command actually resolves imports).
+
+  `infrastructure-as-code.md` claimed a `test_env_example_sync.py` drift guard
+  "enforces" `.env.example` sync. **That file had never existed in git history** and
+  nothing else validated `.env.example` either — the rule was instructing Continue not
+  to weaken a guard that was never written. Initially downgraded to an explicit
+  "manual review step" note; **the guard has since been implemented** (see the
+  `docs/` tier entry below), so the rule now names it again and correctly.
+
+  `.continue/rules` added to `SCAN_DIRS`, taking the wide-guard scope from 15 → **29
+  files**. 3 new tests (`TestContinueRulesInScanScope`) pin the new coverage, including
+  a regression for the phantom-test-file case.
+
+- **Stale-path guard widened to catch slash-less references.** Adding `.continue/rules`
+  surfaced a latent gap: the guard matched `tests/python/` *with* a trailing slash, so
+  `unittest discover -s tests/python` — no trailing slash, the form that appeared in
+  `testing-standards.md` — slipped past it. Both the stale phrases and their correct
+  substitutes now match without the trailing slash, so directory-argument and
+  file-path forms are both caught. This was found by a test failing for the right
+  reason, not by inspection.
+
+  All corrected commands were executed to confirm they work — including catching that
+  `node --test frontend/tests/js` (a bare directory) fails on Node 24 with
+  `Cannot find module`, so `development-sme.md` now uses the repo-canonical
+  `node --test $(find frontend/tests/js -name '*.test.mjs')`. Full suite: **418 tests OK**.
+
+- **`#87` — restored `doc-consistency-check.sh` scan scope (option (ii)).** The
+  uncommitted refactor had collapsed the guard's **three distinct per-guard scopes**
+  into a single `ENFORCING_FILES` list and swapped `.clinerules` → `.roo` (which does
+  not exist on `main`), dropping the scan from **15 files to 3** and leaving all 13
+  live Cline rule/workflow files unguarded while still reporting `✓ PASS`.
+
+  The root cause was scope *conflation*, not merely narrowing. The committed guard
+  deliberately used different scopes per guard: the convention-phrase guard ran against
+  a curated 4-file list, while the stale-path / mandatory-gate / referenced-path guards
+  walked `.clinerules/` and `docs/tooling/` recursively. Once unified, the wide dirs
+  *had* to be dropped — adding `.clinerules` back to the single list produces **24
+  false positives**, because workflow files legitimately name `TOOL_REGISTRY`,
+  `getEnabledTools`, `styles.css?v=N` etc. as instructions to the agent.
+
+  Resolution keeps the `.roo`-aware refactor but restores the tiering as three named
+  scopes (`PHRASE_FILES`, `SCAN_DIRS`, `ROLE_COUNT_FILES`) with a comment explaining
+  why they must stay separate. `.roo/` remains optional — an absent scan dir is skipped,
+  not an error — so the script works unchanged on both `main` and `feat/zoo-migration`.
+  The role-count guard stays narrow by design: `.clinerules/workflows/govern.md`
+  legitimately says "five roles" for the governance board while Cline's RAIL model is
+  0–6, and the guard exists to enforce exactly that distinction.
+
+  Verified: guard PASSes with real coverage; a planted stale path + missing
+  `backend/…` reference + "quality-gate.sh is optional" line in
+  `.clinerules/workflows/` now yields **3 errors** (previously 0). Regression parity
+  confirmed against the committed guard. 6 new scope-pinning tests restore the 5
+  deleted assertions and add `.roo`-absent and phrase-scope-narrowness cases;
+  `test_scripts.py` + `test_pre_commit.py` = **44 tests OK**.
+
+  Note: the backlog's "restoring `.clinerules` would surface **28** violations" figure
+  was **stale** — those had already been fixed by earlier sessions, so the restore was
+  clean. Unblocks **`#76(a)`**, which would otherwise have committed the weakened guard.
+
+### Changed
+- **Backlog grooming pass (2026-09-18):** thorough Product-Owner grooming of
+  `backlog.md`. `#77` (verify-and-close flaky proxy test isolation) **closed** —
+  the proxy suite was run in isolation and returned `Ran 26 tests … OK` with all
+  11 test classes carrying `setUpClass`/`tearDownClass` `server.CONFIG`
+  save/restore, so `docs/specs/flakey-proxy-test-isolation.md` moves to
+  `Status: Done`. Added a "🎯 Ready to pull next" DoR-verified sprint-order table
+  and a suggested Sprint 19 composition. `#74` now carries re-measured live
+  coverage numbers (python_line 90%, python_branch 92.31%, js_branch 75.19%)
+  plus explicit acceptance criteria — note js_branch has silently drifted down
+  from 77.75%, which is precisely the regression an un-ratcheted gate conceals.
+  Explicit testable acceptance criteria were written for `#79`, `#82`, `#83`,
+  `#84` and `#85`, and build-time convention reminders for `#70`/`#71`, so
+  "ready" is verifiable rather than asserted. `#67`, `#68`, `#13`, `#14`, `#15`,
+  `#57` explicitly marked **not yet Definition of Ready** with the specific open
+  design questions each `/spec` must answer. `#76` re-scoped against a measured
+  working tree with a per-step checklist. Stale "highest-assigned ID is 82"
+  header corrected to **87** and given a copy-pasteable verification command;
+  two further stale notes fixed (the "#7–#15 lack ACs" banner, when #7–#12 are
+  all Done, and a `.continue/checks/` path that moved to
+  `docs/quality/review-checks/`).
+- **`#76` severity raised from ADVISORY to BLOCKING.** A second-pass check cloned
+  `main` HEAD (`7e25ee5`) to a scratch directory and ran the gates *there* instead of
+  in the dirty working tree: `./run-tests.sh` exits **1** (`Ran 361 tests … FAILED
+  (failures=21, errors=11)`) and `./scripts/quality-gate.sh` exits **1** (manifest
+  `docs/quality/review-checks/README.md` not found). The uncommitted tree is
+  load-bearing, not cosmetic — the committed `test_server_branches.py` calls
+  `server.generate_embeddings`, which exists only in the working-tree `server.py`.
+  `#76(a)` is now the repo's highest-priority item.
+- **Zoo/Roo harness WIP parked on `feat/zoo-migration`** (commit `08cfd61`, 26 files):
+  `.roo/`, `.roomodes`, `plans/`, `scripts/find_delegations.py`,
+  `scripts/delegation-policy-check.py`, `backend/tests/python/test_delegation_policy.py`.
+  No application code is involved, so the runtime surface and the approved dependency
+  allow-list are unaffected. This clears the WIP out of `main`'s working tree
+  (`#76(b)`) while keeping the work reviewable as `#86`.
+
 ### Added
+- **New always-on Cline rule — `Recommended Next Step`** (`.clinerules/recommended-next-step.md`).
+  Every Cline task must now close with a `Recommended Next Step` section
+  immediately after the Completed Summary, carrying four mandatory labelled
+  parts: `Next Step`, `Why this should happen next`, `What this enables`, and
+  `Impact if not completed`. The rule requires *one* primary action chosen by
+  weighing dependency importance, risk reduction, project value, sequencing
+  necessity, and unblocking power — and explicitly forbids a coding bias, so the
+  recommended step may equally be requirements clarification, architecture, data
+  modeling, security design, validation, testing, documentation, or
+  infrastructure. An anti-pattern table rejects filler such as "continue
+  development" or "add more tests". Wired into the pipeline in three places:
+  a 🧭 row in the `rail-pipeline.md` always-on non-negotiables table, a new
+  `/loop` Done-criteria checkbox, and step 4 of the `/review` PASS verdict.
+  Harness docs (`docs/ORGANIZATION.md`, `docs/tooling/cline.md`) list the new
+  rule file. Cline harness config only — no application runtime impact.
+  *Second pass (self-audit):* the initial pass wired only 3 of 7 workflows. Coverage
+  extended to **all 7** with an explicit terminal/non-terminal Scope table — `/spec`,
+  `/loop` (incl. the 5-iteration escalation path), `/govern` (step 7), `/housekeep`
+  (step 9e), `/self-improve`, standalone `/review`, and ad-hoc tasks all emit the
+  section; a **mid-loop `/build` deliberately does not**, because it hands off to
+  `/review` inside the same task rather than back to the user, and a mid-loop
+  recommendation would be based on unverified state. The Scrum
+  `Cline/scrum/definition-of-done.md` gained a matching "Process closing" addendum so
+  the vault DoD does not drift from the `/loop` Done criteria.
+  *Third pass (cross-harness promotion):* the rule was promoted to a **harness-agnostic
+  canonical definition** in `docs/rail-pipeline.md` § "Recommended Next Step — the
+  closing hand-off (mandatory)" (format table, selection criteria, constraints,
+  anti-patterns, harness-wiring table), matching the repo's single-source-of-truth
+  pattern enforced by `scripts/doc-consistency-check.sh`. Both harness rule files are
+  now thin pointers that carry only harness-specific wiring:
+  `.clinerules/recommended-next-step.md` keeps the Cline per-workflow terminal/
+  non-terminal scope table, and a **new** `.continue/rules/recommended-next-step.md`
+  (`alwaysApply: true`) wires the same rule into the Continue harness — so both
+  extensions now close tasks identically instead of only Cline. `AGENTS.md` gained a
+  "Closing hand-off (both harnesses)" paragraph under the RAIL roles;
+  `.continue/rules/CONTINUE.md` gained an enforced-rule subsection;
+  `docs/ORGANIZATION.md` and `docs/tooling/continue.md` list the new Continue rule.
+- **Backlog `#87` — restore `doc-consistency-check.sh` scan scope.** The
+  tracked-but-modified `scripts/doc-consistency-check.sh` in the working tree scans
+  **3** enforcing files where the committed version scans **15**: its scan dirs are
+  `.roo` + `docs/tooling`, and `.roo/` does not exist on `main`, so all twelve live
+  `.clinerules/*.md` rule and workflow files are currently unguarded. Five guard tests
+  were deleted from `backend/tests/python/test_scripts.py` alongside it (including
+  `test_exits_nonzero_when_phrase_duplicated_in_cline_rules` and
+  `test_fails_when_stale_path_in_clinerules`). Verified by planting a stale path and a
+  missing `backend/…` reference in a `.clinerules/*.md` file: the committed script
+  reports 3 errors and exits non-zero, the working-tree script exits 0. The narrowing is
+  intentional for the Zoo migration (`plans/zoo-only-migration-plan.md` §1.2) but that
+  work is parked as `#86`, so `#87` must be decided **before** `#76(a)` commits the
+  weakened guard to `main`.
+- **Backlog `#86` — Zoo/Roo harness migration.** The untracked Zoo/Roo agent-harness
+  experiment (governance `ADVISORY-08`) is now a tracked backlog item rather than
+  undocumented working-tree drift. It is *kept*, not deleted:
+  `plans/zoo-only-migration-plan.md` is an approved architecture plan and
+  `scripts/delegation-policy-check.py` already has a passing test
+  (`test_delegation_policy.py`). Flagged not-yet-DoR, with the 7-role-vs-role-count
+  conflict against `scripts/doc-consistency-check.sh` (#58) called out as the
+  blocking design question.
+- **`.env.example`: `EMBED_MODEL` and `EMBED_INPUT_TYPE`.** Both are read by
+  `backend/server.py` (`_build_config`) but were absent from the example file, so
+  a fresh clone had no way to discover that semantic search is opt-in. Documented
+  with the keyword-only fallback behavior. (`#76(e)`)
+
+### Removed
+- **Scratch files cleared from the working tree** (`#76(c)`/`#76(d)`): `200`
+  (0 bytes), `delegation_report.csv` (header row only, no data rows),
+  `docs/roo_audit_report.md`, `docs/roo_audit_report.html`, and the tracked
+  `implementation_plan.md` (committed in `3246e2a`, superseded by
+  `docs/specs/server-module-split.md`) via `git rm`.
+
+### Fixed
+- **`docs/specs/obsidian-mcp-bridge.md` pointed at a deleted file.** Its "Prior context"
+  line said *"See `implementation_plan.md` for full architecture detail"* — a dangling
+  reference the moment `#76(d)` removed that scratch file. `doc-consistency-check.sh`
+  Guard 4 only validates `backend/`, `frontend/` and `scripts/` paths, so a bare
+  root-level filename slipped through. Rewritten to record the removal and point at the
+  surviving architecture record, `docs/specs/server-module-split.md`. (`#76(d)`)
+- **`run-tests.sh` on `main` invoked a script that only exists on a branch.** The
+  syntax gate had been edited to call `scripts/delegation-policy-check.py`, part of
+  the untracked Zoo/Roo experiment — so moving that WIP to its own branch (see *Changed*
+  above) would have broken `main`'s own test suite. The invocation is now a comment pointing
+  at `#86`; the accompanying `backend/*.py` glob compile is *kept*, since it is a real
+  improvement — the previous hand-maintained module list silently stopped covering the
+  modules introduced by the `#64` server split. (`#76(b)`)
+- **`.env.example` stale `DEFAULT_MODEL`:** was `claude_3_haiku`, a model id that
+  `#62` had already corrected everywhere else; now `claude_4_5_haiku` to match the
+  verified tier defaults documented a few lines below it. (`#76(e)`)
+- **`.gitignore` now ignores `.vscode/`** — editor-local, machine-specific
+  settings were showing up as untracked noise in every `git status`. (`#76(f)`)
+- **Blank canvas after "＋ New chat" from a project detail view:** `_showChatView`
+  cleared the inline `display:none` it had set on `.chat-area` but not the one on
+  `.empty-chat-area`. Because `.empty-chat-area` has no `display` rule of its own
+  outside `.main-content.in-conversation`, the stale inline style left the main
+  pane permanently empty after leaving a project detail view. Both overrides are
+  now reset. Regression test: `PD-JS-6`.
+
+- **Proxy dropped the first SSE frame of a streaming response (intermittent):**
+  The relay read tokens via `resp.fp.raw.read`, bypassing the `BufferedReader`
+  that `http.client` had already used to parse the status line and headers. When
+  an upstream flushed its headers and first SSE frame in the same TCP segment,
+  those body bytes sat in the buffer and were never relayed — losing the first
+  token, and making `ProxyReasoningStreamTests` /
+  `ProxyIncrementalStreamingTests` fail in roughly 1 run in 12. The relay now
+  reads via `resp.fp.read1`, which drains the buffer before touching the socket
+  while still performing at most one socket read per call, so streaming stays
+  incremental (measured first→last gap unchanged at ~upstream pacing). New
+  deterministic regression class `ProxyFirstFrameNotDroppedTests` (2 tests) uses
+  an upstream that coalesces headers + first frame into a single `write()`.
+
+- **Sprint 18 backlog-ID collision in code comments:** `frontend/app.js`,
+  `frontend/styles.css`, and `backend/tests/python/test_server_http.py` labelled
+  the attachment tray as `#79` and the project detail view as `#80`. The correct
+  ids are **#80** (attachment tray) and **#81** (project detail view) — `#79` is
+  the unrelated INNOV-01 grep-redaction item. Comments corrected.
+  CSS: `styles.css?v=32`.
+
+### Changed
+- **De-duplicated PDF/DOCX text extraction in the frontend:** the multipart
+  `POST /extract-text` + error-unwrap + `.txt` filename-rewrite logic existed in
+  three near-identical copies (`uploadProjectFile`, `handleFileUpload`, and the
+  `_handleFileUploadTest` shim — which had silently drifted, discarding the
+  backend's error message). All three now call a single
+  `extractTextServerSide(file, fetchFn)` helper with an injectable fetch.
+  3 new tests: `AT-JS-9` (`.txt` rewrite keeps earlier dots), `AT-JS-10`
+  (backend `{error}` surfaced), `AT-JS-11` (non-JSON error body degrades to a
+  generic message).
+
+### Added
+- **Composer attachment tray (#80):** File attachments are now shown as chip
+  pills directly above the composer textarea — visible at all times, not buried
+  in the collapsed sidebar. Uploads are **additive** (a second attach adds a chip
+  rather than wiping the first). Each chip has a per-file ✕ remove button.
+  PDF and DOCX files are now accepted by the composer 📎 button and routed
+  through the server-side `/extract-text` endpoint (same as project file uploads).
+  After a message is sent the tray clears and attachment provenance is stored on
+  the user turn so restored chats can still show `📄 report.pdf` even though the
+  chunks are not re-hydrated. The hidden `#uploadedFilesDisplay` sidebar element
+  is retired. CSS: `styles.css?v=31` (later bumped to `?v=32`). New test-surface
+  exports: `removeAttachedFile`, `addUploadedFile`, `_handleFileUploadTest`,
+  `_persistExchangeTest`, `extractTextServerSide`.
+  8 new AT-JS-* unit tests green (later extended to 11).
+
+- **Project detail view (#81):** Clicking a project now opens a **detail view**
+  in the main pane showing the project name, instructions snippet, and a list of
+  its saved chats. Each chat row is clickable to restore the session. A **"＋ New
+  chat"** button lets the user start a fresh project-scoped chat explicitly
+  (replacing the old "open = instant new blank chat" behaviour). Project chats
+  are now visible in the sidebar too — grouped under their project row as a
+  `.project-sub-list` below each project item (no longer hidden from "Chats").
+  Backend: `GET /sessions?projectId=<id>` filter added (traversal-safe via
+  `_safe_project_id`); returns 400 on traversal, 200 + `[]` for unknown ids.
+  3 new PD-PY-* Python tests + 5 PD-JS-* JS tests green (later extended to 6).
+  *Partially delivered:* the ⚙ Settings button re-uses the existing create-modal
+  handler-swap and there is no delete action in the detail view — both tracked as
+  backlog item **#82**.
+
+- **Document #69 retrieval features in USER_GUIDE.md (#75):** Expanded §7 of
+  `docs/USER_GUIDE.md` to describe structure-aware chunking, hybrid lexical+semantic
+  retrieval, Reciprocal Rank Fusion (RRF), per-chunk semantic fallback, neighbour
+  expansion, chunk-citation provenance labels, and chunk-size as an upper bound.
+
+### Fixed
+- **ARCHITECTURE.md drift (#73):** Two stale references updated — §3a inline
+  comments and §4 cascade-delete header corrected from removed query-param form
+  (`/projects?id=<id>`) to current path-style (`/projects/<id>`); §3b DELETE row
+  updated to match. §8 module count corrected from "6 focused modules" to "7",
+  and `file_parser_handlers.py` / `FileParserHandlerMixin` row added to the
+  module table and MRO block.
+
+### Chore
+- **Commit `scripts/quality-gate.sh` + doc-sync QA-gate invocation (#78):**
+  `scripts/quality-gate.sh` was untracked; it is now committed. Updated all
+  forward-looking invocation instructions in `docs/tooling/cline.md`,
+  `docs/tooling/continue.md`, `.clinerules/workflows/review.md`, and
+  `.clinerules/rail-pipeline.md` from `./scripts/cli-check.sh --review` to
+  `./scripts/quality-gate.sh`. `scripts/cli-check.sh` is preserved as a
+  compatibility wrapper that delegates to `quality-gate.sh`.
+
+### Added
+- **Move chat into project (#66):** Users can now move any existing chat into
+  a different project (or out of all projects) directly from the sidebar.
+  - **`PATCH /sessions/<id>`** endpoint — updates the session file's `projectId`
+    field. Rejects path-traversal attempts in both the session id and the
+    `projectId` body parameter (400). Returns 404 when the session doesn't exist.
+  - **Session ⋯ context menu** — a three-dot `⋯` button now appears on hover
+    next to every chat row in the sidebar. Clicking it opens a "Move to project…"
+    dropdown.
+  - **Move-to-project picker** — selecting "Move to project…" opens a modal
+    listing all available projects plus a "No project" option to clear the
+    assignment. Confirming the choice calls `PATCH /sessions/<id>` and refreshes
+    the sidebar instantly.
+  - **Active-session consistency** — if the moved chat is the one currently open,
+    `currentProjectId` is updated in memory and `loadProjectChunks` is re-invoked
+    (or cleared) so RAG context stays in sync without a page reload.
+
+### Fixed
+- **Memory-note secret scan false positives (backlog #72):** Check 4/4 now requires
+  a bounded, secret-shaped value for `sk-`, Bearer, `api_key=`, and `password=`
+  detectors. Safety-checklist prose and benign identifiers such as `task-…` no
+  longer fail the gate. Findings report only `path:line: [REDACTED]`, so a detected
+  value is never echoed into terminal or CI logs. Housekeeping now invokes this
+  canonical scan rather than maintaining a divergent broad grep.
+
+### Added
+- **Retrieval foundations (backlog #69):** Document retrieval is now
+  structure-aware and hybrid.
+  - **Structure-aware chunking** — `chunkTextStructured()` splits uploads on
+    Markdown ATX headings, blank-line paragraph breaks, and whole fenced code
+    blocks (never mid-fence). The chunk-size setting (default 200 lines, 50–1000)
+    is now an **upper bound** rather than an exact window; only an oversized single
+    section falls back to a bounded line split. The legacy `chunkText()` splitter
+    is retained as a reference/rollback path.
+  - **Versioned chunk-cache schema (v2)** — chunks now carry `schemaVersion`,
+    `ordinal`, `startLine`/`endLine`, `headingPath`, `sectionType`, and
+    `previousChunkId`/`nextChunkId`. Legacy caches are normalized in memory on read
+    by `normalizeChunkCache()` (no batch migration, no on-disk rewrite until the
+    next write).
+  - **Per-chunk semantic fallback** — the all-or-nothing gate is gone. Every chunk
+    is scored lexically; chunks with a vector from the *currently configured* model
+    are additionally scored by cosine similarity. A single un-embedded chunk (or one
+    embedded by a different model) no longer disables semantic ranking for the whole
+    merged per-chat + project set.
+  - **Reciprocal Rank Fusion** — lexical and semantic rankings are fused by
+    `1/(60 + rank)` instead of comparing raw keyword counts against cosine scores;
+    ties break deterministically by `ordinal` then `fileName`.
+  - **Neighbour expansion** — each fused top-N seed pulls in its adjacent
+    same-file chunks, deduplicated and re-sorted into `(fileName, ordinal)` source
+    order, with the 120,000-char context budget enforced by dropping whole
+    low-score seed groups rather than truncating mid-chunk.
+  - **Context provenance** — injected blocks are labelled by `formatChunkLabel()`
+    with file, heading path, and line range, and expanded neighbours are marked
+    `(context)`; the prompt/UI header now reports the retrieval method that actually
+    ran (`describeRetrievalMethod()`).
+  - **Backend:** `POST /generate-embeddings` now stamps the configured
+    `embed_model` onto each embedded chunk as `embedModel`, which is what makes the
+    client-side model-compatibility check above possible.
+  - Tests: RET-1…RET-12 + INT-2 in `frontend/tests/js/app.test.mjs`; INT-1/INT-3
+    schema round-trip and legacy-cache integration tests plus an `embedModel`
+    regression test in `backend/tests/python/test_server_http.py`.
+  - Spec: `docs/specs/advanced-document-retrieval.md` (§3, §4.1–4.5, §4.9).
+    Whole-document analysis (#70) and optional reranking (#71) remain unshipped.
+
+### Docs
+- **Retrieval docs updated to shipped behavior (#69):** `docs/ARCHITECTURE.md` §4d
+  now describes structure-aware chunking, the v2 schema, per-chunk fallback, RRF
+  fusion, and neighbour expansion (and explicitly notes #70/#71 as not yet
+  implemented). `docs/EMBEDDINGS_GUIDE.md` §6 flow diagram and "Key points in the
+  flow" table replaced the "all-or-nothing gate" row with per-chunk fallback, rank
+  fusion, and neighbour-expansion rows. `docs/USER_GUIDE.md` now documents "Chunk
+  size" as a maximum and explains neighbour context + excerpt labelling.
+- **Advanced document retrieval — architecture spec (backlog #69/#70/#71):**
+  added `docs/specs/advanced-document-retrieval.md`, the shared architecture
+  for structure-aware chunking, per-chunk semantic fallback (replacing the
+  current all-or-nothing embedding gate), lexical/semantic hybrid rank fusion
+  (RRF), neighbor-chunk expansion, a versioned chunk-cache schema with legacy
+  normalization, adaptive full-document context, and hierarchical map-reduce
+  whole-document analysis. No implementation yet — this is the `/spec` output
+  only; `backlog.md` gained items #69 (In Progress), #70, and #71.
+- **Doc-drift fix:** `docs/ARCHITECTURE.md` §4d and `docs/EMBEDDINGS_GUIDE.md`
+  ("Key points in the flow" table) previously described chunking as
+  "overlapping" and omitted the all-or-nothing semantic gate. Both are now
+  corrected to describe the actual current behavior (fixed-size,
+  non-overlapping line chunks; semantic scoring disabled entirely if any one
+  chunk in the candidate set lacks an embedding), with pointers to the new
+  spec for the planned fix.
+
+### Security
+
+- **`/extract-text` upload DoS guard (fix):** The file-upload endpoint now
+  enforces a documented 25 MB size cap. It returns **413 Payload Too Large**
+  before reading the request body when `Content-Length` exceeds the cap, and
+  **400 Bad Request** when `Content-Length` is missing or non-integer (instead
+  of raising an unhandled error). This prevents an unbounded-memory
+  denial-of-service via a very large or spoofed upload.
+
+### Fixed
+- **Flaky `EMB-3` upstream test (chore):** the fake upstream in
+  `test_emb3_full_project_upload_round_trip` responded without draining the
+  request body, so it intermittently reset the connection mid-write and the
+  endpoint returned 500 (`[Errno 54] Connection reset by peer`). The stub now
+  reads `Content-Length` bytes before responding.
+- **Repository hygiene (chore):** `.gitignore` now excludes the runtime
+  `.projects/` data directory (user project files created by the server) and
+  Python bytecode caches (`__pycache__/`, `*.py[cod]`), so runtime data and build
+  artifacts can no longer be committed by accident.
+- **Test suite green again:** The coverage tool was scoped to a non-existent
+  module (`--source=server` instead of `--source=backend`), which masked low
+  coverage on newly added handler modules. Corrected the scope and added direct
+  unit tests for `server.generate_embeddings`, `is_safe_upstream_url`,
+  `_mcp_enabled`, `_resolve_memory_file`, and `get_project_memory_dir` so
+  `server.py` line coverage is back above the 90% gate (now 95%).
+- **PDF/DOCX extraction test:** `test_fe1_extract_text_from_pdf_and_docx` now
+  posts a real `multipart/form-data` body and generates a valid PDF with
+  extractable page text (hand-built content stream), so it runs and asserts
+  extracted content instead of skipping.
+
+### Changed
+- **Harness-neutral quality gate (chore):** The ten review checks moved from
+  `.continue/checks/` to `docs/quality/review-checks/` so they are owned by the
+  documentation tree instead of one editor extension. `scripts/quality-gate.sh` is
+  the new neutral runner; `scripts/cli-check.sh` and
+  `scripts/doc-consistency-check.sh` were slimmed to stop depending on
+  Continue/Cline files, and `docs/rail-pipeline.md` is now the single authority for
+  the RAIL role order. Agent behaviour moved to `.roomodes` + `.roo/rules*`.
+  Tracked in `plans/zoo-only-migration-plan.md`, covered by
+  `backend/tests/python/test_migration.py` and the rewritten `test_scripts.py`.
+- **Breaking API change (Projects):** The project update endpoint changed from
+  `PUT /projects?id=<id>` to `PUT /projects/<id>`. The previous query-parameter
+  form has been removed.
+- **Project behavior change:** A project's `memoryMode` can now be edited after
+  creation through Project Settings and `PUT /projects/<id>`.
+- **Breaking project metadata change:** The unused `icon` field has been dropped
+  from stored project metadata and API responses.
+
+### Added
+- **Projects remediation — 10-point plan (feature/fix):** Closed the gaps between
+  the Projects feature's documented behavior and its actual behavior:
+  - **Single-project endpoint:** Added `GET /projects/<id>` so the UI can fetch one
+    project without listing them all.
+  - **Session ↔ project linkage:** Session summaries now carry their `projectId`, so
+    a restored chat re-associates with the right project.
+  - **Chunk reload on restore:** Restoring a chat now re-loads that project's uploaded
+    file chunks so file search keeps working after a reload.
+  - **Project-scoped memory everywhere:** Every `/memory/*` call now threads the
+    project id, so search/save/list respect the active project.
+  - **Editable memory mode:** `PUT /projects/<id>` now accepts `memoryMode`, so a
+    project can be switched between "default" and "project-only" after creation.
+  - **Project Settings & Files UI:** Wired the project context menu to a Settings
+    modal (rename, memory mode, instructions) and a per-project file uploader.
+  - **PDF/DOCX extraction:** `POST /extract-text` now returns plain text from PDF and
+    DOCX uploads; frontend upload flow updated. PDF text uses the single new runtime
+    dependency `pypdf`; DOCX is parsed with the **standard library only**
+    (`zipfile` + `xml.etree`) rather than `python-docx`, which would have pulled in
+    the large, platform-specific `lxml` wheel. `requirements.txt` stays fully
+    hash-pinned (`python-dotenv`, `pypdf`, and its transitive `typing_extensions`),
+    and `backend/tests/python/test_file_parser.py` covers the stdlib DOCX paths
+    (runs, tabs/breaks, tables, missing document part, oversized-body guard).
+  - **Project embeddings:** Added `POST /generate-embeddings` to embed a project's
+    file chunks, and replaced the all-or-nothing semantic-search gate so keyword
+    ranking is used as a graceful fallback when embeddings are unavailable. The
+    `/memory/search` response now always reports an `embed_available` flag so the
+    client can choose keyword-only vs embedding-ranked results.
+    Closes backlog **#65**, scoped as an MVP to files uploaded going forward —
+    project files uploaded *before* this change keep their `embedding: null` and
+    stay on the keyword-fallback path until a separate backfill item (**#68**)
+    is implemented. Spec: `docs/specs/project-chunk-embeddings.md`.
+
 - **UX & UI SME — explicit two-discipline split (#60, docs):** Elevated the
   existing "Front-End Design (UI/UX)" quality axis into a formal **UX & UI SME**
   with clearly separated sub-disciplines across all harness documentation:
@@ -45,6 +564,20 @@
   - Spec: `docs/specs/doc-drift-guards.md`.
 
 ### Fixed
+- **quality-gate.sh manifest parsing (chore):** The manifest parser only matched
+  Markdown table rows (`| 1. | \`file.md\` |`). It now also matches the numbered-list
+  style (`1. \`file.md\``) the docs use interchangeably, so the missing-file and
+  empty-file checks fire correctly. Fixes the two `test_migration.py` failures.
+- **pypdf CVE bump (security):** Upgraded `pypdf` from `4.2.0` to `6.18.1` in
+  `requirements.txt` to clear 40 known advisories flagged by `pip-audit`. Extraction
+  code is unchanged; only the pinned version moved.
+- **Project-file embedding upload contract (fix):** The Project Settings file
+  uploader posted `projectId` in the JSON body with no `chunkIds`, but
+  `POST /generate-embeddings` reads `projectId` from the URL query string and only
+  embeds chunks whose id is in `chunkIds` — so real uploads generated no embeddings.
+  `uploadProjectFile` now returns `{ filename, chunkIds }` and the uploader posts
+  `projectId` in the query string plus the full `chunkIds` list in the body.
+  Verified by frontend regression test `PFU-3` and new hermetic backend integration test `EMB-3`.
 - **RAIL doc drift (chore):** Reconciled all stale test paths (`tests/python/` →
   `backend/tests/python/`, `tests/js/` → `frontend/tests/js/`) across
   `.clinerules/rail-pipeline.md`, `spec.md`, `govern.md`, `sme-backend.md`, and

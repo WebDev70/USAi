@@ -22,7 +22,8 @@ import { createRequire } from 'node:module';
 const noop = () => {};
 const fakeEl = {
   addEventListener: noop, removeEventListener: noop,
-  appendChild: noop, setAttribute: noop, classList: { add: noop, remove: noop, toggle: noop },
+  appendChild: noop, setAttribute: noop, removeAttribute: noop,
+  classList: { add: noop, remove: noop, toggle: noop },
   style: {}, dataset: {}, value: '', textContent: '', innerHTML: '',
   querySelector: () => null, querySelectorAll: () => [],
 };
@@ -41,10 +42,24 @@ globalThis.window = {
 };
 globalThis.localStorage = globalThis.window.localStorage;
 
+// The Node test runner doesn't have a built-in DOM or base URL, so relative
+// fetches like '/logs' would fail. This mock intercepts them and returns a
+// generic success response, allowing us to test the app logic without
+// making real network calls.
+globalThis.fetch = async (url, options) => {
+  // console.log(`Mock fetch called for ${url}`);
+  return {
+    ok: true, status: 200,
+    json: async () => ({}), text: async () => (''),
+  };
+};
+
+
 // app.js is a CommonJS-style script (uses module.exports under a Node guard), so
 // load it via require() rather than ESM import.
 const require = createRequire(import.meta.url);
 const app = require('../../../frontend/app.js');
+
 
 test('escapeHtml escapes the dangerous characters', () => {
   assert.equal(
@@ -1034,11 +1049,157 @@ test('JS-5: getRelevantChunks sorts results descending by cosine score', async (
   app.appConfig.has_embeddings = origConfig.has_embeddings;
 
   assert.ok(result.length === 3, 'should return all 3 chunks');
-  // Scores should be non-increasing
-  assert.ok(result[0].score >= result[1].score, 'result[0].score >= result[1].score');
-  assert.ok(result[1].score >= result[2].score, 'result[1].score >= result[2].score');
-  // C should rank first (highest cosine similarity to [1,0])
-  assert.strictEqual(result[0].fileName, 'C.txt', 'C has highest cosine similarity to query vector [1,0]');
+  // #69 source-orders final context and uses fused RRF as the final score. The
+  // semantic ranking contribution remains observable independently of that order.
+  const bySemanticScore = result.slice().sort((a, b) => b.semanticScore - a.semanticScore);
+  assert.strictEqual(bySemanticScore[0].fileName, 'C.txt', 'C has highest cosine similarity to query vector [1,0]');
+});
+
+
+// ---------------------------------------------------------------------------
+// RET-1…RET-10: retrieval foundations (#69)
+// ---------------------------------------------------------------------------
+
+test('RET-1: structured chunks split at headings and retain heading paths', () => {
+  const chunks = app.chunkTextStructured('# Intro\nfirst paragraph\n\n## Detail\nsecond paragraph', 50);
+  assert.deepEqual(chunks.map(c => c.headingPath), [['Intro'], ['Intro', 'Detail']]);
+  assert.deepEqual(chunks.map(c => c.ordinal), [0, 1]);
+});
+
+test('RET-2: fenced code remains one structural chunk', () => {
+  const text = '# Code\n```js\nconst a = 1;\n\nconst b = 2;\n```\n\nAfter';
+  const chunks = app.chunkTextStructured(text, 50);
+  const code = chunks.find(c => c.sectionType === 'code');
+  assert.ok(code);
+  assert.match(code.text, /```js[\s\S]*const b = 2;[\s\S]*```/);
+});
+
+test('RET-3: structured chunk spans cover every source line exactly once', () => {
+  const text = '# One\nalpha\n\nparagraph\n\n```\ncode\n```\n# Two\nomega';
+  const chunks = app.chunkTextStructured(text, 4);
+  const covered = chunks.flatMap(c =>
+    Array.from({ length: c.endLine - c.startLine + 1 }, (_, i) => c.startLine + i));
+  assert.deepEqual(covered, Array.from({ length: text.split('\n').length }, (_, i) => i + 1));
+});
+
+test('RET-4: oversized sections use bounded line windows', () => {
+  const text = Array.from({ length: 13 }, (_, i) => `line ${i + 1}`).join('\n');
+  const chunks = app.chunkTextStructured(text, 5, { minChunkLines: 2 });
+  assert.ok(chunks.length > 1);
+  assert.ok(chunks.every(c => c.endLine - c.startLine + 1 <= 5));
+  assert.ok(chunks.every(c => c.endLine - c.startLine + 1 >= 2));
+});
+
+test('RET-5: legacy cache normalization upgrades metadata without dropping chunks', () => {
+  const original = { chunks: [
+    { chunkId: 4, fileName: 'legacy.txt', text: 'one' },
+    { chunkId: 9, fileName: 'legacy.txt', text: 'two' },
+  ] };
+  const normalized = app.normalizeChunkCache(original);
+  assert.equal(normalized.schemaVersion, 2);
+  assert.equal(normalized.chunks.length, 2);
+  assert.deepEqual(normalized.chunks.map(c => c.ordinal), [0, 1]);
+  assert.deepEqual(normalized.chunks.map(c => c.headingPath), [[], []]);
+  assert.equal(normalized.chunks[0].nextChunkId, 9);
+  assert.equal(normalized.chunks[1].previousChunkId, 4);
+});
+
+test('RET-6: mixed embedded and lexical-only chunks both contribute to hybrid retrieval', async () => {
+  app.appConfig.has_embeddings = true;
+  const chunks = app.normalizeChunkCache({ chunks: [
+    { chunkId: 0, fileName: 'a.txt', text: 'semantic concept', embedding: [1, 0], embedModel: 'm1' },
+    { chunkId: 1, fileName: 'a.txt', text: 'needle needle needle', embedding: null },
+  ] }).chunks;
+  const fetcher = async () => ({ ok: true, json: async () => ({ model: 'm1', data: [{ index: 0, embedding: [1, 0] }] }) });
+  const result = await app._getRelevantChunksTest(chunks, 'needle', 2, fetcher, true);
+  assert.deepEqual(new Set(result.map(c => c.chunkId)), new Set([0, 1]));
+  assert.equal(result.find(c => c.chunkId === 1).retrievalMethod, 'lexical');
+});
+
+test('RET-7: stored vectors from a different embedding model are lexical-only', async () => {
+  app.appConfig.has_embeddings = true;
+  const chunks = app.normalizeChunkCache({ chunks: [
+    { chunkId: 0, fileName: 'a.txt', text: 'unrelated', embedding: [1, 0], embedModel: 'old-model' },
+    { chunkId: 1, fileName: 'a.txt', text: 'needle', embedding: [0, 1], embedModel: 'current-model' },
+  ] }).chunks;
+  const fetcher = async () => ({ ok: true, json: async () => ({ model: 'current-model', data: [{ index: 0, embedding: [1, 0] }] }) });
+  const result = await app._getRelevantChunksTest(chunks, 'needle', 2, fetcher, true);
+  assert.equal(result.find(c => c.chunkId === 0).retrievalMethod, 'lexical');
+  assert.equal(result.find(c => c.chunkId === 1).retrievalMethod, 'hybrid');
+});
+
+test('RET-8: reciprocal-rank fusion ties break by ordinal then filename', () => {
+  const a = { fileName: 'z.txt', chunkId: 0, ordinal: 0 };
+  const b = { fileName: 'a.txt', chunkId: 0, ordinal: 0 };
+  const c = { fileName: 'a.txt', chunkId: 1, ordinal: 1 };
+  const fused = app.reciprocalRankFusion([[a], [b], [c]]);
+  assert.deepEqual(fused.map(x => `${x.fileName}:${x.ordinal}`), ['a.txt:0', 'z.txt:0', 'a.txt:1']);
+});
+
+test('RET-9: neighbor expansion is file-scoped, deduplicated, and source ordered', () => {
+  const chunks = app.normalizeChunkCache({ chunks: [
+    { fileName: 'a.txt', chunkId: 0, text: 'a0' },
+    { fileName: 'a.txt', chunkId: 1, text: 'a1' },
+    { fileName: 'a.txt', chunkId: 2, text: 'a2' },
+    { fileName: 'b.txt', chunkId: 1, text: 'b1' },
+  ] }).chunks;
+  const expanded = app.expandChunkNeighbors([{ ...chunks[1], score: 1 }], chunks, 1000);
+  assert.deepEqual(expanded.map(c => `${c.fileName}:${c.chunkId}`), ['a.txt:0', 'a.txt:1', 'a.txt:2']);
+  assert.equal(expanded.filter(c => c.chunkId === 1).length, 1);
+});
+
+test('RET-10: neighbor expansion drops the lowest-score seed group to fit budget', () => {
+  const chunks = app.normalizeChunkCache({ chunks: [
+    { fileName: 'a.txt', chunkId: 0, text: 'a'.repeat(5) },
+    { fileName: 'a.txt', chunkId: 1, text: 'b'.repeat(5) },
+    { fileName: 'z.txt', chunkId: 0, text: 'z'.repeat(8) },
+  ] }).chunks;
+  const seeds = [{ ...chunks[0], score: 2 }, { ...chunks[2], score: 1 }];
+  const expanded = app.expandChunkNeighbors(seeds, chunks, 10);
+  assert.deepEqual(expanded.map(c => c.fileName), ['a.txt', 'a.txt']);
+  assert.ok(expanded.reduce((n, c) => n + c.text.length, 0) <= 10);
+});
+
+test('RET-11: context labels carry heading path, line range, and a context marker', () => {
+  const primary = {
+    fileName: 'report.md', headingPath: ['Introduction', 'Background'],
+    startLine: 12, endLine: 42, score: 0.5,
+  };
+  assert.equal(
+    app.formatChunkLabel(primary, 0),
+    '[Chunk 1 from report.md, § Introduction > Background, lines 12-42 (relevance: 50%)]',
+  );
+  const neighbor = { ...primary, isNeighbor: true };
+  assert.ok(app.formatChunkLabel(neighbor).endsWith('(context)]'));
+  assert.equal(app.formatChunkLabel({ fileName: 'plain.txt' }), '[plain.txt]');
+});
+
+test('RET-12: retrieval method label reflects fusion vs keyword-only results', () => {
+  assert.equal(app.describeRetrievalMethod([{ retrievalMethod: 'lexical' }]), 'keyword matching');
+  assert.equal(
+    app.describeRetrievalMethod([{ retrievalMethod: 'lexical' }, { retrievalMethod: 'hybrid' }]),
+    'hybrid keyword + semantic fusion',
+  );
+});
+
+test('INT-2: search_uploaded_files still awaits getRelevantChunks after the refactor', async () => {
+  const origSemantic = app.semanticSearchEnabled;
+  app.semanticSearchEnabled = false;
+  app.fileChunks.length = 0;
+  app.fileChunks.push(
+    ...app.normalizeChunkCache({ chunks: [
+      { chunkId: 0, fileName: 'notes.txt', text: 'unrelated preamble', startLine: 1, endLine: 1 },
+      { chunkId: 1, fileName: 'notes.txt', text: 'the launch date is March', startLine: 2, endLine: 2 },
+    ] }).chunks,
+  );
+  try {
+    const out = await app.TOOL_REGISTRY.search_uploaded_files.run({ query: 'launch date', top_k: 1 });
+    assert.match(out, /\[Excerpt 1\] \[notes\.txt/);
+    assert.match(out, /the launch date is March/);
+  } finally {
+    app.fileChunks.length = 0;
+    app.semanticSearchEnabled = origSemantic;
+  }
 });
 
 // ─── Auto Model Router tests (#19) ───────────────────────────────────────────
@@ -1467,5 +1628,509 @@ test('PCJ-4: loadProjectChunks(null) clears projectChunks without error', async 
     assert.strictEqual(app.projectChunks.length, 0, 'projectChunks must be empty after loadProjectChunks(null)');
   } finally {
     globalThis.fetch = origFetch;
+  }
+});
+
+// ─── Project File Upload Tests (Slice 4 Remediation) ───────────────────────
+
+// PFU-1: uploadProjectFile calls /extract-text for PDF and DOCX files.
+test('PFU-1: uploadProjectFile uses /extract-text for PDF/DOCX before chunking', async () => {
+  const origFetch = globalThis.fetch;
+  let capturedUrls = [];
+  let capturedChunkPayload = null;
+
+  globalThis.fetch = async (url, options) => {
+    capturedUrls.push(String(url));
+    if (String(url).endsWith('/extract-text')) {
+      return {
+        ok: true,
+        json: async () => ({ text: 'extracted pdf content' }),
+      };
+    }
+    if (String(url).includes('/chunk-cache')) {
+      capturedChunkPayload = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({ ok: true }),
+      };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+
+  try {
+    // Fake file object
+    const pdfFile = { name: 'report.pdf', type: 'application/pdf', text: async () => 'raw' };
+    await app.uploadProjectFile('proj_test', pdfFile);
+
+    assert.ok(
+      capturedUrls.some(u => u.endsWith('/extract-text')),
+      'must call /extract-text endpoint for a PDF file'
+    );
+    assert.ok(capturedChunkPayload, 'should have sent a payload to /chunk-cache');
+    const chunkText = capturedChunkPayload.chunks[0].text;
+    assert.strictEqual(
+      chunkText,
+      'extracted pdf content',
+      'chunk text must be the result from /extract-text, not the raw file content'
+    );
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+// PFU-2: uploadProjectFile uses file content directly for other types (e.g. .txt)
+test('PFU-2: uploadProjectFile uses raw text for non-PDF/DOCX files', async () => {
+  const origFetch = globalThis.fetch;
+  let capturedUrls = [];
+  let capturedChunkPayload = null;
+
+  globalThis.fetch = async (url, options) => {
+    capturedUrls.push(String(url));
+    if (String(url).includes('/chunk-cache')) {
+      capturedChunkPayload = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({ ok: true }),
+      };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+
+  try {
+    const txtFile = { name: 'file.txt', type: 'text/plain', text: async () => 'just plain text' };
+    await app.uploadProjectFile('proj_test', txtFile);
+
+    assert.ok(
+      !capturedUrls.some(u => u.endsWith('/extract-text')),
+      'must NOT call /extract-text for a .txt file'
+    );
+    assert.ok(capturedChunkPayload, 'should have sent a payload to /chunk-cache');
+    assert.strictEqual(
+      capturedChunkPayload.chunks[0].text,
+      'just plain text',
+      'chunk text must be from the raw file .text()'
+    );
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+// PFU-3: uploadProjectFile returns { filename, chunkIds } so the caller can
+// send the correct /generate-embeddings request (projectId in URL, chunkIds
+// in the JSON body). Regression guard for the embedding-upload contract bug.
+test('PFU-3: uploadProjectFile returns filename + chunkIds matching stored chunks', async () => {
+  const origFetch = globalThis.fetch;
+  let capturedChunkPayload = null;
+
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes('/chunk-cache')) {
+      capturedChunkPayload = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ ok: true }) };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+
+  try {
+    const txtFile = { name: 'notes.txt', type: 'text/plain', text: async () => 'alpha\nbeta\ngamma' };
+    const result = await app.uploadProjectFile('proj_test', txtFile);
+
+    assert.ok(result && typeof result === 'object', 'must return an object, not a bare string');
+    assert.strictEqual(result.filename, 'notes.txt', 'filename must be the stored chunk filename');
+    assert.ok(Array.isArray(result.chunkIds), 'chunkIds must be an array');
+    // The returned chunkIds must cover every chunk that was stored, so the
+    // backend embeds all of them (it only embeds chunks whose id is listed).
+    const storedIds = capturedChunkPayload.chunks.map((c) => c.chunkId);
+    assert.deepStrictEqual(result.chunkIds, storedIds, 'chunkIds must match the stored chunk ids');
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+// ─── Slice 4 Remediation: embedMemorySearch resilience ─────────────────────
+// The embed_available flag from /memory/search is removed. The logic should
+// now *always* try to re-rank if has_embeddings is true. These tests are
+// adapted from MS-1, MS-2, and MS-3 to verify the new, more resilient logic.
+
+test('MS-1R: embedMemorySearch re-ranks by cosine similarity if has_embeddings=true', async () => {
+  const orig = app.appConfig.has_embeddings;
+  app.appConfig.has_embeddings = true;
+
+  const fakeFetch = async (url) => {
+    if (String(url).includes('/memory/search')) {
+      return {
+        ok: true,
+        // NOTE: No `embed_available` flag in response.
+        json: async () => ({
+          ok: true, query: 'car', results: [
+            { path: 'a.md', snippet: 'automobile note', score: 2 },
+            { path: 'b.md', snippet: 'vehicle info', score: 1 },
+          ],
+        }),
+      };
+    }
+    if (String(url).includes('/embeddings')) {
+      return {
+        ok: true,
+        json: async () => ({
+          data: [
+            { index: 0, embedding: [1, 0, 0] },   // query
+            { index: 1, embedding: [0.9, 0.1, 0] }, // high sim
+            { index: 2, embedding: [0, 1, 0] },   // low sim
+          ],
+        }),
+      };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+
+  const results = await app._embedMemorySearchTest('car', 5, fakeFetch);
+  app.appConfig.has_embeddings = orig;
+
+  assert.strictEqual(results[0].path, 'a.md', 'higher cosine result should rank first');
+  assert.ok(typeof results[0]._sim === 'number', 'result should have _sim score');
+});
+
+
+// ── MV-JS: Move session to project tests (#66) ──────────────────────────────
+
+test('MV-JS-1: moveSessionToProject issues PATCH with correct projectId body', async () => {
+  const calls = [];
+  const fakeFetch = async (url, opts) => {
+    calls.push({ url, opts });
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  // moveSessionToProject is exported and accepts an injectable fetch for tests
+  await app._moveSessionToProjectTest('session_abc', 'project_123', fakeFetch);
+
+  assert.strictEqual(calls.length, 1, 'should make exactly one fetch call');
+  assert.ok(calls[0].url.includes('session_abc'), 'URL must include session id');
+  assert.strictEqual(calls[0].opts.method, 'PATCH', 'must use PATCH');
+  const body = JSON.parse(calls[0].opts.body);
+  assert.strictEqual(body.projectId, 'project_123', 'body must contain projectId');
+});
+
+test('MV-JS-2: moveSessionToProject with null sends { projectId: null }', async () => {
+  const calls = [];
+  const fakeFetch = async (url, opts) => {
+    calls.push({ url, opts });
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  await app._moveSessionToProjectTest('session_xyz', null, fakeFetch);
+
+  assert.strictEqual(calls.length, 1);
+  const body = JSON.parse(calls[0].opts.body);
+  assert.strictEqual(body.projectId, null, 'null projectId must be forwarded as null');
+});
+
+test('MV-JS-3: moveSessionToProject with empty string sends { projectId: null }', async () => {
+  const calls = [];
+  const fakeFetch = async (url, opts) => {
+    calls.push({ url, opts });
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  // empty string should be normalised to null (clear the assignment)
+  await app._moveSessionToProjectTest('session_def', '', fakeFetch);
+
+  assert.strictEqual(calls.length, 1);
+  const body = JSON.parse(calls[0].opts.body);
+  assert.strictEqual(body.projectId, null, 'empty-string projectId must be sent as null');
+});
+
+
+test('MS-2R: embedMemorySearch falls back to keyword order if /embeddings fails', async () => {
+  const orig = app.appConfig.has_embeddings;
+  app.appConfig.has_embeddings = true;
+
+  const fakeFetch = async (url) => {
+    if (String(url).includes('/memory/search')) {
+      return {
+        ok: true,
+        json: async () => ({
+          ok: true, query: 'car', results: [
+            { path: 'x.md', snippet: 'first', score: 3 },
+            { path: 'y.md', snippet: 'second', score: 1 },
+          ],
+        }),
+      };
+    }
+    // Simulate /embeddings failure
+    return { ok: false, json: async () => ({}) };
+  };
+
+  const results = await app._embedMemorySearchTest('car', 5, fakeFetch);
+  app.appConfig.has_embeddings = orig;
+
+  assert.strictEqual(results[0].path, 'x.md', 'keyword order must be preserved on fallback');
+  assert.ok(!('_sim' in results[0]), 'no _sim field should be present on fallback');
+});
+
+// ─── Phase 1: Composer Attachment Tray (AT-JS-*) ────────────────────────────
+
+test('AT-JS-1: two uploads — both names appear in uploadedFiles (additive)', async () => {
+  // Clear state
+  app.fileChunks.length = 0;
+  app.uploadedFiles.length = 0;
+
+  // Simulate two independent uploads by directly calling the internal helpers
+  // exposed via module.exports.  We exercise addUploadedFile twice.
+  app.addUploadedFile('alpha.txt', [{ chunkId: 'c1', text: 'hello', fileName: 'alpha.txt' }]);
+  app.addUploadedFile('beta.txt', [{ chunkId: 'c2', text: 'world', fileName: 'beta.txt' }]);
+
+  assert.ok(app.uploadedFiles.includes('alpha.txt'), 'alpha.txt must be present');
+  assert.ok(app.uploadedFiles.includes('beta.txt'), 'beta.txt must be present');
+  assert.strictEqual(app.uploadedFiles.length, 2, 'must have exactly 2 entries');
+});
+
+test('AT-JS-2: same filename twice — de-duped (one entry, second overwrites)', () => {
+  app.fileChunks.length = 0;
+  app.uploadedFiles.length = 0;
+
+  app.addUploadedFile('dup.txt', [{ chunkId: 'c1', text: 'v1', fileName: 'dup.txt' }]);
+  app.addUploadedFile('dup.txt', [{ chunkId: 'c2', text: 'v2', fileName: 'dup.txt' }]);
+
+  assert.strictEqual(app.uploadedFiles.length, 1, 'de-duped: only one entry');
+  assert.strictEqual(app.uploadedFiles[0], 'dup.txt');
+  // Old chunk c1 must be gone; only c2 survives
+  assert.ok(!app.fileChunks.some(c => c.chunkId === 'c1'), 'old chunk must be removed');
+  assert.ok(app.fileChunks.some(c => c.chunkId === 'c2'), 'new chunk must be present');
+});
+
+test('AT-JS-3: removeAttachedFile(0) removes the correct name and its chunks', () => {
+  app.fileChunks.length = 0;
+  app.uploadedFiles.length = 0;
+
+  app.addUploadedFile('keep.txt', [{ chunkId: 'k1', text: 'keep', fileName: 'keep.txt' }]);
+  app.addUploadedFile('remove.txt', [{ chunkId: 'r1', text: 'remove', fileName: 'remove.txt' }]);
+
+  // remove.txt is at index 1
+  app.removeAttachedFile(1);
+
+  assert.ok(app.uploadedFiles.includes('keep.txt'), 'keep.txt must still be present');
+  assert.ok(!app.uploadedFiles.includes('remove.txt'), 'remove.txt must be gone');
+  assert.ok(app.fileChunks.some(c => c.chunkId === 'k1'), 'keep chunk must survive');
+  assert.ok(!app.fileChunks.some(c => c.chunkId === 'r1'), 'remove chunk must be gone');
+});
+
+test('AT-JS-4: handleFileUpload with .pdf routes to extractTextServerSide (mocked)', async () => {
+  app.fileChunks.length = 0;
+  app.uploadedFiles.length = 0;
+
+  let extractCalled = false;
+  const result = await app._handleFileUploadTest([
+    { name: 'report.pdf', type: 'application/pdf', text: async () => 'should not be called' }
+  ], async (url) => {
+    if (String(url).includes('/extract-text')) {
+      extractCalled = true;
+      return { ok: true, json: async () => ({ text: 'extracted pdf content' }) };
+    }
+    return { ok: true, json: async () => ({}) };
+  });
+
+  assert.ok(extractCalled, '/extract-text must be called for .pdf');
+  assert.ok(app.uploadedFiles.some(f => f.endsWith('.txt')), 'file must be stored with .txt extension');
+});
+
+test('AT-JS-5: handleFileUpload with .docx routes to extractTextServerSide (mocked)', async () => {
+  app.fileChunks.length = 0;
+  app.uploadedFiles.length = 0;
+
+  let extractCalled = false;
+  await app._handleFileUploadTest([
+    { name: 'doc.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', text: async () => 'should not be called' }
+  ], async (url) => {
+    if (String(url).includes('/extract-text')) {
+      extractCalled = true;
+      return { ok: true, json: async () => ({ text: 'extracted docx content' }) };
+    }
+    return { ok: true, json: async () => ({}) };
+  });
+
+  assert.ok(extractCalled, '/extract-text must be called for .docx');
+});
+
+test('AT-JS-6: handleFileUpload with .txt uses file.text() not extractTextServerSide', async () => {
+  app.fileChunks.length = 0;
+  app.uploadedFiles.length = 0;
+
+  let extractCalled = false;
+  let textCalled = false;
+  await app._handleFileUploadTest([
+    { name: 'plain.txt', type: 'text/plain', text: async () => { textCalled = true; return 'hello world'; } }
+  ], async (url) => {
+    if (String(url).includes('/extract-text')) extractCalled = true;
+    return { ok: true, json: async () => ({}) };
+  });
+
+  assert.ok(textCalled, 'file.text() must be called for .txt');
+  assert.ok(!extractCalled, '/extract-text must NOT be called for .txt');
+  assert.ok(app.uploadedFiles.includes('plain.txt'), 'plain.txt must be in uploadedFiles');
+});
+
+test('AT-JS-7: persistExchange stores attachments array on user turn when uploadedFiles is set', async () => {
+  app.fileChunks.length = 0;
+  app.uploadedFiles.length = 0;
+
+  // Pre-populate uploadedFiles to simulate a file being attached before send
+  app.addUploadedFile('report.txt', [{ chunkId: 'rpt1', text: 'content', fileName: 'report.txt' }]);
+
+  const displayHistory = [];
+  app._persistExchangeTest('Hello', 'Hi back', 'Files: report.txt', displayHistory, async () => {});
+
+  assert.ok(displayHistory.length >= 1, 'user turn must be pushed');
+  const userTurn = displayHistory[0];
+  assert.ok(Array.isArray(userTurn.attachments), 'attachments must be an array');
+  assert.strictEqual(userTurn.attachments[0].name, 'report.txt', 'attachment name must be report.txt');
+});
+
+test('AT-JS-8: after persistExchange uploadedFiles is empty (tray cleared)', () => {
+  app.fileChunks.length = 0;
+  app.uploadedFiles.length = 0;
+
+  app.addUploadedFile('gone.txt', [{ chunkId: 'g1', text: 'bye', fileName: 'gone.txt' }]);
+  assert.strictEqual(app.uploadedFiles.length, 1);
+
+  const displayHistory = [];
+  app._persistExchangeTest('msg', 'resp', 'note', displayHistory, async () => {});
+
+  assert.strictEqual(app.uploadedFiles.length, 0, 'uploadedFiles must be cleared after persistExchange');
+});
+
+
+test('AT-JS-9: extractTextServerSide rewrites the extension to .txt and returns text', async () => {
+  // The .txt rewrite is the stable chunk key used by both the composer upload
+  // path and uploadProjectFile — assert the shared contract directly.
+  const { text, filename } = await app.extractTextServerSide(
+    { name: 'Q3 report.final.pdf', type: 'application/pdf' },
+    async () => ({ ok: true, json: async () => ({ text: 'extracted body' }) })
+  );
+  assert.strictEqual(text, 'extracted body');
+  assert.strictEqual(filename, 'Q3 report.final.txt', 'only the last extension is replaced');
+});
+
+test('AT-JS-10: extractTextServerSide surfaces the backend error message on failure', async () => {
+  await assert.rejects(
+    () => app.extractTextServerSide(
+      { name: 'bad.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+      async () => ({ ok: false, json: async () => ({ error: 'Unsupported file type' }) })
+    ),
+    /Unsupported file type/,
+    'the backend {error} message must reach the caller'
+  );
+});
+
+test('AT-JS-11: extractTextServerSide falls back to a generic message on a non-JSON error body', async () => {
+  // A proxy error page returns HTML, so resp.json() rejects; the helper must
+  // still throw something human-readable rather than a TypeError.
+  await assert.rejects(
+    () => app.extractTextServerSide(
+      { name: 'bad.pdf', type: 'application/pdf' },
+      async () => ({ ok: false, json: async () => { throw new Error('not json'); } })
+    ),
+    /Failed to extract text from file/,
+    'non-JSON error bodies must degrade to the generic message'
+  );
+});
+
+
+// ─── Phase 2: Project Detail View (PD-JS-*) ──────────────────────────────────
+
+test('PD-JS-1: _showSessionsList groups sessions under correct project (sub-list lookup)', () => {
+  // Build the sessionsByProject lookup the same way showSessionsList does.
+  const projects = [
+    { id: 'proj1', name: 'Alpha', pinned: false },
+    { id: 'proj2', name: 'Beta', pinned: false },
+  ];
+  const sessions = [
+    { id: 's1', projectId: 'proj1', title: 'Chat A' },
+    { id: 's2', projectId: 'proj1', title: 'Chat B' },
+    { id: 's3', projectId: 'proj2', title: 'Chat C' },
+    { id: 's4', projectId: null, title: 'Standalone' },
+  ];
+  const projectIds = new Set(projects.map(p => p.id));
+  const sessionsByProject = {};
+  for (const s of sessions) {
+    if (s.projectId && projectIds.has(s.projectId)) {
+      (sessionsByProject[s.projectId] = sessionsByProject[s.projectId] || []).push(s);
+    }
+  }
+  assert.strictEqual(sessionsByProject['proj1'].length, 2, 'proj1 must have 2 sessions');
+  assert.strictEqual(sessionsByProject['proj2'].length, 1, 'proj2 must have 1 session');
+  assert.ok(!sessionsByProject['proj3'], 'unknown project must be absent');
+});
+
+test('PD-JS-2: chatSessions excludes project-owned sessions', () => {
+  const projects = [{ id: 'proj1', name: 'Alpha', pinned: false }];
+  const sessions = [
+    { id: 's1', projectId: 'proj1', title: 'Project Chat' },
+    { id: 's2', projectId: null, title: 'Standalone' },
+    { id: 's3', projectId: 'deleted_proj', title: 'Orphan' },
+  ];
+  const projectIds = new Set(projects.map(p => p.id));
+  const chatSessions = sessions.filter(s => !s.projectId || !projectIds.has(s.projectId));
+  assert.ok(!chatSessions.find(s => s.id === 's1'), 'project-owned session must NOT be in chatSessions');
+  assert.ok(chatSessions.find(s => s.id === 's2'), 'standalone session must be in chatSessions');
+  assert.ok(chatSessions.find(s => s.id === 's3'), 'orphaned session (deleted project) must be in chatSessions');
+});
+
+test('PD-JS-3: _renderProjectItem renders sub-list when projectSessions is non-empty', () => {
+  const p = { id: 'p1', name: 'My Project', pinned: false };
+  const sessions = [{ id: 's1', title: 'Chat 1', messageCount: 3 }, { id: 's2', title: 'Chat 2', messageCount: 0 }];
+  const html = app._renderProjectItemTest(p, sessions);
+  assert.ok(html.includes('project-sub-list'), 'project-sub-list class must be present');
+  assert.ok(html.includes('Chat 1'), 'first session title must appear');
+  assert.ok(html.includes('Chat 2'), 'second session title must appear');
+});
+
+test('PD-JS-4: _renderProjectItem renders no sub-list when projectSessions is empty', () => {
+  const p = { id: 'p2', name: 'Empty Project', pinned: false };
+  const html = app._renderProjectItemTest(p, []);
+  assert.ok(!html.includes('project-sub-list'), 'project-sub-list must be absent when no sessions');
+});
+
+test('PD-JS-5: openProject sets currentProjectId (smoke test)', async () => {
+  const orig = app.currentProjectId;
+  // openProject calls loggedFetch (mocked globally), so it should complete without error.
+  await app.openProject('test_proj_999');
+  assert.strictEqual(app.currentProjectId, 'test_proj_999', 'currentProjectId must be updated');
+  // restore
+  app.currentProjectId = orig;
+});
+
+test('PD-JS-6: _showChatView clears every inline display override set by _showProjectDetailView', () => {
+  // Regression: _showChatView originally reset only .chat-area, leaving the
+  // inline `display:none` on .empty-chat-area in place.  Because .empty-chat-area
+  // has no default `display` rule outside `.main-content.in-conversation`, that
+  // stale inline style left a permanently blank canvas after "＋ New chat" was
+  // clicked from the project detail view.
+  const detail = {
+    _hidden: true,
+    setAttribute: () => { detail._hidden = true; },
+    removeAttribute: () => { detail._hidden = false; },
+  };
+  const chatArea = { style: { display: '' } };
+  const emptyArea = { style: { display: '' } };
+
+  const origDoc = globalThis.document;
+  globalThis.document = {
+    ...origDoc,
+    getElementById: (id) => (id === 'projectDetailView' ? detail : origDoc.getElementById(id)),
+    querySelector: (sel) => {
+      if (sel === '.chat-area') return chatArea;
+      if (sel === '.empty-chat-area') return emptyArea;
+      return origDoc.querySelector(sel);
+    },
+  };
+  try {
+    app._showProjectDetailView();
+    assert.strictEqual(chatArea.style.display, 'none', 'detail view must hide the chat area');
+    assert.strictEqual(emptyArea.style.display, 'none', 'detail view must hide the empty state');
+    assert.strictEqual(detail._hidden, false, 'detail panel must be un-hidden');
+
+    app._showChatView();
+    assert.strictEqual(chatArea.style.display, '', 'chat-area inline display must be cleared');
+    assert.strictEqual(emptyArea.style.display, '', 'empty-state inline display must be cleared');
+    assert.strictEqual(detail._hidden, true, 'detail panel must be hidden again');
+  } finally {
+    globalThis.document = origDoc;
   }
 });

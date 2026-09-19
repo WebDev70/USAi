@@ -4,7 +4,7 @@ description: Frontend changes stay accessible, responsive, token-driven, depende
 ---
 
 Review this change for **UX & UI quality and accessibility**, but only when it
-touches `index.html` or `styles.css` (per `.continue/rules/ui-ux-design.md`). If the
+touches `index.html` or `styles.css` (see `docs/rail-pipeline.md`). If the
 change doesn't touch the frontend, pass.
 
 Flag as **failing** if any of the following are true:

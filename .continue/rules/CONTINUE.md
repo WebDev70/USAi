@@ -124,11 +124,11 @@ Coverage tooling is **dev-only** (`coverage.py` in the venv; Node ≥ 22 built-i
 coverage) — it is never added to `requirements.txt` or shipped in the app.
 Or individually:
 ```bash
-node --check app.js && python3 -m py_compile server.py        # syntax gates
-node --test $(find tests/js -name '*.test.mjs')               # JS unit tests
-.venv/bin/python -m unittest discover -s tests/python -p 'test_*.py'  # Python tests
+node --check frontend/app.js && python3 -m py_compile backend/server.py   # syntax gates
+node --test $(find frontend/tests/js -name '*.test.mjs')       # JS unit tests
+PYTHONPATH=backend .venv/bin/python -m unittest discover -s backend/tests/python -p 'test_*.py'  # Python tests
 ```
-Tests live in `tests/js/*.test.mjs` and `tests/python/test_*.py` (with HTTP
+Tests live in `frontend/tests/js/*.test.mjs` and `backend/tests/python/test_*.py` (with HTTP
 integration suites `test_server_http.py`, `test_server_branches.py`,
 `test_server_proxy.py`). See
 [`docs/rail-pipeline.md`](../../docs/rail-pipeline.md)
@@ -137,11 +137,12 @@ role-based agent pipeline (Product Owner → Planner → SME → Tests → QA `/
 Continuous Improvement, with DevSecOps / IaC / Observability woven through).
 
 > **Working from the Continue CLI (`cn`)?** The `/check` QA-gate is a **VS Code
-> extension** feature — the CLI has no `/check` command. Reproduce RAIL's QA-Review
-> step with **`./scripts/cli-check.sh`** (runs the coverage-gated suite; add
-> `--review` to also run `cn review` with the `.continue/checks/*.md` files as
-> rules). The **rules** in `.continue/rules/` *are* loaded automatically by `cn`
-> when launched from the project root; only the checks need the script.
+> extension** feature — the CLI has no `/check` command. Run `quality-gate.sh`,
+> `run-tests.sh --coverage`, `security-scan.sh`, and `doc-consistency-check.sh`
+> explicitly. `cli-check.sh` is only a compatibility wrapper for the neutral
+> review-check manifest validator; it does not run the other gates or AI review.
+> The **rules** in `.continue/rules/` are loaded automatically by `cn` when launched
+> from the project root.
 
 ---
 
@@ -211,6 +212,16 @@ docs are part of "done." Roughly:
 | Agent rules, security, conventions, memory directive | `AGENTS.md` |
 
 Avoid duplicating content across docs — link between them instead.
+
+### Close every task with a Recommended Next Step (enforced rule)
+
+An always-on Continue rule, [`recommended-next-step.md`](recommended-next-step.md),
+requires that **every task turn ends with a `Recommended Next Step` section** naming
+one action plus why it comes next, what it enables, and the impact of skipping it.
+It is the forward-looking counterpart to the backward-looking Continuous Improvement
+retro, and it is emitted last — after the work summary and the learning note.
+Canonical definition (shared with the Cline harness):
+[`docs/rail-pipeline.md`](../../docs/rail-pipeline.md) § "Recommended Next Step".
 
 ---
 

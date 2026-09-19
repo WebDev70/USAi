@@ -10,7 +10,32 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **67**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **87**.
+>
+> Before assigning a new ID, confirm the current maximum (see #85):
+> ```bash
+> grep -oE '^- \[.\] +\*\*[0-9]+\.' backlog.md | grep -oE '[0-9]+' | sort -n | tail -3
+> ```
+
+> **Last groomed:** 2026-09-18 — full grooming pass. Verified #77 complete
+> (proxy suite runs clean in isolation, 26 tests OK); flipped to Done.
+> Wrote explicit acceptance criteria for #79/#82/#83/#84/#85. Flagged #67, #68,
+> #86, #13, #14, #15 and #57 as **not yet DoR**, each with its specific open
+> design questions. #76 re-scoped against a measured working tree; steps (b)–(f)
+> executed, only (a) "commit the shipped work" remains. Roo/Zoo experiment kept
+> and tracked as **#86** (branch `feat/zoo-migration`), not deleted.
+> Recommended near-term order:
+> #76 → #74 → #85 → #79 → (#82, #83, #84) → (#70, #71, #68) → #67.
+> Mirror: `Cline/scrum/product-backlog.md` in the Obsidian vault.
+>
+> **Second-pass verification (same day):** cloned `main` HEAD to a scratch dir and
+> ran the gates there rather than in the working tree. **`main` is red:**
+> `./run-tests.sh` exits 1 (21 failures / 11 errors) and `./scripts/quality-gate.sh`
+> exits 1 (missing `docs/quality/review-checks/` manifest). #76 is therefore
+> **BLOCKING, not advisory** — the uncommitted tree is load-bearing, not cosmetic.
+> #74 is now explicitly **blocked by #76(a)** (its measured coverage includes two
+> untracked test files). Also fixed a dangling `implementation_plan.md` reference in
+> `docs/specs/obsidian-mcp-bridge.md` that #76(d)'s deletion orphaned.
 
 ---
 
@@ -71,12 +96,39 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 ## Open items
 
+### 🎯 Ready to pull next (groomed 2026-09-18)
+
+Sprint-ready in the recommended order. Everything here passes
+[`docs/quality/review-checks/definition-of-ready.md`](docs/quality/review-checks/definition-of-ready.md):
+it has a bounded scope, a named file list, and testable acceptance criteria.
+
+| # | Title | Size | Why now |
+|---|-------|------|---------|
+| 87 | Restore `doc-consistency-check.sh` scan scope | S | 🚨 Must be decided *before* #76(a) commits it — the working-tree guard scans 3 files instead of 15, leaving all 12 `.clinerules/*.md` unguarded, and 5 guard tests were deleted. |
+| 74 | Ratchet coverage thresholds | S | Headroom re-measured; js_branch already drifted 77.75% → 75.19% unnoticed. **Do after #76(a)** — the measured numbers include two untracked test files. |
+| 85 | Pre-flight backlog-ID check in `/spec` | XS | Cheapest guard; prevents the duplicate-ID bug that already happened once (#79). |
+| 79 | Redact grep-output as a standing `/spec` rule | S | Same workflow file as #85 — batch the two together. |
+| 82 | Project settings modal + detail-view delete | S | Unblocks #67; removes the fragile create-modal-reuse hack. |
+| 83 | jsdom behavior tests for project detail view | S | Closes the DOM-coverage gap #81 shipped with. |
+| 84 | Refactor `appendMessage` to a turn object | S | Retro action; 6-positional-arg signature is now the top regression source. |
+| 70 | Whole-document analysis | L | Spec already written (`advanced-document-retrieval.md` §4.6–4.7). |
+| 71 | Optional reranking | M | Spec already written (§4.8); verified `rerank` absent from code. |
+
+**Not ready — needs `/spec` first:** #68 (M, schema changed under it),
+#67 (L, 4 open design questions), #86 (L, new), #13 / #14 / #15 / #57 (parking lot).
+
+**Suggested next sprint (Sprint 19):** #87 → #76 → #74 + #85 + #79 — one cohesive
+"unbreak `main` and clear the governance debt" sprint, all S/XS, no app-code risk.
+Note the hard ordering: **#87 gates #76(a)** (don't commit a weakened guard), and
+**#76(a) gates #74** (don't ratchet coverage measured against untracked tests).
+Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
+
 ### Projects follow-up work (found 2026-09-13)
 
 > Gaps found by reading the Projects code against the docs. None are started
 > (`[ ]` = Not started). Listed highest priority first.
 
-- [ ] **61. Make project context actually load** *(S)*
+- [x] **61. Make project context actually load** *(S)* — Done (2026-09-15): Verified all 6 sub-items. `GET /projects/<id>` is implemented in `projects_handlers.py`. `_get_sessions` in `session_handlers.py` now includes `projectId`. `restoreSession` in `app.js` calls `loadProjectChunks`. `prepareContextMessages` and `saveMemory` are project-aware. `_put_project` now allows `memoryMode` edits.
   - A project can be created, but a chat inside it does not really pick up the
     project's files, instructions, or memory folder. Six fixes belong together:
     1. There is no `GET /projects/<id>` route on the backend, but the frontend
@@ -93,7 +145,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
   - Files: `backend/projects_handlers.py`, `backend/session_handlers.py`,
     `frontend/app.js`.
 
-- [ ] **62. Documentation corrections — uploads, project icon, model IDs, env example** *(S)*
+- [x] **62. Documentation corrections — uploads, project icon, model IDs, env example** *(S)* — Done (2026-09-15): Verified all 4 sub-items. `USER_GUIDE.md` and `ARCHITECTURE.md` are updated. `.env.example` is correct.
   - Four places where the docs do not match the code:
     1. `docs/USER_GUIDE.md` says uploads create embeddings. They do not.
     2. `docs/ARCHITECTURE.md` documents a project icon that is never stored.
@@ -103,42 +155,544 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
        missing from `.env.example`.
   - Files: `docs/USER_GUIDE.md`, `docs/ARCHITECTURE.md`, `.env.example`.
 
-- [ ] **63. Project file UI wiring** *(M)*
+- [x] **63. Project file UI wiring** *(M)* — Done (2026-09-15): Verified in `index.html` and `app.js` that the project files UI is correctly wired.
   - The block around `frontend/index.html` line 290 has no reachable entry
     point, and its event wiring is incomplete. Give it a way in and finish
     hooking up its controls.
   - Files: `frontend/index.html`, `frontend/app.js`, `frontend/styles.css`.
 
-- [ ] **64. Real PDF and DOCX extraction** *(M)*
+- [x] **64. Real PDF and DOCX extraction** *(M)* — Done (2026-09-15): Verified in `app.js` that `uploadProjectFile` calls `/extract-text`.
   - The UI advertises PDF and DOCX, but `uploadProjectFile` reads those binary
     files as plain text, so the stored text is garbage.
   - Files: `frontend/app.js`, `backend/projects_handlers.py`.
 
-- [ ] **65. Embeddings for project chunks** *(M)*
-  - `uploadProjectFile` stores a null embedding, so project search falls back to
-    keyword matching every time. Cover:
-    1. Generate embeddings for project chunks.
-    2. Save them with the chunk.
-    3. Keep the keyword fallback when embeddings are missing or fail.
-    4. Re-index files that were uploaded before this change.
-  - Files: `frontend/app.js`, `backend/projects_handlers.py`.
+- [x] **65. Embeddings for project chunks** *(M)* — Done (2026-09-17): Scoped as
+  an MVP covering new uploads only. `POST /generate-embeddings` generates and
+  persists chunk embeddings; the Project Settings uploader calls it after
+  `POST /project-files/<id>`; `getRelevantChunks` scores embedded chunks by
+  cosine similarity and falls back to keyword ranking per-chunk when an
+  embedding is missing or the call fails. Verified via EMB-1/EMB-3/EMB-3-negative
+  Python tests and `PFU-*` JS tests (all green). Re-indexing files uploaded
+  *before* this feature shipped was explicitly descoped — tracked as new item
+  **#68** below.
+  Spec: `docs/specs/project-chunk-embeddings.md`
+  - Files: `frontend/app.js`, `backend/projects_handlers.py`,
+    `backend/session_handlers.py`.
 
-- [ ] **66. Move an existing chat into a project** *(M)*
-  - Today there is no endpoint and no UI action to move a chat into a project.
-    Add both.
-  - Files: `backend/session_handlers.py`, `frontend/app.js`,
-    `frontend/index.html`.
+- [x]  **66. Move an existing chat into a project** *(M)* — Done (2026-09-18): `PATCH /sessions/<id>` endpoint + sidebar ⋯ context menu + move-to-project picker modal; active-session projectId/chunks re-sync on move.
+       Spec: docs/specs/move-chat-into-project.md
+  - Add `PATCH /sessions/<id>` endpoint (body: `{ projectId }`, validates with
+    `_safe_project_id`, traversal-safe session id check). Add `do_PATCH` routing
+    in `server.py`. Add "Move to project…" context-menu item on session rows with
+    a project-picker overlay. On move of the active chat: update `currentProjectId`
+    + reload `projectChunks`. Sidebar re-renders after any move.
+  - Memory notes written before the move stay in their original vault folder
+    (out-of-scope limitation; documented in USER_GUIDE).
+  - Files: `backend/session_handlers.py`, `backend/server.py`,
+    `frontend/app.js`, `frontend/index.html`, `frontend/styles.css`.
 
 - [ ] **67. Per-project model, tool, and reasoning settings** *(L)*
+  - **Not yet DoR.** ⚠️ Needs `/spec` before any sprint pull: no user story, no
+    acceptance criteria, no test plan. Open design questions to resolve in `/spec`:
+    1. Where do overrides live — `.projects/<id>/project.json` (server-side, survives
+       browsers) or `localStorage` under `usai.settings.v1` keyed by project id?
+       Server-side is consistent with `instructions`/`memoryMode` already on the project.
+    2. Which of the ~12 `saveSettings` keys are overridable? Recommend a *subset*
+       (model/tier, temperature, maxTokens, reasoningEffort, tools, JSON mode) rather
+       than all, to keep the merge surface small.
+    3. Inherit-vs-override UX: a per-field "use global" tri-state, or a single
+       "override global settings" checkbox per project?
+    4. Interaction with #19's auto model router — does a project-pinned model win over
+       `routeModel()`, or does the router win when tier is `Auto`?
   - Model choice, tool toggles, and reasoning effort are global today, saved by
     `saveSettings`. Let a project hold its own values. Projects inherit the
     global defaults unless a project overrides them.
+  - **Related:** #82 (project settings modal) should land first — it replaces the
+    fragile create-modal reuse this feature would otherwise have to extend.
   - Files: `frontend/app.js`, `frontend/index.html`,
     `backend/projects_handlers.py`.
+
+- [ ] **68. Backfill embeddings for pre-existing project files** *(M)*
+  - **Not yet DoR.** ⚠️ Needs `/spec` before any sprint pull: no spec doc, no
+    acceptance criteria, and the detect-trigger (item 1 below) is still an open
+    decision. **Recommendation for `/spec`:** an explicit "Re-index files" button in
+    the project settings/detail view, *not* an implicit on-project-open scan — an
+    implicit scan makes opening a project silently expensive and hard to cancel.
+  - **Sequencing note (added 2026-09-18):** #69 shipped a **v2 chunk schema** with
+    legacy normalization and `embedModel` stamping on `/generate-embeddings`. This
+    backfill must therefore target the v2 schema and *also* re-embed chunks whose
+    stored `embedModel` differs from the currently configured `EMBED_MODEL` — not
+    just chunks with a missing `embedding`. That widens the original scope and is
+    the main reason this needs a fresh spec rather than direct implementation.
+  - Backlog #65 shipped embeddings for project chunks as an MVP scoped to
+    files uploaded *after* that feature — see
+    `docs/specs/project-chunk-embeddings.md` §1 "Explicitly out of scope".
+    Project files uploaded *before* #65 shipped have chunk-cache entries with
+    no `embedding` field and are permanently keyword-only until this item is
+    done. Cover:
+    1. A way to detect chunks with a missing/null `embedding` (or a stale
+       `embedModel`) in an existing project's chunk cache (explicit "re-index"
+       action recommended — decide in `/spec`).
+    2. Call `/generate-embeddings` for those chunks without requiring the user
+       to delete and re-upload the file.
+    3. Avoid re-embedding chunks that already have a current `embedding` (idempotent,
+       cost-aware — don't re-call the provider for chunks already done).
+    4. Surface progress/failure to the user (best-effort, non-blocking, same
+       graceful-fallback behavior as #65).
+  - **Independent of** #69/#70/#71 (no code dependency) but should land *after* #69
+    (done) so it writes the v2 schema.
+  - Files: `frontend/app.js`, `backend/session_handlers.py`,
+    `backend/projects_handlers.py`.
+
+- [x] **69. Retrieval foundations — structure-aware chunking, per-chunk fallback, hybrid fusion, neighbor expansion** *(L)* — Done (2026-09-17): structure-aware chunker, v2 chunk-cache schema with legacy normalization, per-chunk semantic fallback, RRF fusion, neighbor expansion, and labelled context provenance shipped; `/generate-embeddings` now stamps `embedModel`. Spec: `docs/specs/advanced-document-retrieval.md`
+  - Replace `chunkText()`'s fixed-line splitter with a structure-aware
+    chunker (Markdown headings, paragraphs, fenced code blocks) that respects
+    the existing 50–1000 line setting as an *upper bound*. Replace
+    `getRelevantChunks()`'s all-or-nothing semantic gate (one un-embedded
+    chunk currently disables semantic scoring for the whole merged set) with
+    a per-chunk fallback: embedded chunks score semantically, all chunks
+    score lexically, and the two rankings are combined via Reciprocal Rank
+    Fusion (RRF) instead of comparing incomparable raw scores. Add neighbor
+    (adjacent-chunk) expansion around top-ranked seeds. Add a versioned
+    chunk-cache schema (`schemaVersion`, `ordinal`, `headingPath`,
+    `previous/nextChunkId`) with in-memory normalization of legacy caches on
+    read (no batch migration).
+  - See full architecture, schema, algorithms, and acceptance criteria in
+    the spec. Independent of #68 — see spec §1a for the relationship and
+    recommended ordering (#69 → #68 → #70 → #71).
+  - Files: `frontend/app.js`, `frontend/tests/js/app.test.mjs`,
+    `backend/tests/python/test_server_http.py`, `docs/ARCHITECTURE.md`,
+    `docs/EMBEDDINGS_GUIDE.md`.
+
+- [ ] **70. Whole-document analysis — adaptive full-document context + hierarchical map-reduce** *(L)*
+  - Depends on #69 (uses its chunk schema + neighbor links). Add prompt-budget
+    estimation (character-based, no tokenizer dependency) so a document that
+    fits the budget is sent to the model in full instead of being truncated
+    to a retrieval excerpt. Add a conservative, regex-based whole-document
+    intent classifier ("summarize this document", "review the whole file",
+    etc.) that routes matching queries — when the document doesn't fit the
+    budget — through a hierarchical map-reduce pipeline (batch-summarize
+    structural chunks, recursively reduce, then answer) instead of hybrid
+    retrieval. Narrow/ambiguous queries keep using hybrid retrieval by
+    default (never auto-triggers extra model calls).
+  - See `docs/specs/advanced-document-retrieval.md` §4.6–4.7 for the full
+    design (budget estimation, intent detection, map/reduce algorithm,
+    cancellation, progress UI).
+  - **Grooming note 2026-09-18:** DoR ✅ — the spec carries the ACs, so no `/spec` pass
+    is needed. Two things to re-confirm at `/build` time because #69 shipped after the
+    spec was written: (a) the budget estimator must read the **v2** chunk schema, and
+    (b) map-reduce issues *extra model calls*, so the spec's "never auto-triggers" rule
+    is the load-bearing safety property — keep its test.
+  - Files: `frontend/app.js`, `frontend/tests/js/app.test.mjs`,
+    `docs/ARCHITECTURE.md`, `docs/USER_GUIDE.md`.
+
+- [ ] **71. Optional reranking — bounded second-stage reranker over fused retrieval results** *(M)*
+  - Depends on #69 (reranks its fused seed set). Add an optional
+    `rerank(query, candidates, fetchFn)` hook, disabled by default, gated by
+    a new `appConfig.has_rerank` flag mirroring the existing
+    `has_embeddings` pattern. When configured, reorders only the bounded
+    fused top-N candidates (never the full corpus) via an
+    OpenAI-compatible HTTP call; falls back to the pre-rerank fused order on
+    any error, timeout, or malformed response — provably zero-regression
+    when unconfigured.
+  - See `docs/specs/advanced-document-retrieval.md` §4.8 for the full design.
+  - **Grooming note 2026-09-18:** DoR ✅ (spec carries the ACs). Verified **not started** —
+    no `rerank` symbol and no `has_rerank` flag exist anywhere in `backend/` or
+    `frontend/app.js`, so the premise still holds. Reminder: `has_rerank` must be added to
+    `/config` as a **non-secret boolean** only (the reranker URL/key stay server-side), and
+    the outbound call must pass through `is_safe_upstream_url()` like every other proxy hop.
+  - Files: `frontend/app.js`, `frontend/tests/js/app.test.mjs`,
+    `docs/ARCHITECTURE.md`.
+
+- [x] **72. Fix `security-scan.sh` memory-note false positives (check 4/4)** *(XS)* — Done (2026-09-17): tightened `sk-`/Bearer/`api_key=`/`password=` patterns to require bounded secret-shaped values, redacted finding output to `path:line: [REDACTED]`, and pointed `housekeep.md` at the canonical scan. Spec: docs/specs/memory-note-secret-scan-false-positives.md
+  - Discovered 2026-09-17 while closing #69. With `OBSIDIAN_VAULT_PATH` exported,
+    check 4/4 fails on ~30 existing notes because the patterns
+    `Bearer [A-Za-z0-9]`, `api_key\s*=`, and `password\s*=` match *prose* in the
+    per-note safety checklist line ("No API keys, Bearer tokens, or passwords in
+    this note") rather than any real secret. Net effect today: the check is
+    effectively never green locally, which trains people to ignore it. Direct
+    inspection also confirmed the `sk-[A-Za-z0-9]` pattern matches a benign
+    identifier substring (`task-1234567890123456`).
+  - Tighten the patterns so they require a secret-looking *value* (e.g.
+    `Bearer\s+[A-Za-z0-9._-]{16,}`, `api_key\s*=\s*\S{8,}`, a bounded `sk-`
+    token) while keeping the `sk-` prefix rule as-is in spirit. **Do not** simply
+    drop a pattern or re-scope the directory — that would weaken the gate.
+    Redact any detected value from the scanner's own diagnostic output so a real
+    finding is never echoed into logs.
+  - Verify by running `OBSIDIAN_VAULT_PATH=... ./scripts/security-scan.sh` and
+    confirming 4/4 passes with the existing notes untouched, and still fails on a
+    deliberately planted fake token.
+  - Files: `scripts/security-scan.sh`, `backend/tests/python/test_scripts.py`.
+
+
+### 🔧 Governance findings (Sprint 16 close — 2026-09-18)
+
+> Items below were identified by the Sprint 16 belated Governance Board audit.
+> Evidence snapshot includes Sprint 17 state (both sprints closed same day).
+
+> No items are blocking. See full report:
+> `Cline/scrum/governance/2026-09-18-090116-governance-report.md`
+
+- [x]  **73. Fix ARCHITECTURE.md drift: `/projects/<id>` path form + file_parser module** *(XS)*
+  — **Done (2026-09-18):** §3a inline comments + §4 cascade-delete header updated from
+  query-param form to path-style `/projects/<id>`; §3b DELETE row updated; §8 "6 focused"
+  → "7 focused"; `file_parser_handlers.py` / `FileParserHandlerMixin` row added to module
+  table and MRO block. Spec: (governance ADVISORY-01 — no separate spec doc).
+  - Files: `docs/ARCHITECTURE.md`, `CHANGELOG.md`.
+
+- [ ]  **74. Ratchet coverage thresholds + add self-advancement guard** *(S)*
+  — 📋 ADVISORY-02 (gov 2026-09-18). `.coverage-thresholds` has never been
+  ratcheted since creation (`bfd1f91`). **Live numbers re-measured 2026-09-18
+  during the grooming pass** (`./run-tests.sh --coverage`, exit 0):
+
+  | Metric | Live | Committed gate | Headroom | Proposed new gate |
+  |--------|------|----------------|----------|-------------------|
+  | `python_line` | 90% | 90 | 0 | **90** (leave — no headroom) |
+  | `python_branch` | 92.31% | 80 | +12.31 | **90** |
+  | `js_branch` | 75.19% | 70 | +5.19 | **75** |
+
+  Note the live js_branch figure has *drifted down* since the Sprint 16 audit
+  (77.75% → 75.19%), which is exactly the regression an un-ratcheted gate hides:
+  a 7.75-point cushion absorbed a 2.5-point drop silently. Ratchet to 75 to lock
+  in the current level, and leave `python_line` at 90 (it is exactly at the gate,
+  so raising it would fail immediately — that is the correct, honest state).
+  Add a `/loop` reminder or optional CI guard (INNOV-03) to prevent the gap recurring.
+  - **Acceptance criteria:**
+    1. `.coverage-thresholds` sets `python_branch=90` and `js_branch=75`; `python_line`
+       unchanged at 90.
+    2. `./run-tests.sh --coverage` still passes with the raised gates.
+    3. A ratchet reminder exists in `.clinerules/workflows/loop.md` done-criteria, OR
+       `scripts/ratchet-check.sh` gains an advisory "headroom ≥ 5 pts — consider
+       ratcheting" warning that does not fail the build.
+  - **⚠️ Sequencing dependency — do #76(a) first.** The measured numbers above include
+    `backend/tests/python/test_file_parser.py` (15 tests) and `test_migration.py`
+    (4 tests), which are still **untracked**. Ratcheting against coverage that only
+    exists in one working tree would hard-fail the first fresh clone or CI run.
+    Commit #76(a), re-measure, *then* set the gates.
+  - Files: `.coverage-thresholds`, `.clinerules/workflows/loop.md`, (optional)
+    `scripts/ratchet-check.sh` or `Makefile`.
+
+- [x]  **75. Document #69 retrieval features in USER_GUIDE.md** *(XS)*
+  — **Done (2026-09-18):** Added "How retrieval works" subsection to §7 of
+  `docs/USER_GUIDE.md` covering structure-aware chunking, hybrid lexical+semantic
+  retrieval via Reciprocal Rank Fusion, per-chunk semantic fallback, neighbour expansion,
+  chunk-citation provenance labels, and chunk-size as an upper bound. Spec: (governance
+  ADVISORY-03 — no separate spec doc).
+  - Files: `docs/USER_GUIDE.md`, `CHANGELOG.md`.
+
+- [x]  **76. Working-tree hygiene: commit/segregate zoo-migration WIP; remove scratch files** *(S)* — Done (2026-09-19): committed the load-bearing Sprint 16–18 app, tests, review criteria, completed specs, and governance records to `main`; corrected the false quality-gate orchestration contract and made current-run gate evidence mandatory.
+  — 📋 ADVISORY-04 (gov 2026-09-18); persisted & WORSENED at Sprint 17 audit (gov 2026-09-18-1159).
+  **🚨 SEVERITY RAISED TO BLOCKING 2026-09-18 — `main` is currently broken.**
+  Verified by cloning `main` HEAD (`7e25ee5`) to a scratch directory and running the gates:
+
+  | Gate on a fresh clone of `main` | Result |
+  |---|---|
+  | `./run-tests.sh` | **exit 1** — `Ran 361 tests … FAILED (failures=21, errors=11)` |
+  | `./scripts/quality-gate.sh` | **exit 1** — `Quality gate manifest not found at docs/quality/review-checks/README.md` |
+
+  Root cause: this is **not** a hygiene nit — the uncommitted tree is load-bearing.
+  `backend/server.py` in the working tree has `generate_embeddings()`; the *committed*
+  `server.py` does not, while the *committed* `test_server_branches.py` already tests it
+  (`AttributeError: module 'server' has no attribute 'generate_embeddings'`). Likewise
+  `scripts/quality-gate.sh` is committed but the `docs/quality/review-checks/` manifest it
+  reads is untracked. Anyone cloning this repo today gets a red build.
+  **This makes (a) the highest-priority item in the backlog, ahead of everything else.**
+  **Re-scoped 2026-09-18 (grooming pass).** Measured state: **69** `git status` entries
+  (~47 modified/deleted tracked + ~19 untracked paths) uncommitted since 2026-09-13, mixing
+  an in-flight Zoo-only migration with shipped Sprint 16/17/18 work.
+
+  **Decision on the Roo/Zoo experiment (ADVISORY-08):** *keep and track, do not delete.*
+  `plans/zoo-only-migration-plan.md` is a substantive approved architecture plan (source-of-truth
+  hierarchy, canonical 7-role RAIL model, MCP migration), and `scripts/delegation-policy-check.py`
+  already has a real test (`backend/tests/python/test_delegation_policy.py`). Deleting it would
+  discard designed work. It is therefore promoted to its own tracked item **#86** and moved to a
+  feature branch so it stops polluting `main`'s working tree.
+
+  Remediation checklist (each independently verifiable):
+  - [x] (a) Commit shipped Sprint 16/17/18 changes to `main`. Measured contents (2026-09-18):
+        **52** tracked modified/deleted paths (app code, tests, docs, `.clinerules/`, `.continue/`,
+        `backlog.md`, `CHANGELOG.md`, `.env.example`, `.gitignore`, `run-tests.sh`, and the
+        `implementation_plan.md` deletion) plus **9** untracked paths:
+        - `docs/quality/` — the review-check definitions that `docs/tooling/*.md` already references
+        - six `docs/specs/*.md` for already-Done items: `advanced-document-retrieval`,
+          `composer-attachment-tray`, `memory-note-secret-scan-false-positives`,
+          `move-chat-into-project`, `project-chunk-embeddings`, `project-detail-view`
+        - **two untracked test files** — `backend/tests/python/test_file_parser.py` (15 tests) and
+          `backend/tests/python/test_migration.py` (4 tests). Verified green in isolation
+          (`Ran 19 tests … OK`). These are real coverage that exists only on this machine:
+          until committed, `#74`'s measured `python_line` 90% is **not reproducible from a
+          fresh clone**, so (a) blocks `#74`.
+  - [x] (b) Move the Zoo/Roo migration WIP to a `feat/zoo-migration` branch and track it as **#86**
+        (`.roo/`, `.roomodes`, `plans/`, `scripts/find_delegations.py`,
+        `scripts/delegation-policy-check.py`, `backend/tests/python/test_delegation_policy.py`).
+        **Done (2026-09-18):** branch `feat/zoo-migration`, commit `08cfd61` — 26 files,
+        4216 insertions, no app code touched. `main` no longer carries the WIP.
+        *Side effect found and fixed:* `run-tests.sh` on `main` had been edited to invoke
+        `scripts/delegation-policy-check.py`, which only exists on the branch — so `main`'s
+        own test gate would have broken the moment the WIP moved. The invocation is now
+        a comment pointing at #86; the `backend/*.py` glob compile (a genuine improvement
+        over the hand-maintained module list) was kept.
+  - [x] (c) Delete empty/scratch files: `200` (0 bytes), `delegation_report.csv` (header row only,
+        no data), `docs/roo_audit_report.md`, `docs/roo_audit_report.html`. **Done (2026-09-18).**
+  - [x] (d) Remove tracked scratch file `implementation_plan.md` (`git rm`; committed in `3246e2a`,
+        superseded by `docs/specs/server-module-split.md`). **Done (2026-09-18).**
+  - [x] (e) Reconcile `.env.example` — add `EMBED_MODEL` and `EMBED_INPUT_TYPE` (both read by
+        `backend/server.py` lines 74–75 but absent from the example). **Done (2026-09-18).**
+        *Note:* `DEFAULT_MODEL=claude_3_haiku` on line 8 is also stale (#62 corrected the docs but
+        not this line) — fixed in the same pass.
+  - [x] (f) Add `.vscode/` to `.gitignore` (editor-local, currently untracked noise).
+        **Done (2026-09-18).**
+  - **Verification (2026-09-19):** `quality-gate.sh` exit 0; `run-tests.sh --coverage`
+    exit 0 (**431 Python tests**, server.py **94% lines / 92.31% branches**, JS branch
+    **75.19%**); `doc-consistency-check.sh` exit 0; `security-scan.sh` exit 0 (Bandit,
+    pip-audit, and memory scan clean; gitleaks unavailable and reported as skipped).
+    A fresh-checkout gate run after the final commit verifies `main` independently of the
+    original working tree.
+  - Files: `200`, `delegation_report.csv`, `docs/roo_audit_report.*`,
+    `implementation_plan.md`, `.env.example`, `.gitignore`, `.roo/`, `.roomodes`, `plans/`,
+    `scripts/find_delegations.py`, `scripts/delegation-policy-check.py`,
+    `backend/tests/python/test_delegation_policy.py`.
+
+- [x]  **77. Verify-and-close flaky proxy test isolation (#43 reopened)** *(S)*
+  — 📋 ADVISORY-05 (gov 2026-09-18); root cause FIXED at Sprint 17 audit (gov 2026-09-18-1159).
+  The doc-note mitigation accepted when closing #43 was insufficient, but the structural fix
+  has since landed: every proxy test class in `backend/tests/python/test_server_proxy.py` now
+  carries `setUpClass`/`tearDownClass` with `dict(server.CONFIG)` save/restore, exactly as
+  the advisory demanded. The Sprint 17 escalation-to-BLOCKING did NOT fire.
+  **Done (2026-09-18):** Verify-and-close completed during the backlog grooming pass. Ran
+  `PYTHONPATH=backend .venv/bin/python -m unittest backend.tests.python.test_server_proxy`
+  in isolation → **Ran 26 tests … OK**, no `server.CONFIG` state-bleed between the 11 test
+  classes. Confirmed all 11 classes carry the save/restore pair, and that
+  `ProxyFirstFrameNotDroppedTests` (the Sprint 18 second-pass regression guard for the
+  dropped-first-SSE-frame proxy bug that was the *real* cause of the perceived flakiness)
+  is present and green. Spec `docs/specs/flakey-proxy-test-isolation.md` Status → Done.
+  - Files: `backend/tests/python/test_server_proxy.py` (already fixed),
+    `docs/specs/flakey-proxy-test-isolation.md` (Status: Done).
+
+- [x]  **78. Fix `cli-check.sh --review` flag handling** *(XS)*
+  — **Done (2026-09-18):** `scripts/quality-gate.sh` committed. Updated forward-looking
+  QA-gate invocation instructions in `docs/tooling/cline.md`, `docs/tooling/continue.md`,
+  `.clinerules/workflows/review.md`, and `.clinerules/rail-pipeline.md` from
+  `./scripts/cli-check.sh --review` to `./scripts/quality-gate.sh`. `scripts/cli-check.sh`
+  is preserved as a compatibility wrapper. Historical CHANGELOG entries and
+  doc-drift-guard spec/test fixtures intentionally left unchanged to avoid breaking
+  the mandatory-gate guard test in `test_scripts.py`. Spec: (governance ADVISORY-06 —
+  no separate spec doc).
+  - Files: `scripts/quality-gate.sh` (committed), `docs/tooling/cline.md`,
+    `docs/tooling/continue.md`, `.clinerules/workflows/review.md`,
+    `.clinerules/rail-pipeline.md`, `CHANGELOG.md`.
+
+- [ ]  **79. Promote "redact grep-check output" to a permanent `/spec` requirement** *(S)*
+  — 💡 INNOV-01 (gov 2026-09-18-1159). Sprint 17 retro + Entry 010 in self-improvement log
+  identified that when writing any grep-based security check, the requirement to redact the
+  matched value from diagnostic output ("A finding reports only path:line, never the matched
+  value — the value is [REDACTED]") is typically only discovered mid-implementation rather than
+  being written into the spec from the start. Fix: add a standing note to
+  `.clinerules/workflows/spec.md` (or the security section of `docs/rail-pipeline.md`) that
+  any spec for a grep-based security check must include this as an explicit AC and a
+  hermetic test that confirms the matched value does NOT appear in the scanner's output.
+  - **Acceptance criteria (added 2026-09-18):**
+    1. `.clinerules/workflows/spec.md` contains a standing requirement that any spec for a
+       grep/regex-based security check must carry a "reports `path:line` only — the matched
+       value is `[REDACTED]`" acceptance criterion.
+    2. The same requirement names the mandatory hermetic test: plant a fake token in a temp
+       file, run the scanner, assert the scanner exits non-zero **and** that the planted
+       token string is absent from stdout+stderr.
+    3. The requirement is discoverable from the security section of `docs/rail-pipeline.md`
+       (either inline or via an explicit cross-reference), so it applies to both harnesses.
+    4. `./scripts/doc-consistency-check.sh` still passes (no stale-path/role-count/mandatory-gate
+       guard regressions from the new text).
+  - **Grooming note 2026-09-18:** verified not started — no `redact`/`REDACTED` text exists in
+    `.clinerules/workflows/spec.md`. Batch with **#85** (same file, both XS/S doc-only edits).
+  - Files: `.clinerules/workflows/spec.md` or `docs/rail-pipeline.md`, `CHANGELOG.md`.
+
+- [ ]  **82. Dedicated project settings modal + detail-view delete** *(S)*
+  — Descoped from #81 (2026-09-18). Two loose ends in the project detail view:
+  1. `_showProjectSettingsModal` re-uses the **create-project** modal and swaps its
+     submit handler at runtime. This is fragile (stale closures, title/button text
+     patching). Replace with a dedicated `#projectSettingsModal` in `index.html`
+     with its own submit handler.
+  2. The detail view has no **Delete project** action (PD-7) — delete is only
+     reachable from the sidebar ⋯ menu. Add a delete button that confirms and
+     returns to the empty chat state.
+  - **Acceptance criteria (added 2026-09-18):**
+    1. `index.html` contains a dedicated `#projectSettingsModal`; `_showProjectSettingsModal`
+       no longer mutates the create-project modal's title, button text, or submit handler.
+    2. Saving the settings modal `PUT`s the project and re-renders the detail view with the
+       new name/instructions without a page reload.
+    3. The detail view has a Delete action that asks for confirmation, `DELETE`s the project,
+       and lands the user on the empty chat state (never a blank canvas — the `PD-JS-6` class
+       of bug).
+    4. Cancelling the delete confirmation leaves the project intact.
+    5. `styles.css` edited → `?v=N` bumped in `index.html` (CSS cache-bust convention).
+    6. New behavior tests cover open→edit→save and open→delete→confirm;
+       `./run-tests.sh --coverage` passes.
+  - **Grooming note 2026-09-18:** verified `_showProjectSettingsModal` and `projectSettingsBtn`
+    already exist in `frontend/app.js`, so the scope above is accurate as written.
+    **Do this before #67** — #67 would otherwise have to extend the fragile modal reuse.
+  - Files: `frontend/index.html`, `frontend/app.js`, `frontend/styles.css`,
+    `frontend/tests/js/app.test.mjs`, `CHANGELOG.md`.
+
+- [ ]  **83. jsdom behavior tests for the project detail view** *(S)*
+  — Gap found in the Sprint 18 deep self-review (2026-09-18). `docs/specs/project-detail-view.md`
+  §5 claims PD-JS-1 asserts "`showProjectDetail` renders project name in detail view"
+  and PD-JS-2 asserts "＋ New chat calls blank-canvas path", but the shipped tests
+  only re-implement the `sessionsByProject` grouping and `chatSessions` filter
+  arithmetic — neither `showProjectDetail` nor `startNewProjectChat` is ever invoked.
+  The DOM behaviour is genuinely uncovered (the `PD-JS-6` regression it hid was found
+  by reading code, not by a failing test).
+  Fix: add `#projectDetailView` (+ `.empty-chat-area`, `#projectDetailName`,
+  `#projectDetailSessions`, `#projectNewChatBtn`) to the HTML skeleton in
+  `frontend/tests/js/app.behavior.test.mjs` and add behavior tests that
+  (a) `showProjectDetail` populates the name/instructions/session rows,
+  (b) clicking a session row restores it and switches back to chat view,
+  (c) `startNewProjectChat` leaves the empty state visible.
+  - **Acceptance criteria (added 2026-09-18):**
+    1. `frontend/tests/js/app.behavior.test.mjs`'s HTML skeleton gains `#projectDetailView`,
+       `.empty-chat-area`, `#projectDetailName`, `#projectDetailSessions`, `#projectNewChatBtn`.
+    2. A test **invokes `showProjectDetail`** (not a re-implementation of its arithmetic) and
+       asserts the rendered project name and one session row appear in the DOM.
+    3. A test clicks a rendered session row and asserts the view switches back to chat.
+    4. A test invokes `startNewProjectChat` and asserts `.empty-chat-area` is still visible
+       (the `PD-JS-6` blank-canvas regression class).
+    5. `docs/specs/project-detail-view.md` §5 is corrected so its PD-JS-1/PD-JS-2 descriptions
+       match what the tests actually assert.
+    6. `./run-tests.sh --coverage` passes; js_branch does not regress below its (post-#74) gate.
+  - Files: `frontend/tests/js/app.behavior.test.mjs`, `docs/specs/project-detail-view.md`,
+    `CHANGELOG.md`.
+
+- [ ]  **84. Refactor `appendMessage` to a turn-object signature** *(S)*
+  — Carried over from the Sprint 18 retro. `appendMessage(container, text, role, note,
+  images, attachments)` is at six positional parameters and every new turn-level
+  feature (attachments in Sprint 18) adds another. Callers already pass `''`/`[]`
+  placeholders for the middle arguments. Replace with
+  `appendMessage(container, { text, role, note, images, attachments })` and update all
+  call sites + `B-06`/`B-07` behavior tests.
+  - **Acceptance criteria (added 2026-09-18):**
+    1. `appendMessage` takes exactly two parameters: `container` and an options object.
+    2. Every call site in `frontend/app.js` is updated — `grep -n 'appendMessage(' frontend/app.js`
+       shows no remaining positional-placeholder call (`''`, `null`, `[]` filler args).
+    3. Omitted option keys behave exactly as the old positional defaults did (no note, no
+       images, no attachments) — covered by a test that passes only `{ text, role }`.
+    4. `B-06`/`B-07` and the attachment tests (`AT-JS-*`) are updated and green.
+    5. Pure refactor: no user-visible rendering change. `./run-tests.sh --coverage` passes with
+       no js_branch regression.
+  - Files: `frontend/app.js`, `frontend/tests/js/app.behavior.test.mjs`, `CHANGELOG.md`.
+
+- [ ]  **85. Pre-flight backlog-ID check in the `/spec` workflow** *(XS)*
+  — Sprint 18 assigned `#79`/`#80` to two items while `#79` was already taken by the
+  INNOV-01 grep-redaction item, so the attachment tray and detail view shipped with
+  wrong ids in code comments, spec titles, and the CHANGELOG (corrected 2026-09-18).
+  Fix: add an explicit step to `.clinerules/workflows/spec.md` Step 3 that runs
+  `grep -oE '^\- \[.\] +\*\*[0-9]+\.' backlog.md | grep -oE '[0-9]+' | sort -n | tail -3`
+  and requires the new id to be strictly greater than the highest existing one.
+  - **Acceptance criteria (added 2026-09-18):**
+    1. `.clinerules/workflows/spec.md` Step 3 includes the max-ID command verbatim and states
+       that the new id MUST be `max + 1`.
+    2. The step also requires updating the "highest-assigned ID is **N**" line in
+       `backlog.md`'s header note in the same turn (that line was 4 IDs stale until the
+       2026-09-18 grooming pass caught it).
+    3. The command is verified to work against the current `backlog.md` — it returns
+       `84 / 85 / 86` today.
+  - **Grooming note 2026-09-18:** the max-ID command was added to the `backlog.md` header note
+    during the grooming pass, so this item now only needs to wire it into the workflow.
+    Batch with **#79** (same file).
+  - Files: `.clinerules/workflows/spec.md`, `CHANGELOG.md`.
+
+
+- [ ]  **86. Zoo/Roo harness migration — track the untracked experiment** *(L)*
+  — Promoted from #76(b) during the 2026-09-18 grooming pass. A Zoo/Roo agent-harness
+  migration landed entirely untracked with no backlog item (gov 2026-09-18-1159 ADVISORY-08).
+  Rather than delete it, this item tracks it as real work: `plans/zoo-only-migration-plan.md`
+  is an approved architecture plan (Status: "Architecture approved for implementation handoff")
+  and `scripts/delegation-policy-check.py` already has a passing test.
+  - **Not yet DoR.** ⚠️ Needs `/spec` before any sprint pull: no user story, no acceptance
+    criteria, no size validation, and one unresolved design conflict called out in the plan
+    itself — the plan adopts a **7-role (0–6)** canonical RAIL model, which `docs/rail-pipeline.md`
+    and `scripts/doc-consistency-check.sh`'s role-count guard (#58) must agree on before any
+    doc edits land, or the guard will fail.
+  - Inventory to bring under version control (currently untracked on `main`):
+    `.roo/` (rules), `.roomodes`, `plans/zoo-only-migration-plan.md`,
+    `plans/working-tree-stabilization-plan.md`, `scripts/find_delegations.py`,
+    `scripts/delegation-policy-check.py`, `backend/tests/python/test_delegation_policy.py`.
+  - Also decide: whether the Zoo harness *replaces* or *coexists with* the Cline harness —
+    this determines whether `docs/ORGANIZATION.md`'s three-concern map becomes a four-concern
+    map or the Cline concern is retired.
+  - **Blocked-by:** #76(b) (move to `feat/zoo-migration` branch first, so `main` stays clean).
+  - Files: `.roo/`, `.roomodes`, `plans/`, `scripts/find_delegations.py`,
+    `scripts/delegation-policy-check.py`, `backend/tests/python/test_delegation_policy.py`,
+    `docs/rail-pipeline.md`, `docs/ORGANIZATION.md`, `scripts/doc-consistency-check.sh`.
+
+- [x]  **87. Restore `doc-consistency-check.sh` scan scope — the guard was silently narrowed** *(S)*
+       — Done (2026-09-18): resolved via **option (ii)** — kept the `.roo`-aware refactor but
+       restored per-guard tiered scopes so `.clinerules/` is scanned again (15 files vs 3).
+       Root cause was scope *conflation*, not narrowing: the committed guard used three
+       different scopes and the refactor collapsed them into one list. 6 new scope-regression
+       tests added; 44 tests pass; guard PASSes with real coverage. No `CHANGELOG`-recorded
+       violations remained — the "28 pre-existing violations" figure was stale (already fixed
+       by earlier sessions). Spec: n/a (bugfix — RAIL role 0 skipped).
+       **Follow-up 1 (2026-09-18):** `.continue/rules` added to `SCAN_DIRS` (15 → 29 files);
+       12 stale paths fixed across 7 Continue rule files; stale-phrase matcher widened to catch
+       slash-less `-s tests/python`; 3 new `TestContinueRulesInScanScope` tests.
+       **Follow-up 2 (2026-09-18):** `docs/` tier added — `docs/quality` in `SCAN_DIRS` plus a new
+       `SCAN_EXTRA_FILES` list (`README.md` + 9 top-level `docs/*.md`), taking the wide-guard scope
+       29 → **49 files** and putting the canonical `docs/rail-pipeline.md` under its own rules for
+       the first time. `docs/specs/` deliberately excluded as historical record (pinned by test).
+       Matcher rewritten as boundary-aware EREs, fixing a false positive (`tests/js-coverage.mjs`
+       flagged as stale) and a false negative (same-line stale+correct masked by `grep -vF`); both
+       verified by mutation. The long-documented-but-nonexistent
+       `backend/tests/python/test_env_example_sync.py` was **implemented** (AST walk of
+       `os.getenv` vs `.env.example`, 4 tests) rather than the 6 references across 4 live
+       policy files asserting it downgraded.
+       7 new guard tests; `test_scripts.py` 48 OK; full Python suite 429 OK; JS 158 pass;
+       `./run-tests.sh --coverage` PASS (ratchet: python_line 90/90, python_branch 92/80,
+       js_branch 75.19/70); `./scripts/quality-gate.sh` PASS; security scan 4/4.
+  — 🚨 **Found 2026-09-18 (grooming second pass). Must be resolved as part of #76(a), not after it.**
+  `scripts/doc-consistency-check.sh` is a *tracked, modified* file in the working tree, so
+  #76(a) would commit it as-is. Its uncommitted version **narrows the guard's own scan scope**:
+
+  | | Committed (`7e25ee5`) | Working tree |
+  |---|---|---|
+  | Enforcing files scanned | **15** (`AGENTS.md` + 12 × `.clinerules/*.md` + 2 × `docs/tooling/*.md`) | **3** (`AGENTS.md` + 2 × `docs/tooling/*.md`) |
+  | Scan dirs | `.clinerules`, `docs/tooling` | `.roo`, `docs/tooling` — and `.roo/` **does not exist on `main`** |
+  | Guard tests in `test_scripts.py` | 30 | 32, but **5 deleted** incl. `test_exits_nonzero_when_phrase_duplicated_in_cline_rules` and `test_fails_when_stale_path_in_clinerules` |
+
+  Demonstrated: plant a stale path *and* a missing `backend/…` reference in a
+  `.clinerules/*.md` file — the committed script reports 3 errors and exits non-zero; the
+  working-tree script exits **0**. All 12 live Cline rule/workflow files are currently
+  unguarded.
+
+  This is *intended* behaviour for the Zoo migration (the plan at
+  `plans/zoo-only-migration-plan.md` §1.2 explicitly says "no script may consume
+  `.continue` or `.clinerules`") — but that migration is parked on `feat/zoo-migration`
+  as **#86**, so shipping its guard-narrowing half onto `main` leaves `main` with the
+  weakened guard and none of the compensating Zoo structure. Restoring `.clinerules` to
+  the scan today would surface **28** pre-existing violations, which is exactly the
+  drift the guard exists to catch.
+
+  - **Acceptance criteria:**
+    1. Decide and record which of the three options applies, in `CHANGELOG.md`:
+       (i) revert `scripts/doc-consistency-check.sh` + `backend/tests/python/test_scripts.py`
+       to the committed versions and move the narrowing to `feat/zoo-migration`;
+       (ii) keep the narrowing but add `.clinerules` back alongside `.roo` so both are
+       scanned during coexistence; or (iii) accept the narrowing and open a follow-up to
+       fix the 28 violations.
+    2. Whichever option: the 5 deleted guard tests are either restored or explicitly
+       replaced by equivalent coverage — `git diff backend/tests/python/test_scripts.py`
+       shows no net loss of guard assertions.
+    3. `./scripts/doc-consistency-check.sh` exits 0 and `PYTHONPATH=backend
+       .venv/bin/python -m unittest backend.tests.python.test_scripts` passes.
+  - **Blocks:** #76(a) — do not commit the working tree until this is decided, or the
+    weakened guard ships to `main` silently.
+  - **Related:** #58 (guard origin), #59 (Guard 4 / referenced-path existence), #86 (Zoo migration).
+  - Files: `scripts/doc-consistency-check.sh`, `backend/tests/python/test_scripts.py`,
+    `scripts/cli-check.sh` (now an 8-line wrapper → `quality-gate.sh`), `CHANGELOG.md`.
+
 
 ### 🔧 Governance findings (Sprint 09 close — 2026-06-26)
 
 > Items below were identified by the inaugural Governance Board audit.
+
 > No items are blocking. See full report:
 > `Cline/scrum/governance/2026-06-26-233000-governance-report.md`
 
@@ -391,10 +945,9 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 ### Medium effort
 
-> ⚠️ **Parking lot — not yet refined to Definition of Ready.** Items #7–#15
-> lack user stories, acceptance criteria, test plans, and size estimates. They
-> must go through a Product Owner grooming pass (per
-> `.continue/checks/definition-of-ready.md`) before being pulled into a sprint.
+> ✅ **Grooming status (2026-09-18):** every item in this subsection (#7–#12) is
+> **Done**. The parking-lot warning that used to cover "#7–#15" now applies only
+> to #13–#15 in *Larger / later* below.
 
 - [x] **7. Real embeddings for RAG** *(M)* — Done (2026-06-26): `getRelevantChunks` now async + embedding-aware; cosine re-ranking via `/embeddings` when `EMBED_MODEL` set and `semanticSearchEnabled` toggle on; graceful keyword fallback on error/toggle-off; 5 JS tests (JS-1…JS-5) all green; coverage gates pass.
        Spec: docs/specs/embeddings-rag.md
@@ -449,15 +1002,37 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 ### Larger / later
 
-> ⚠️ **Parking lot — not yet refined to Definition of Ready** (same note as
-> above applies; #27 is the exception — it is fully groomed).
+> ⚠️ **Parking lot — not yet refined to Definition of Ready.** #13, #14, #15 and
+> #57 have one-line descriptions only: no user stories, acceptance criteria, test
+> plans, or validated size estimates. They must pass
+> [`docs/quality/review-checks/definition-of-ready.md`](docs/quality/review-checks/definition-of-ready.md)
+> via a `/spec` pass before any sprint pull. (#27 is the exception in this
+> subsection — it was fully groomed and is Done.)
 
 - [ ] **13. Custom user-defined tools** *(L)*
   - Let users register their own tool definitions.
+  - **Not yet DoR.** ⚠️ Needs `/spec`. Security is the gating concern, not the UI:
+    a user-supplied tool definition is an arbitrary outbound HTTP target, so this
+    must go through the same SSRF guard (`is_safe_upstream_url()`) as the proxy, and
+    must not become a path for exfiltrating the server-side API key. Decide in `/spec`
+    whether tools are *declarative-only* (name/description/JSON-schema, executed by
+    an existing allow-listed handler) or genuinely user-defined endpoints — the former
+    is a far smaller and safer slice and is the recommended first cut.
 
 - [ ] **14. Model comparison (side-by-side)** *(L)*
+  - Run the same prompt against two or more models and show the responses side by side.
+  - **Not yet DoR.** ⚠️ Needs `/spec`. Cost/latency multiplies by the number of panes,
+    and it collides with the single-`conversationHistory` assumption throughout
+    `app.js` (plus `archiveCurrentSession`, export/import, and the reasoning-block
+    restore paths). Consider a read-only "compare" scratch mode that is never
+    persisted as a session, as the smallest viable slice.
 
 - [ ] **15. Voice input / TTS output** *(L)*
+  - Dictate a message and have responses read aloud.
+  - **Not yet DoR.** ⚠️ Needs `/spec`. Feasible with zero new runtime deps via the
+    browser `SpeechRecognition` / `SpeechSynthesis` Web APIs — confirm that before
+    scoping, because any cloud STT/TTS provider would instead need a new proxied
+    endpoint plus a `has_*` config flag. Accessibility review (#21 axis) applies.
 
 - [x] **27. Projects (ChatGPT-style workspaces) — Slice 1: CRUD + sidebar sections + `currentProjectId` plumbing** *(L)* — Done (2026-06-30): `/projects` GET/POST/PUT/DELETE; `_safe_project_id()` traversal guard; `_post_new_chat_session` stamps `projectId`; `currentProjectId` state in `app.js`; sectioned/collapsible sidebar (Pinned/Projects/Chats); create/rename/pin/delete project wiring; `has_projects` in `/config`; 16 integration tests + 6 JS tests green; security scan clean; USER_GUIDE §8 updated.
        Spec: docs/specs/projects-workspaces-slice1.md
@@ -758,6 +1333,19 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 ### UI/UX polish
 
+- [x] **80. Composer attachment tray** *(M)* — Done (2026-09-18): Attachment chip
+  tray added above the composer; additive uploads; per-chip ✕ remove; PDF/DOCX routed
+  through `/extract-text`; provenance record persisted on user turn; sidebar
+  `#uploadedFilesDisplay` retired. `styles.css?v=32`. 11 AT-JS-* tests green
+  (8 in-sprint + AT-JS-9…11 covering the shared `extractTextServerSide` helper).
+  Spec: docs/specs/composer-attachment-tray.md
+
+- [x] **81. Project detail view** *(M)* — Done (2026-09-18): Clicking a project opens
+  a detail view (name, instructions, chat list, ＋ New chat, ⚙ Settings); project chats
+  visible in sidebar sub-list; `GET /sessions?projectId=` backend filter (traversal-safe).
+  6 PD-JS-* + 3 PD-PY-* tests green (PD-JS-6 added post-sprint for the blank-canvas
+  regression in `_showChatView`). Spec: docs/specs/project-detail-view.md
+
 - [x] **33. UI layout polish — assistant metadata below response + user bubble column layout** *(S)*
   - Two small layout improvements to match modern chat UI conventions:
     1. **Assistant metadata + Regenerate below response** — the "Context7 + Memory: …
@@ -913,8 +1501,20 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
       Spec: docs/specs/ref-path-existence-guard.md
 
 
-- [~] **60. UX & UI SME — elevate Front-End Design axis with explicit two-discipline split** *(S)* — spec: docs/specs/ux-ui-sme-role.md
+- [x] **60. UX & UI SME — elevate Front-End Design axis with explicit two-discipline split** *(S)* — Done (2026-07-20): Elevated the "Front-End Design (UI/UX)" quality axis into a formal UX & UI SME with separated sub-disciplines (UX: user-need framing, flow mapping, IA placement, friction audit; UI: unchanged vanilla CSS/token/WCAG/CSS-bump rules) across `.clinerules/workflows/sme-frontend.md`, `docs/rail-pipeline.md` §3, `.continue/rules/ui-ux-design.md`, and `docs/quality/review-checks/ui-ux-review.md` (3 new UX failing criteria). All AC-1…AC-6 verified present on disk.
+      Spec: docs/specs/ux-ui-sme-role.md
 - [ ] **57. Multi-server MCP connectors** *(L)* — Generalize `mcp_handlers.py` into a configurable connector registry that supports multiple named MCP servers, per-server tool allowlists, and CRUD management endpoints. Builds on the isolation achieved by #45.
+  - ⚠️ **Parking lot — not yet DoR.** Needs `/spec`: no user story, no acceptance criteria,
+    no test plan. **Grooming note 2026-09-18:** this item is *stranded* — it is the only
+    `[ ]` entry inside the Completed/Archive section, so it is effectively invisible when
+    picking work. It is now also listed in the consolidated parking lot in the Obsidian
+    Scrum mirror. Leaving it in place (rather than moving it) to preserve the surrounding
+    archive ordering, but the "Ready to pull next" table at the top of this file is the
+    authoritative queue.
+  - Design questions for `/spec`: per-server credentials must stay server-side (never in
+    `/config`); each configured server's base URL must pass `is_safe_upstream_url()`; and
+    a per-server tool allow-list has to compose with the existing `getEnabledTools()` gating
+    rather than bypass it.
 
 - [x] **29. Startup API key auth probe warning**
   - Fire a non-blocking probe at server startup that emits a loud `[WARNING]`

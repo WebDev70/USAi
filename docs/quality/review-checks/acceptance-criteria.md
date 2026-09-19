@@ -5,8 +5,8 @@ description: Each stated acceptance criterion for a feature is satisfied and ver
 
 Review whether this **feature / user-facing change** actually meets its
 **acceptance criteria**, per the Product Owner role
-(`.continue/rules/product-owner.md`). This is the *product* gate — engineering green
-(tests + other `/check`s) is necessary but **not sufficient**.
+(see `docs/rail-pipeline.md`). This is the *product* gate — engineering green
+(tests + other checks) is necessary but **not sufficient**.
 
 Apply this check only to **features / non-trivial user-facing work**. For pure
 bugfixes (covered by a regression test), refactors, chores, and docs-only changes,

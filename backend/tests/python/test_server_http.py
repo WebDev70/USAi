@@ -18,14 +18,15 @@ import sys
 import tempfile
 import threading
 import unittest
+import zipfile
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
-# Try to import optional deps for PDF/DOCX tests; skip tests if they are not installed.
+# pypdf is the only third-party runtime dep involved in extraction (DOCX is
+# handled with the stdlib), so it is the only import we need to probe for.
 try:
-    from docx import Document
     import pypdf  # noqa: F401  (import proves the backend dep is present so the test runs)
     _EXTRACT_TEST_DEPS_INSTALLED = True
 except ImportError:
@@ -83,9 +84,41 @@ def _create_dummy_pdf(path, text):
 
 
 def _create_dummy_docx(path, text):
-    doc = Document()
-    doc.add_paragraph(text)
-    doc.save(path)
+    """Write a minimal, spec-valid .docx containing a single paragraph.
+
+    Built with stdlib ``zipfile`` rather than python-docx: a .docx is just a ZIP
+    of XML parts, and the backend now parses it the same way, so the test has no
+    third-party dependency either.
+    """
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        '</Types>'
+    )
+    root_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+        'Target="word/document.xml"/>'
+        '</Relationships>'
+    )
+    # Escape the text so a caller passing &, <, or > still produces valid XML.
+    safe_text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    document = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'<w:body><w:p><w:r><w:t>{safe_text}</w:t></w:r></w:p></w:body>'
+        '</w:document>'
+    )
+
+    with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('[Content_Types].xml', content_types)
+        archive.writestr('_rels/.rels', root_rels)
+        archive.writestr('word/document.xml', document)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT / 'backend'))
@@ -1182,11 +1215,10 @@ class FileExtractionAndEmbeddingTests(ServerHTTPTestBase):
         except HTTPError as err:
             return err.code, json.loads(err.read().decode('utf-8'))
 
-    # @unittest.skipIf(not _EXTRACT_TEST_DEPS_INSTALLED, "pypdf or python-docx not installed")
     def test_fe1_extract_text_from_pdf_and_docx(self):
         """FE-1: POST /extract-text returns plain text for PDF and DOCX."""
         if not _EXTRACT_TEST_DEPS_INSTALLED:
-            self.skipTest("pypdf or python-docx not installed")
+            self.skipTest("pypdf not installed")
 
         pdf_path = Path(self._tmp.name) / 'test.pdf'
         docx_path = Path(self._tmp.name) / 'test.docx'
@@ -1265,6 +1297,7 @@ class FileExtractionAndEmbeddingTests(ServerHTTPTestBase):
         _, chunk_data = _request('GET', self.url(f'/chunk-cache?projectId={pid}&file=embed_me.txt'))
         self.assertIsNotNone(chunk_data['chunks'][0]['embedding'])
         self.assertIsInstance(chunk_data['chunks'][0]['embedding'], list)
+        self.assertEqual(chunk_data['chunks'][0]['embedModel'], server.CONFIG['embed_model'])
 
     def test_emb3_full_project_upload_round_trip(self):
         """EMB-3: full project file upload and embedding generation round trip."""
@@ -1276,6 +1309,16 @@ class FileExtractionAndEmbeddingTests(ServerHTTPTestBase):
 
         class FakeUpstream(BaseHTTPRequestHandler):
             def do_POST(self):
+                # Drain the request body before responding. Without this the
+                # handler can close the connection while the proxy is still
+                # writing, which surfaces as an intermittent
+                # "[Errno 54] Connection reset by peer" and a flaky 500.
+                try:
+                    length = int(self.headers.get('Content-Length', 0))
+                except (TypeError, ValueError):
+                    length = 0
+                if length:
+                    self.rfile.read(length)
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
@@ -1414,5 +1457,242 @@ class FileExtractionAndEmbeddingTests(ServerHTTPTestBase):
             server.CONFIG['_test_allow_loopback'] = orig_allow_loopback
 
 
+class RetrievalSchemaIntegrationTests(ServerHTTPTestBase):
+    """INT-1, INT-3 (#69): the chunk-cache endpoints must carry the v2 retrieval
+    schema through unchanged and must not damage legacy (v1) cache files.
+
+    Chunking/ranking is client-side, so the server's contract is purely
+    pass-through fidelity: whatever structural metadata `chunkTextStructured`
+    emits has to survive a POST → GET round trip (for both per-chat/global and
+    project caches, which `getRelevantChunks` merges), and `/generate-embeddings`
+    must add vectors to a legacy file without dropping its original fields.
+    """
+
+    _PID = 'proj_retrieval_schema_1'
+
+    def tearDown(self):
+        import shutil as _shutil
+        _shutil.rmtree(server.PROJECT_CACHE_DIR / self._PID, ignore_errors=True)
+        for p in server.CACHE_DIR.glob('int1_*.json'):
+            p.unlink(missing_ok=True)
+        for p in server.CACHE_DIR.glob('int3_*.json'):
+            p.unlink(missing_ok=True)
+        super().tearDown()
+
+    @staticmethod
+    def _structural_chunk(chunk_id, ordinal, text, heading_path, prev_id, next_id):
+        """Build one chunk in the shape chunkTextStructured() emits (schema v2)."""
+        return {
+            'chunkId': chunk_id,
+            'ordinal': ordinal,
+            'text': text,
+            'startLine': ordinal * 10 + 1,
+            'endLine': ordinal * 10 + 10,
+            'headingPath': heading_path,
+            'sectionType': 'prose',
+            'previousChunkId': prev_id,
+            'nextChunkId': next_id,
+            'embedding': None,
+            'embedModel': None,
+        }
+
+    def test_int1_structural_schema_round_trips_for_global_and_project_caches(self):
+        """INT-1: v2 structural metadata survives POST → GET for both cache scopes."""
+        global_chunks = [
+            self._structural_chunk(0, 0, 'per-chat intro', ['Intro'], None, 1),
+            self._structural_chunk(1, 1, 'per-chat body', ['Intro', 'Detail'], 0, None),
+        ]
+        project_chunks = [
+            self._structural_chunk(0, 0, 'project policy', ['Policy'], None, None),
+        ]
+
+        status, _ = _request('POST', self.url('/chunk-cache'),
+                             {'filename': 'int1_chat.txt', 'schemaVersion': 2,
+                              'chunks': global_chunks})
+        self.assertEqual(status, 200)
+        status, _ = _request('POST', self.url(f'/chunk-cache?projectId={self._PID}'),
+                             {'filename': 'int1_project.txt', 'schemaVersion': 2,
+                              'chunks': project_chunks})
+        self.assertEqual(status, 200)
+
+        status, chat_body = _request('GET', self.url('/chunk-cache?file=int1_chat.txt'))
+        self.assertEqual(status, 200)
+        self.assertEqual(chat_body.get('schemaVersion'), 2)
+        self.assertEqual(chat_body['chunks'], global_chunks,
+                         'global cache must return structural chunks byte-for-byte')
+
+        status, proj_body = _request(
+            'GET', self.url(f'/chunk-cache?projectId={self._PID}&file=int1_project.txt'))
+        self.assertEqual(status, 200)
+        self.assertEqual(proj_body.get('schemaVersion'), 2)
+        self.assertEqual(proj_body['chunks'], project_chunks,
+                         'project cache must return structural chunks byte-for-byte')
+
+        # Both scopes together are what the client merges before ranking, so the
+        # neighbor links from each file must still be independently intact.
+        merged = chat_body['chunks'] + proj_body['chunks']
+        self.assertEqual([c['nextChunkId'] for c in merged], [1, None, None])
+        self.assertEqual([c['headingPath'] for c in merged],
+                         [['Intro'], ['Intro', 'Detail'], ['Policy']])
+
+    @patch('server.urlopen')
+    def test_int3_legacy_cache_round_trips_through_generate_embeddings(self, mock_urlopen):
+        """INT-3: a legacy (v1) cache file keeps its fields and gains embedModel."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            'data': [{'embedding': [0.4, 0.5, 0.6], 'index': 0}]
+        }).encode('utf-8')
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        # A pre-#69 file: no schemaVersion, no ordinal/headingPath/neighbor links.
+        legacy = {
+            'filename': 'int3_legacy.txt',
+            'chunks': [{'chunkId': 0, 'text': 'legacy chunk text', 'fileName': 'int3_legacy.txt'}],
+            'savedAt': '2026-01-01T00:00:00',
+        }
+        (server.CACHE_DIR / 'int3_legacy.txt.json').write_text(
+            json.dumps(legacy), encoding='utf-8')
+
+        status, body = _request('GET', self.url('/chunk-cache?file=int3_legacy.txt'))
+        self.assertEqual(status, 200)
+        self.assertNotIn('schemaVersion', body,
+                         'server must not rewrite legacy files on read')
+
+        status, body = _request('POST', self.url('/generate-embeddings'),
+                                {'filename': 'int3_legacy.txt', 'chunkIds': [0]})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body.get('embedded'), 1)
+
+        status, body = _request('GET', self.url('/chunk-cache?file=int3_legacy.txt'))
+        self.assertEqual(status, 200)
+        chunk = body['chunks'][0]
+        # Original fields untouched, embedding + model stamped on.
+        self.assertEqual(chunk['text'], 'legacy chunk text')
+        self.assertEqual(chunk['fileName'], 'int3_legacy.txt')
+        self.assertEqual(chunk['embedding'], [0.4, 0.5, 0.6])
+        self.assertEqual(chunk['embedModel'], server.CONFIG['embed_model'])
+        self.assertEqual(body['savedAt'], '2026-01-01T00:00:00')
+
+
+
+class MoveSessionTests(ProjectsCRUDTests):
+    """MV-1…MV-5: integration tests for PATCH /sessions/<id> (move chat into project)."""
+
+    def setUp(self):
+        super().setUp()
+        # Clear sessions dir before each test for isolation.
+        for f in server.SESSIONS_DIR.glob('*.json'):
+            f.unlink(missing_ok=True)
+
+    def _make_session(self, sess_id, project_id=None):
+        """Write a minimal session file and return its id."""
+        import json as _json
+        data = {
+            'id': sess_id,
+            'title': f'Test session {sess_id}',
+            'turns': [],
+            'createdAt': '2026-09-18T00:00:00',
+        }
+        if project_id is not None:
+            data['projectId'] = project_id
+        (server.SESSIONS_DIR / f'{sess_id}.json').write_text(
+            _json.dumps(data), encoding='utf-8'
+        )
+        return sess_id
+
+    def test_mv1_patch_session_assigns_project(self):
+        """MV-1: PATCH /sessions/<id> with valid projectId updates the session file."""
+        import json as _json
+        _, proj = _request('POST', self.url('/projects'), {'name': 'MV1 Project'})
+        pid = proj['id']
+        sess_id = self._make_session('session_mv1_test')
+
+        status, body = _request('PATCH', self.url(f'/sessions/{sess_id}'),
+                                {'projectId': pid})
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body.get('ok'))
+
+        # Verify the session file was updated on disk.
+        data = _json.loads(
+            (server.SESSIONS_DIR / f'{sess_id}.json').read_text(encoding='utf-8')
+        )
+        self.assertEqual(data['projectId'], pid)
+
+    def test_mv2_patch_session_clears_project_with_null(self):
+        """MV-2: PATCH /sessions/<id> with projectId=null clears the assignment."""
+        import json as _json
+        _, proj = _request('POST', self.url('/projects'), {'name': 'MV2 Project'})
+        pid = proj['id']
+        sess_id = self._make_session('session_mv2_test', project_id=pid)
+
+        status, body = _request('PATCH', self.url(f'/sessions/{sess_id}'),
+                                {'projectId': None})
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body.get('ok'))
+
+        data = _json.loads(
+            (server.SESSIONS_DIR / f'{sess_id}.json').read_text(encoding='utf-8')
+        )
+        self.assertIsNone(data.get('projectId'))
+
+    def test_mv3_patch_session_traversal_project_id_returns_400(self):
+        """MV-3: PATCH with path-traversal in projectId → 400."""
+        sess_id = self._make_session('session_mv3_test')
+        status, body = _request('PATCH', self.url(f'/sessions/{sess_id}'),
+                                {'projectId': '../evil'})
+        self.assertEqual(status, 400, body)
+        self.assertIn('error', body)
+
+    def test_mv4_patch_session_not_found_returns_404(self):
+        """MV-4: PATCH for a session that doesn't exist → 404."""
+        status, body = _request('PATCH', self.url('/sessions/session_nonexistent_xyz'),
+                                {'projectId': None})
+        self.assertEqual(status, 404, body)
+
+    def test_mv5_patch_session_traversal_session_id_returns_400(self):
+        """MV-5: Path-traversal in session id URL segment → 400."""
+        status, body = _request('PATCH', self.url('/sessions/../../etc/passwd'),
+                                {'projectId': None})
+        self.assertEqual(status, 400, body)
+
+
 if __name__ == '__main__':
     unittest.main()
+
+
+class ProjectDetailSessionFilterTests(ServerHTTPTestBase):
+    """PD-PY-1 … PD-PY-3: GET /sessions?projectId= backend filter (#81)."""
+
+    def _make_session(self, sid, project_id=None):
+        payload = {'id': sid, 'title': f'Chat {sid}', 'turns': []}
+        if project_id is not None:
+            payload['projectId'] = project_id
+        status, body = _request('POST', self.url('/sessions'), payload)
+        self.assertEqual(status, 200, f'session create failed: {body}')
+        return sid
+
+    def test_pd_py_1_filter_returns_only_matching_sessions(self):
+        """PD-PY-1: GET /sessions?projectId=X returns only that project's sessions."""
+        pid = 'proj_pd_test_01'
+        s1 = self._make_session('sess_pd_01a', project_id=pid)
+        s2 = self._make_session('sess_pd_01b', project_id=pid)
+        s3 = self._make_session('sess_pd_01c', project_id='proj_other')
+
+        status, listing = _request('GET', self.url(f'/sessions?projectId={pid}'))
+        self.assertEqual(status, 200)
+        ids = [s['id'] for s in listing]
+        self.assertIn(s1, ids, f'{s1} must appear in filter results')
+        self.assertIn(s2, ids, f'{s2} must appear in filter results')
+        self.assertNotIn(s3, ids, f'{s3} from other project must NOT appear')
+
+    def test_pd_py_2_traversal_projectid_returns_400(self):
+        """PD-PY-2: GET /sessions?projectId=../evil → 400."""
+        status, body = _request('GET', self.url('/sessions?projectId=../evil'))
+        self.assertEqual(status, 400, f'expected 400 for traversal, got {status}: {body}')
+        self.assertIn('error', body)
+
+    def test_pd_py_3_nonexistent_projectid_returns_200_empty(self):
+        """PD-PY-3: GET /sessions?projectId=nonexistent → 200 []."""
+        status, listing = _request('GET', self.url('/sessions?projectId=proj_does_not_exist_xyz'))
+        self.assertEqual(status, 200)
+        self.assertEqual(listing, [], f'expected empty list, got: {listing}')

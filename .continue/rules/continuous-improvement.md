@@ -13,10 +13,10 @@ better over time. Full strategy: `docs/rail-pipeline.md`.
 1. **Brief retrospective.** What went well, what failed QA (and why), what was
    missed on the first pass, and any friction in the workflow.
 2. **Harvest recurring issues → propose automation.** If QA Review or manual review
-   keeps catching the same class of problem, **propose** a new check
-   (`.continue/checks/*.md`) or rule (`.continue/rules/*.md`) that would catch it
-   automatically next time. (This is a documented Continue pattern: turn repeated
-   review comments into checks.)
+   keeps catching the same class of problem, **propose** a new review criterion
+   (`docs/quality/review-checks/*.md`) or rule (`.continue/rules/*.md`) that would
+   catch it automatically next time. (This is a documented Continue pattern: turn
+   repeated review comments into checks.)
 3. **Propose coverage/quality follow-ups.** Note gaps in tests or docs and suggest
    concrete `backlog.md` items.
 4. **Record a learning note to Obsidian.** Append a concise note to

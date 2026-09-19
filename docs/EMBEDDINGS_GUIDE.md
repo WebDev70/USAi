@@ -191,7 +191,7 @@ appears in the **File Uploads** section of the settings sidebar.
 
 ```mermaid
 flowchart TD
-    A([User uploads file]) --> B[Split into chunks\ne.g. 200 lines each]
+    A([User uploads file]) --> B[Split on structure\nheadings / paragraphs /\ncode fences\nmax N lines per chunk]
     B --> C{Semantic search\ntoggle ON?}
     C -->|No| D[Store chunks\nno vectors]
     C -->|Yes| E[Batch chunks per file\nPOST /embeddings]
@@ -203,27 +203,33 @@ flowchart TD
     H --> I
 
     I --> J([User sends a message])
-    J --> K{Has embedded\nchunks?}
-    K -->|No| L[Keyword scoring\nall chunks]
-    K -->|Yes| M[Embed the query\nPOST /embeddings\ninput_type=search_query]
-    M --> N{Query embed\nsucceeds?}
-    N -->|No| L
-    N -->|Yes| O[Cosine similarity\nquery vec vs all chunks]
-    L --> P[Top-K chunks\nadded to prompt]
-    O --> P
-    P --> Q([AI answers with\nfile context])
+    J --> K[Score EVERY chunk\nby keywords]
+    K --> L{Any chunk has a\nmatching embedding?}
+    L -->|No| M[Keyword ranking only]
+    L -->|Yes| N[Embed the query\nPOST /embeddings\ninput_type=search_query]
+    N --> O{Query embed\nsucceeds?}
+    O -->|No| M
+    O -->|Yes| P[Cosine similarity\nfor embedded chunks only]
+    P --> Q[Reciprocal Rank Fusion\nkeyword rank + semantic rank]
+    M --> R[Top-K seeds]
+    Q --> R
+    R --> S[Add adjacent chunks\nprev / next in same file]
+    S --> T([AI answers with\nfile context])
 ```
 
 ### Key points in the flow
 
 | Step | Detail |
 |------|--------|
-| **Chunking** | Each text file is split into overlapping chunks (default: 200 lines). Size is configurable in the File Uploads panel. |
+| **Chunking** | Each text file is split on structural boundaries — Markdown headings, blank-line paragraphs, and whole fenced code blocks (never split mid-fence). The chunk-size setting (default 200 lines, configurable 50–1000 in the File Uploads panel) is an **upper bound** per chunk, not an exact size; only an oversized single section falls back to a bounded line window. |
 | **Batch embed on upload** | All chunks for one file are sent in a single `/embeddings` call (batched in groups of ≤ 96 texts to stay within model limits). |
-| **Cache** | Chunk text + vector + `embedModel` name are saved to a server-side cache. Re-opening the same session does **not** re-embed. |
+| **Cache** | Chunk text + vector + `embedModel` name + structural metadata (`ordinal`, `headingPath`, line range, neighbour links) are saved to a server-side cache. Re-opening the same session does **not** re-embed. Older cache files without this metadata still load — they are normalized in memory on read. |
 | **Query embed** | At query time, your message is sent to `/embeddings` with `input_type=search_query` — a different signal that tells Cohere-style models this is a question, not a document. |
-| **Cosine ranking** | Each chunk gets a score from −1 to 1; the top-K (default 5) are injected into the prompt. |
-| **Automatic fallback** | Any failure (API down, no vectors, toggle off) silently drops back to keyword scoring. You always get an answer. |
+| **Per-chunk fallback** | Every chunk is always scored by keywords. Chunks that have a stored vector **from the currently configured model** are additionally scored by cosine similarity. A chunk with no vector (or a vector from a different `embedModel`) simply ranks on keywords alone — it no longer disables semantic ranking for the whole set. |
+| **Rank fusion** | The keyword ranking and the semantic ranking are merged with Reciprocal Rank Fusion (`1/(60+rank)` summed per chunk), so raw keyword counts are never compared directly against cosine scores. Ties break deterministically by chunk order then filename. |
+| **Neighbour expansion** | Each top-ranked chunk brings in its immediate previous/next chunk from the same file, so context split by a chunk boundary isn't lost. Results are de-duplicated, re-ordered into source order, labelled with their heading path and line range, and the 120,000-character context budget is enforced by dropping the lowest-scoring group whole (never truncating mid-chunk). |
+| **Automatic fallback** | Any failure (API down, no vectors, toggle off) silently drops back to keyword ranking. You always get an answer. |
+
 
 ---
 

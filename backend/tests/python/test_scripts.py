@@ -373,25 +373,12 @@ def _setup_convention_tree(tmp_dir, canonical_content, extra_files):
 
     tmp_dir/
       docs/rail-pipeline.md          ← canonical source (always written)
-      .clinerules/rail-pipeline.md   ← always contains the canonical role phrase
       <extra_files>                   ← files that may duplicate conventions
     """
     canonical_path = os.path.join(tmp_dir, "docs", "rail-pipeline.md")
     os.makedirs(os.path.dirname(canonical_path), exist_ok=True)
     with open(canonical_path, "w") as fh:
         fh.write(canonical_content)
-
-    # Always create a .clinerules/rail-pipeline.md with the canonical phrase so
-    # Guard 2 Sub-check A passes (unless the caller overrides it via extra_files).
-    clinerules_path = os.path.join(tmp_dir, ".clinerules", "rail-pipeline.md")
-    os.makedirs(os.path.dirname(clinerules_path), exist_ok=True)
-    if ".clinerules/rail-pipeline.md" not in extra_files:
-        with open(clinerules_path, "w") as fh:
-            fh.write(
-                "# RAIL — Cline always-on rule\n"
-                "The RAIL roles (0-6) apply in order.\n"
-                "See docs/rail-pipeline.md for the canonical convention list.\n"
-            )
 
     for rel_path, content in extra_files.items():
         abs_path = os.path.join(tmp_dir, rel_path)
@@ -413,6 +400,7 @@ class TestDocConsistencyPass(unittest.TestCase):
                 # Canonical source contains the convention phrases
                 canonical_content=textwrap.dedent("""\
                     # RAIL Pipeline
+                    The RAIL roles (0-6) apply in order.
                     ## 3. Conventions
                     - CSS changes bump `styles.css?v=N` in index.html.
                     - SSRF guard: `is_safe_upstream_url` in server.py.
@@ -426,15 +414,9 @@ class TestDocConsistencyPass(unittest.TestCase):
                         # AGENTS
                         See [coding conventions](docs/rail-pipeline.md#3-conventions).
                     """),
-                    "docs/tooling/cline.md": textwrap.dedent("""\
-                        # Cline reference
+                    "docs/tooling/some-other-doc.md": textwrap.dedent("""\
+                        # Some other doc
                         See [coding conventions](../rail-pipeline.md#3-conventions).
-                    """),
-                    # Must include the canonical role phrase or Guard 2 fires
-                    ".clinerules/rail-pipeline.md": textwrap.dedent("""\
-                        # RAIL
-                        The RAIL roles (0-6) apply in order.
-                        See docs/rail-pipeline.md for the convention list.
                     """),
                 },
             )
@@ -480,9 +462,9 @@ class TestDocConsistencyFail(unittest.TestCase):
                 msg=f"Expected offending phrase in output:\n{out}",
             )
 
-    def test_exits_nonzero_when_phrase_duplicated_in_cline_rules(self):
+    def test_exits_nonzero_when_phrase_duplicated_in_other_doc(self):
         """
-        .clinerules/rail-pipeline.md restates 'is_safe_upstream_url' verbatim → fail.
+        docs/tooling/other.md restates 'is_safe_upstream_url' verbatim → fail.
         """
         with tempfile.TemporaryDirectory() as tmp:
             _setup_convention_tree(
@@ -493,8 +475,8 @@ class TestDocConsistencyFail(unittest.TestCase):
                     - SSRF guard: `is_safe_upstream_url` in server.py.
                 """),
                 extra_files={
-                    ".clinerules/rail-pipeline.md": textwrap.dedent("""\
-                        # RAIL
+                    "docs/tooling/other.md": textwrap.dedent("""\
+                        # Other tooling doc
                         - SSRF guard (`is_safe_upstream_url` in server.py).
                     """),
                 },
@@ -502,7 +484,7 @@ class TestDocConsistencyFail(unittest.TestCase):
             rc, out = _run_doc_consistency(tmp)
             self.assertNotEqual(
                 rc, 0,
-                msg=f"Expected non-zero exit (phrase in .clinerules/), got {rc}.\nOutput:\n{out}",
+                msg=f"Expected non-zero exit (phrase in other doc), got {rc}.\nOutput:\n{out}",
             )
             self.assertIn(
                 "is_safe_upstream_url", out,
@@ -578,6 +560,39 @@ class TestMemoryNoteScanDirty(unittest.TestCase):
             rc, out = _run_memory_scan(tmp)
             self.assertNotEqual(rc, 0,
                                 msg=f"Expected non-zero exit (Bearer pattern), got {rc}.\n{out}")
+
+    def test_checklist_prose_and_task_identifier_do_not_trigger_scan(self):
+        """T-8d: prose and an embedded `sk-` substring are not secret values."""
+        with tempfile.TemporaryDirectory() as tmp:
+            mem_dir = os.path.join(tmp, "Cline", "memories")
+            os.makedirs(mem_dir)
+            with open(os.path.join(mem_dir, "2099-01-01-prose.md"), "w") as fh:
+                fh.write(
+                    "No API keys, Bearer tokens, or passwords in this note.\n"
+                    "Completed task-1234567890123456 verification.\n"
+                )
+            rc, out = _run_memory_scan(tmp)
+            self.assertEqual(rc, 0, msg=f"Expected prose to pass.\n{out}")
+
+    def test_fails_for_each_secret_shaped_value_without_echoing_value(self):
+        """T-8e/f: all value families fail and diagnostic output is redacted."""
+        fixtures = {
+            "sk.md": "token = sk-abcdefghijklmnop\n",
+            "bearer.md": "Authorization: Bearer abcdefghijklmnop\n",
+            "api-key.md": "api_key = abcdefghijklmnop\n",
+            "password.md": "password = abcdefghijklmnop\n",
+        }
+        for filename, content in fixtures.items():
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as tmp:
+                mem_dir = os.path.join(tmp, "Cline", "memories")
+                os.makedirs(mem_dir)
+                with open(os.path.join(mem_dir, filename), "w") as fh:
+                    fh.write(content)
+                rc, out = _run_memory_scan(tmp)
+                self.assertNotEqual(rc, 0, msg=f"Expected {filename} to fail.\n{out}")
+                self.assertIn(filename, out)
+                self.assertIn("[REDACTED]", out)
+                self.assertNotIn("abcdefghijklmnop", out)
 
     def test_exits_0_when_vault_path_unset(self):
         """T-8c: scan skips cleanly (exit 0) when OBSIDIAN_VAULT_PATH is unset."""
@@ -704,12 +719,28 @@ def _setup_drift_tree(tmp_dir, extra_files):
 
     Always creates:
       docs/rail-pipeline.md  — canonical source with the RAIL roles (0-6) phrase
-      docs/tooling/cline.md  — minimal reference (no duplication)
-      .clinerules/rail-pipeline.md — minimal reference (no duplication)
+      docs/tooling/some-doc.md  — minimal reference (no duplication)
       AGENTS.md              — minimal reference (no duplication)
 
     extra_files: dict of rel_path → content overrides (merged on top).
+
+    Also creates a minimal repo skeleton (scripts/quality-gate.sh, frontend/app.js,
+    backend/server.py). The base canonical doc cites these, and now that
+    docs/rail-pipeline.md is itself inside the scan scope, the referenced-path guard
+    checks them — an empty tmp tree would fail every test for a fixture artifact
+    rather than for the behavior under test.
     """
+    skeleton = (
+        os.path.join("scripts", "quality-gate.sh"),
+        os.path.join("frontend", "app.js"),
+        os.path.join("backend", "server.py"),
+    )
+    for rel in skeleton:
+        abs_path = os.path.join(tmp_dir, rel)
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        with open(abs_path, "w") as fh:
+            fh.write("# fixture stub\n")
+
     base_files = {
         "docs/rail-pipeline.md": textwrap.dedent("""\
             # RAIL Pipeline
@@ -720,16 +751,11 @@ def _setup_drift_tree(tmp_dir, extra_files):
             - New tools go in `TOOL_REGISTRY`.
             - Gate via `getEnabledTools()`.
             - New endpoints add a `_handler`.
-            Run `./scripts/cli-check.sh --review` before merging.
+            Run `./scripts/quality-gate.sh` before merging.
         """),
-        "docs/tooling/cline.md": textwrap.dedent("""\
-            # Cline tooling reference
+        "docs/tooling/some-doc.md": textwrap.dedent("""\
+            # Some tooling reference
             See [conventions](../rail-pipeline.md).
-        """),
-        ".clinerules/rail-pipeline.md": textwrap.dedent("""\
-            # RAIL — Cline always-on rule
-            The RAIL roles (0-6) apply in order.
-            See docs/rail-pipeline.md for the canonical convention list.
         """),
         "AGENTS.md": textwrap.dedent("""\
             # AGENTS
@@ -757,11 +783,11 @@ class TestStalePathGuard(unittest.TestCase):
     files.
     """
 
-    def test_fails_when_stale_path_in_clinerules(self):
-        """T-11a: stale flat path 'tests/js/' in .clinerules/workflows/build.md → exit non-zero."""
+    def test_fails_when_stale_path_in_tooling_docs(self):
+        """T-11a: stale flat path 'tests/js/' in a tooling doc → exit non-zero."""
         with tempfile.TemporaryDirectory() as tmp:
             _setup_drift_tree(tmp, {
-                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                "docs/tooling/some-tool.md": textwrap.dedent("""\
                     # Build workflow
                     Run: node --test $(find tests/js/ -name '*.test.mjs')
                 """),
@@ -769,20 +795,20 @@ class TestStalePathGuard(unittest.TestCase):
             rc, out = _run_doc_consistency(tmp)
             self.assertNotEqual(
                 rc, 0,
-                msg=f"Expected non-zero exit (stale 'tests/js/' in .clinerules/), got {rc}.\n{out}",
+                msg=f"Expected non-zero exit (stale 'tests/js/' in tooling doc), got {rc}.\n{out}",
             )
-            self.assertIn("tests/js/", out,
+            self.assertIn("tests/js", out,
                           msg=f"Expected stale path in output:\n{out}")
 
     def test_passes_when_correct_paths_used(self):
         """T-11b: only correct paths 'frontend/tests/js/' and 'backend/tests/python/' → exit 0."""
         with tempfile.TemporaryDirectory() as tmp:
             _setup_drift_tree(tmp, {
-                "docs/tooling/cline.md": textwrap.dedent("""\
-                    # Cline tooling reference
+                "docs/tooling/some-doc.md": textwrap.dedent("""\
+                    # Some tooling reference
                     See [conventions](../rail-pipeline.md).
                 """),
-                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                "docs/workflows/build.md": textwrap.dedent("""\
                     # Build workflow
                     Run: node --test $(find frontend/tests/js/ -name '*.test.mjs')
                     Run: python -m unittest discover -s backend/tests/python
@@ -816,25 +842,28 @@ class TestRoleCountGuard(unittest.TestCase):
     appears in any enforcing file.
     """
 
-    def test_fails_when_canonical_phrase_missing(self):
-        """T-12a: .clinerules/rail-pipeline.md lacks 'The RAIL roles (0' prefix → exit non-zero."""
+    def test_fails_when_canonical_phrase_missing_from_rail_pipeline(self):
+        """T-12a: docs/rail-pipeline.md lacks 'The RAIL roles (0' prefix → exit non-zero."""
         with tempfile.TemporaryDirectory() as tmp:
             _setup_drift_tree(tmp, {
                 # Override with a version that lacks 'The RAIL roles (0' entirely
-                ".clinerules/rail-pipeline.md": textwrap.dedent("""\
-                    # RAIL — Cline always-on rule
+                "docs/rail-pipeline.md": textwrap.dedent("""\
+                    # RAIL Pipeline
                     Run the pipeline roles in order.
-                    See docs/rail-pipeline.md for the canonical convention list.
                 """),
             })
             rc, out = _run_doc_consistency(tmp)
             self.assertNotEqual(
                 rc, 0,
-                msg=f"Expected non-zero exit (canonical phrase missing), got {rc}.\n{out}",
+                msg=f"Expected non-zero exit (canonical phrase missing from docs/rail-pipeline.md), got {rc}.\n{out}",
             )
 
     def test_fails_when_conflicting_count_present(self):
-        """T-12b: 'six roles' in docs/tooling/cline.md → exit non-zero."""
+        """T-12b: 'six roles' in docs/tooling/cline.md → exit non-zero.
+
+        #87: the role-count guard scope is an explicit file list, not a recursive
+        dir walk, so this fixture must name one of those files.
+        """
         with tempfile.TemporaryDirectory() as tmp:
             _setup_drift_tree(tmp, {
                 "docs/tooling/cline.md": textwrap.dedent("""\
@@ -846,7 +875,7 @@ class TestRoleCountGuard(unittest.TestCase):
             rc, out = _run_doc_consistency(tmp)
             self.assertNotEqual(
                 rc, 0,
-                msg=f"Expected non-zero exit ('six roles' conflict in docs/tooling/cline.md), got {rc}.\n{out}",
+                msg=f"Expected non-zero exit ('six roles' conflict in tooling doc), got {rc}.\n{out}",
             )
             self.assertIn("six roles", out,
                           msg=f"Expected 'six roles' in output:\n{out}")
@@ -868,47 +897,78 @@ class TestRoleCountGuard(unittest.TestCase):
 
 class TestMandatoryGateGuard(unittest.TestCase):
     """
-    T-13a/b: AC-4 — doc-consistency-check.sh exits non-zero if the word
-    'optional' appears on the same line as 'cli-check.sh --review' in any
-    Cline doc (.clinerules/ or docs/tooling/cline.md).
+    T-13a/b: doc-consistency-check.sh exits non-zero if the word
+    'optional' appears on the same line as 'quality-gate.sh'.
     """
 
-    def test_fails_when_optional_on_same_line_as_cli_check(self):
-        """T-13a: 'optional' on same line as 'cli-check.sh --review' → exit non-zero."""
+    def test_fails_when_quality_gate_is_optional(self):
+        """T-13a: 'optional' on same line as 'quality-gate.sh' → exit non-zero."""
         with tempfile.TemporaryDirectory() as tmp:
             _setup_drift_tree(tmp, {
-                "docs/tooling/cline.md": textwrap.dedent("""\
-                    # Cline tooling reference
-                    Running ./scripts/cli-check.sh --review is optional before merging.
+                "docs/tooling/some-doc.md": textwrap.dedent("""\
+                    # Some tooling reference
+                    Running ./scripts/quality-gate.sh is optional before merging.
                     See [conventions](../rail-pipeline.md).
                 """),
             })
             rc, out = _run_doc_consistency(tmp)
             self.assertNotEqual(
                 rc, 0,
-                msg=f"Expected non-zero exit ('optional' near cli-check), got {rc}.\n{out}",
+                msg=f"Expected non-zero exit ('optional' near quality-gate), got {rc}.\n{out}",
             )
 
-    def test_passes_when_cli_check_not_described_as_optional(self):
-        """T-13b: 'cli-check.sh --review' without 'optional' on same line → exit 0."""
+    def test_passes_when_quality_gate_is_mandatory(self):
+        """T-13b: 'quality-gate.sh' without 'optional' on same line → exit 0."""
         with tempfile.TemporaryDirectory() as tmp:
             _setup_drift_tree(tmp, {
-                "docs/tooling/cline.md": textwrap.dedent("""\
-                    # Cline tooling reference
+                "docs/tooling/some-doc.md": textwrap.dedent("""\
+                    # Some tooling reference
                     See [conventions](../rail-pipeline.md).
-                    Run `./scripts/cli-check.sh --review` to gate a PR.
+                    Run `./scripts/quality-gate.sh` to gate a PR.
                 """),
             })
-            # Create scripts/cli-check.sh so Guard 4 does not fire
+            # Create scripts/quality-gate.sh so Guard 4 does not fire
             scripts_dir = os.path.join(tmp, "scripts")
             os.makedirs(scripts_dir, exist_ok=True)
-            with open(os.path.join(scripts_dir, "cli-check.sh"), "w") as fh:
+            with open(os.path.join(scripts_dir, "quality-gate.sh"), "w") as fh:
                 fh.write("#!/usr/bin/env bash\n")
             rc, out = _run_doc_consistency(tmp)
             self.assertEqual(
                 rc, 0,
-                msg=f"Expected exit 0 (cli-check not optional), got {rc}.\n{out}",
+                msg=f"Expected exit 0 (quality-gate not optional), got {rc}.\n{out}",
             )
+
+
+# ---------------------------------------------------------------------------
+# Review workflow evidence contract (#76(a) pre-commit audit)
+# ---------------------------------------------------------------------------
+
+class TestReviewWorkflowEvidenceContract(unittest.TestCase):
+    """Pin the real gate commands and current-run evidence requirement."""
+
+    def test_review_runs_each_deterministic_gate_explicitly(self):
+        review_path = os.path.join(REPO_ROOT, ".clinerules", "workflows", "review.md")
+        with open(review_path, encoding="utf-8") as fh:
+            review = fh.read()
+
+        for command in (
+            "./scripts/quality-gate.sh",
+            "./run-tests.sh --coverage",
+            "./scripts/security-scan.sh",
+            "./scripts/doc-consistency-check.sh",
+        ):
+            self.assertIn(command, review)
+
+    def test_review_rejects_reused_gate_results(self):
+        review_path = os.path.join(REPO_ROOT, ".clinerules", "workflows", "review.md")
+        with open(review_path, encoding="utf-8") as fh:
+            review = fh.read()
+
+        self.assertIn("Never carry counts or", review)
+        self.assertIn("PASS claims forward from an earlier session", review)
+        self.assertIn("substitute commands", review)
+        self.assertIn("do not satisfy the coverage gate", review)
+
 
 
 # ---------------------------------------------------------------------------
@@ -926,10 +986,10 @@ class TestRefPathExistenceGuard(unittest.TestCase):
         """T-14a: backend/nonexistent/path.py referenced but not on disk → exit non-zero."""
         with tempfile.TemporaryDirectory() as tmp:
             _setup_drift_tree(tmp, {
-                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                "docs/tooling/build-workflow.md": textwrap.dedent("""\
                     # Build workflow
                     Run: PYTHONPATH=backend .venv/bin/python -m unittest discover \
--s backend/tests/python -p 'test_*.py'
+ -s backend/tests/python -p 'test_*.py'
                     See also backend/nonexistent/path.py for details.
                 """),
             })
@@ -948,17 +1008,17 @@ class TestRefPathExistenceGuard(unittest.TestCase):
         """T-14b: all backend/, frontend/, scripts/ references resolve → exit 0."""
         with tempfile.TemporaryDirectory() as tmp:
             _setup_drift_tree(tmp, {
-                # Override docs/tooling/cline.md to only reference paths we create
-                "docs/tooling/cline.md": textwrap.dedent("""\
-                    # Cline tooling reference
+                # Override docs/tooling/some-doc.md to only reference paths we create
+                "docs/tooling/some-doc.md": textwrap.dedent("""\
+                    # Some tooling reference
                     See [conventions](../rail-pipeline.md).
                     Run `./scripts/doc-consistency-check.sh` to gate a PR.
                 """),
-                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                "docs/workflows/build.md": textwrap.dedent("""\
                     # Build workflow
                     Run: node --test $(find frontend/tests/js/ -name '*.test.mjs')
                     Run: PYTHONPATH=backend .venv/bin/python -m unittest discover \
--s backend/tests/python
+ -s backend/tests/python
                     Gate: ./scripts/doc-consistency-check.sh
                 """),
             })
@@ -979,12 +1039,12 @@ class TestRefPathExistenceGuard(unittest.TestCase):
         """T-14c: glob pattern 'backend/tests/*.py' skipped (contains *) → exit 0."""
         with tempfile.TemporaryDirectory() as tmp:
             _setup_drift_tree(tmp, {
-                # Override docs/tooling/cline.md to avoid any scripts/ references
-                "docs/tooling/cline.md": textwrap.dedent("""\
-                    # Cline tooling reference
+                # Override docs/tooling/some-doc.md to avoid any scripts/ references
+                "docs/tooling/some-doc.md": textwrap.dedent("""\
+                    # Some tooling reference
                     See [conventions](../rail-pipeline.md).
                 """),
-                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                "docs/workflows/build.md": textwrap.dedent("""\
                     # Build workflow
                     Run: find backend/tests/*.py  (glob — not a real path)
                     Run: scripts/$VAR/helper.sh   (shell variable — skip)
@@ -994,6 +1054,349 @@ class TestRefPathExistenceGuard(unittest.TestCase):
             self.assertEqual(
                 rc, 0,
                 msg=f"Expected exit 0 (glob/variable tokens skipped), got {rc}.\n{out}",
+            )
+
+
+# ---------------------------------------------------------------------------
+# #87 — Scan-scope regression tests
+#
+# WHY these exist: the guard's own scan scope was silently narrowed once
+# (13 .clinerules/*.md files dropped out of every guard). These tests pin the
+# scope itself so a future refactor cannot quietly shrink it again.
+#
+# They also restore the coverage of two tests deleted during that narrowing:
+#   - test_exits_nonzero_when_phrase_duplicated_in_cline_rules
+#   - test_fails_when_stale_path_in_clinerules
+# ---------------------------------------------------------------------------
+
+class TestClineRulesInScanScope(unittest.TestCase):
+    """
+    #87: .clinerules/ must be inside the scan scope of the stale-path,
+    mandatory-gate and referenced-path guards, and .clinerules/rail-pipeline.md
+    must be inside the (narrower) convention-phrase guard.
+    """
+
+    def test_fails_when_phrase_duplicated_in_clinerules_rail_pipeline(self):
+        """Restores deleted coverage: phrase verbatim in .clinerules/rail-pipeline.md → fail."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                ".clinerules/rail-pipeline.md": textwrap.dedent("""\
+                    # RAIL — Cline always-on rule
+                    SSRF guard: `is_safe_upstream_url` in server.py.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (phrase in .clinerules/), got {rc}.\n{out}",
+            )
+            self.assertIn("is_safe_upstream_url", out,
+                          msg=f"Expected offending phrase in output:\n{out}")
+
+    def test_fails_when_stale_path_in_clinerules_workflow(self):
+        """Restores deleted coverage: stale 'tests/js/' in .clinerules/workflows/ → fail."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                    # Build workflow
+                    Run: node --test $(find tests/js/ -name '*.test.mjs')
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (stale path in .clinerules/), got {rc}.\n{out}",
+            )
+            self.assertIn("tests/js", out,
+                          msg=f"Expected stale path in output:\n{out}")
+
+    def test_fails_when_missing_ref_path_in_clinerules_workflow(self):
+        """#87: referenced-path guard must reach .clinerules/workflows/."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                ".clinerules/workflows/review.md": textwrap.dedent("""\
+                    # Review workflow
+                    See backend/nonexistent/probe.py for details.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (missing path in .clinerules/), got {rc}.\n{out}",
+            )
+            self.assertIn("backend/nonexistent/probe.py", out,
+                          msg=f"Expected missing path in output:\n{out}")
+
+    def test_fails_when_quality_gate_optional_in_clinerules_workflow(self):
+        """#87: mandatory-gate guard must reach .clinerules/workflows/."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                ".clinerules/workflows/loop.md": textwrap.dedent("""\
+                    # Loop workflow
+                    Running quality-gate.sh is optional at the end.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (gate called optional in .clinerules/), got {rc}.\n{out}",
+            )
+
+
+class TestPerGuardScopeInvariant(unittest.TestCase):
+    """
+    #87: the phrase guard is deliberately NARROWER than the path guards.
+
+    Cline workflow files legitimately name conventions (a workflow has to tell
+    the agent to bump `styles.css?v=N`). Only the four rule-restating files are
+    phrase-checked. Collapsing the two scopes into one list is what caused the
+    original narrowing, so this invariant is pinned by a test.
+    """
+
+    def test_convention_phrase_in_clinerules_workflow_does_not_fail(self):
+        """A workflow file may name a convention without tripping the phrase guard."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                ".clinerules/workflows/build.md": textwrap.dedent("""\
+                    # Build workflow
+                    Bump `styles.css?v=N` in index.html after editing CSS.
+                    Register new tools in `TOOL_REGISTRY` and gate via `getEnabledTools()`.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertEqual(
+                rc, 0,
+                msg=f"Expected exit 0 (workflow files are not phrase-checked), got {rc}.\n{out}",
+            )
+
+    def test_missing_optional_scan_dir_is_not_an_error(self):
+        """A scan dir that does not exist (e.g. .roo/ pre-migration) is skipped, not fatal."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {})
+            self.assertFalse(os.path.exists(os.path.join(tmp, ".roo")))
+            rc, out = _run_doc_consistency(tmp)
+            self.assertEqual(
+                rc, 0,
+                msg=f"Expected exit 0 (absent optional scan dir), got {rc}.\n{out}",
+            )
+
+
+class TestContinueRulesInScanScope(unittest.TestCase):
+    """
+    #87 follow-up: .continue/rules/ must be inside the same wide scan scope as
+    .clinerules/. Both harnesses are equal peers per AGENTS.md, and this dir had
+    accumulated 12 stale paths precisely because no guard watched it.
+    """
+
+    def test_fails_when_stale_path_in_continue_rules(self):
+        """Stale 'tests/python/' in .continue/rules/ → fail."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                ".continue/rules/testing-standards.md": textwrap.dedent("""\
+                    # Testing standards
+                    Run: unittest discover -s tests/python -p 'test_*.py'
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (stale path in .continue/rules/), got {rc}.\n{out}",
+            )
+            self.assertIn("tests/python", out,
+                          msg=f"Expected stale path in output:\n{out}")
+
+    def test_fails_when_missing_ref_path_in_continue_rules(self):
+        """A .continue/rules/ file citing a non-existent test file → fail.
+
+        This is the exact drift found in infrastructure-as-code.md, which cited
+        test_env_example_sync.py — a file that never existed in git history.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                ".continue/rules/infrastructure-as-code.md": textwrap.dedent("""\
+                    # IaC
+                    The backend/tests/python/test_env_example_sync.py guard enforces this.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (missing path in .continue/rules/), got {rc}.\n{out}",
+            )
+            self.assertIn("test_env_example_sync.py", out,
+                          msg=f"Expected missing path in output:\n{out}")
+
+    def test_convention_phrase_in_continue_rules_does_not_fail(self):
+        """Continue rule files, like Cline workflows, may name conventions."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                ".continue/rules/frontend.md": textwrap.dedent("""\
+                    # Frontend rules
+                    Bump `styles.css?v=N` in index.html after editing CSS.
+                    Register tools in `TOOL_REGISTRY`; gate via `getEnabledTools()`.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertEqual(
+                rc, 0,
+                msg=f"Expected exit 0 (Continue rules are not phrase-checked), got {rc}.\n{out}",
+            )
+
+
+class TestLiveDocsInScanScope(unittest.TestCase):
+    """
+    #87 follow-up 2: the canonical doc and the user-facing docs are themselves
+    scanned. docs/rail-pipeline.md is the source of truth every other file is told
+    to defer to, yet nothing checked its own paths; README.md and USER_GUIDE.md are
+    the first commands a new contributor runs.
+    """
+
+    def test_fails_when_stale_path_in_canonical_doc(self):
+        """The canonical doc is not exempt from its own stale-path rule."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                "docs/rail-pipeline.md": textwrap.dedent("""\
+                    # RAIL Pipeline
+                    The RAIL roles (0-6) apply in order.
+                    Write tests in tests/python/test_server.py first.
+                    Run `./scripts/quality-gate.sh` before merging.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (stale path in canonical doc), got {rc}.\n{out}",
+            )
+            self.assertIn("docs/rail-pipeline.md", out,
+                          msg=f"Expected canonical doc named in output:\n{out}")
+
+    def test_fails_when_missing_ref_path_in_readme(self):
+        """README.md is in scope — a broken path there misleads a new contributor."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                "README.md": textwrap.dedent("""\
+                    # USAi Chat
+                    Start with `backend/does_not_exist.py`.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (missing path in README.md), got {rc}.\n{out}",
+            )
+            self.assertIn("backend/does_not_exist.py", out,
+                          msg=f"Expected missing path in output:\n{out}")
+
+    def test_fails_when_stale_path_in_review_check(self):
+        """docs/quality/review-checks/*.md are live gate criteria, so they are scanned."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                "docs/quality/review-checks/iac-review.md": textwrap.dedent("""\
+                    # IaC review
+                    The tests/python/test_env_example_sync.py guard catches this.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (stale path in review check), got {rc}.\n{out}",
+            )
+
+    def test_docs_specs_are_excluded_as_historical(self):
+        """
+        docs/specs/ holds COMPLETED specs — historical records that legitimately
+        cite the paths correct at the time of writing. Scanning them would force
+        rewriting the record to satisfy a guard, so they stay out of scope.
+        This is a deliberate boundary, pinned so a future 'scan all of docs/'
+        change has to confront it rather than silently falsify history.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                "docs/specs/old-feature.md": textwrap.dedent("""\
+                    # Spec: old feature (completed 2025)
+                    | `tests/js/app.test.mjs` | New tests |
+                    Run `node --check app.js` and `py_compile server.py`.
+                    Also references backend/never_existed.py from that era.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertEqual(
+                rc, 0,
+                msg=f"Expected exit 0 (docs/specs/ is historical, not scanned), got {rc}.\n{out}",
+            )
+
+
+class TestStalePathMatcherBoundaries(unittest.TestCase):
+    """
+    The stale-path matcher is boundary-aware, not a bare substring search. Both
+    of these cases were real defects found by running the guard over docs/, and
+    both are the kind that erode trust in a guard: one cries wolf, one stays quiet.
+    """
+
+    def test_does_not_flag_similarly_named_real_path(self):
+        """
+        `tests/js-coverage.mjs` is a real file at the repo root; its `tests/`
+        prefix is not the JS test dir. A bare `tests/js` substring search
+        reported it as stale. Regression: the guard must not fire here.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "tests"), exist_ok=True)
+            with open(os.path.join(tmp, "tests", "js-coverage.mjs"), "w") as fh:
+                fh.write("// coverage gate\n")
+            _setup_drift_tree(tmp, {
+                "docs/tooling/coverage.md": textwrap.dedent("""\
+                    # Coverage
+                    JS branch gate lives in `tests/js-coverage.mjs`.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertEqual(
+                rc, 0,
+                msg=f"Expected exit 0 ('tests/js-coverage.mjs' is not stale), got {rc}.\n{out}",
+            )
+
+    def test_flags_stale_ref_even_when_correct_ref_on_same_line(self):
+        """
+        Previously the matcher piped through `grep -vF <correct form>`, so a line
+        containing BOTH a stale and a correct reference was discarded entirely —
+        masking real drift. The stale reference must still be reported.
+
+        The assertion targets the stale-path message specifically rather than just
+        a non-zero exit: the same fixture line also trips the referenced-path guard
+        (`backend/tests/python` does not exist in the tmp tree), so an exit-code-only
+        assertion passes even with the buggy matcher restored. Verified by mutation.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                "docs/tooling/mixed.md": textwrap.dedent("""\
+                    # Mixed reference
+                    Migrated from tests/python to backend/tests/python.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertNotEqual(
+                rc, 0,
+                msg=f"Expected non-zero exit (stale ref masked by same-line correct ref), got {rc}.\n{out}",
+            )
+            self.assertIn(
+                "Stale path 'tests/python' found in 'docs/tooling/mixed.md'", out,
+                msg=f"Expected the STALE-PATH guard to fire on a mixed line:\n{out}",
+            )
+
+    def test_does_not_flag_correct_path_alone(self):
+        """The corrected form on its own must never be reported (no false positive)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _setup_drift_tree(tmp, {
+                "docs/tooling/ok.md": textwrap.dedent("""\
+                    # Fine
+                    Tests live in backend/tests/python/ and frontend/tests/js/.
+                    Run `node --check frontend/app.js` and `py_compile backend/server.py`.
+                """),
+            })
+            rc, out = _run_doc_consistency(tmp)
+            self.assertEqual(
+                rc, 0,
+                msg=f"Expected exit 0 (all paths already correct), got {rc}.\n{out}",
             )
 
 

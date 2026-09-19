@@ -8,13 +8,13 @@ USAi Chat follows **Test-Driven Development**. For any non-trivial change to
 testable logic in `app.js` or `server.py`, you **write the test(s) first**, watch
 them fail, then write the minimum code to pass, then refactor. This rule is the
 inner loop of **RAIL** (the Rule-governed Agentic Iteration Loop) — it sits on top
-of the Full Test Suite role (`testing-standards.md`) and the QA checks
-(`.continue/checks/`). Full strategy: `docs/rail-pipeline.md`.
+of the Full Test Suite role (`testing-standards.md`) and the review criteria in
+`docs/quality/review-checks/`. Full strategy: `docs/rail-pipeline.md`.
 
 ## The Red → Green → Refactor loop (do this every time)
 
 1. **RED — write a failing test first.**
-   - Add the test case(s) in `tests/js/*.test.mjs` (JS) or `tests/python/test_*.py`
+   - Add the test case(s) in `frontend/tests/js/*.test.mjs` (JS) or `backend/tests/python/test_*.py`
      (Python) that describe the desired behavior / bug.
    - Run the suite and **show the failure** (paste the failing assertion). A test
      that passes before you write the code proves nothing — it must fail first for
@@ -43,7 +43,7 @@ implemented X, suite passes").
 | Layer | How it's covered |
 |-------|------------------|
 | **Pure functions** (JS + Python) | `node --test` / `unittest` unit tests — the bulk of coverage. |
-| **HTTP endpoints** (`server.py`) | **Integration tests** that boot the real `ThreadingHTTPServer` on an ephemeral port and hit routes with stdlib `urllib` (`tests/python/test_server_http.py`). Covers routing, `/config` redaction, `/memory/*`, `/sessions`, `/chunk-cache`, input-size limits, and traversal guards. |
+| **HTTP endpoints** (`server.py`) | **Integration tests** that boot the real `ThreadingHTTPServer` on an ephemeral port and hit routes with stdlib `urllib` (`backend/tests/python/test_server_http.py`). Covers routing, `/config` redaction, `/memory/*`, `/sessions`, `/chunk-cache`, input-size limits, and traversal guards. |
 | **Browser DOM wiring** | Syntax gate (`node --check`) + manual/in-browser testing. We do **not** add a headless-browser/jsdom dependency; keep DOM handlers thin and push logic into tested pure helpers. |
 
 ## Coverage is measured and gated (dev-only tooling, no runtime deps)

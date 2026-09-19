@@ -288,6 +288,10 @@ After writing the spec and updating the backlog, announce:
 > **Next step:** Run `/loop` (or `/build` then `/review`) in ACT MODE to implement it.
 > The spec is your source of truth — `/build` must not deviate from it.
 
+Then emit the closing **`Recommended Next Step`** section. `/spec` is a *terminal*
+workflow — PLAN MODE ends and control returns to the user — so the mandatory
+closing section applies. See `.clinerules/recommended-next-step.md`.
+
 ### User Summary (optional)
 
 For any `feature` or `docs` type spec that introduces a **new concept or workflow** —

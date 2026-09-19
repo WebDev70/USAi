@@ -133,6 +133,9 @@ class MemoryHandlersMixin:
             'ok': True,
             'query': query,
             'results': results,
+            # Always report whether semantic (embedding) search is available so
+            # the client can decide between keyword-only and embedding-ranked
+            # results. False when EMBED_MODEL is unset.
             'embed_available': bool(_server.CONFIG.get('embed_model')),
         })
 

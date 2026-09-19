@@ -121,38 +121,50 @@ class ProxyHandlersMixin:
                     self.send_header('Cache-Control', 'no-cache')
                     self.send_header('X-Accel-Buffering', 'no')
                     self.send_header('Transfer-Encoding', 'chunked')
-                    self.send_header('Connection', 'close')
                     self.end_headers()
-                    # IMPORTANT: read from the RAW, unbuffered upstream stream.
+                    # IMPORTANT: forward bytes as soon as they are available.
                     # `urlopen()` returns an http.client.HTTPResponse whose
-                    # `.read(n)` is line/block-buffered — it blocks until it can
-                    # fill its internal buffer, so SSE tokens that trickle in one
-                    # at a time would be withheld for seconds. `resp.fp.raw` (the
-                    # underlying SocketIO) returns whatever bytes are currently
-                    # available, so we forward each token immediately. Fall back
-                    # to `resp.read` if `.raw` is unavailable.
-                    raw = getattr(getattr(resp, 'fp', None), 'raw', None)
-                    read_chunk = raw.read if raw is not None else resp.read
+                    # `.read(n)` blocks until it can return exactly n bytes, so
+                    # SSE tokens that trickle in one at a time would be withheld
+                    # for seconds.
+                    #
+                    # We therefore use `resp.fp.read1(n)` — BufferedReader.read1
+                    # performs AT MOST one underlying socket read and returns
+                    # whatever is available, so relaying stays incremental.
+                    #
+                    # We must NOT use `resp.fp.raw.read` here: http.client parses
+                    # the status line and headers through the *buffered* reader,
+                    # so when the upstream flushes its headers and the first SSE
+                    # frame in the same TCP segment those body bytes are already
+                    # sitting in the BufferedReader's internal buffer. Reading
+                    # from `.raw` bypasses that buffer and silently drops the
+                    # first frame (~8% of runs locally — the intermittent
+                    # ProxyReasoningStreamTests / ProxyIncrementalStreamingTests
+                    # failures). `read1` drains the buffer first, then the socket.
+                    fp = getattr(resp, 'fp', None)
+                    read1 = getattr(fp, 'read1', None)
+                    read_chunk = read1 if read1 is not None else resp.read
                     # v2: accumulate bytes for streaming capture (zero cost when off).
                     # Only allocate the buffer if capture is enabled — the relay loop
                     # is otherwise byte-for-byte identical to before.
                     capture_buf = bytearray() if _server.CONFIG.get('capture_raw_responses') else None
                     try:
                         while True:
-                            chunk = read_chunk(8192)
+                            chunk = read_chunk(128)
                             if not chunk:
                                 break
                             # HTTP/1.1 chunked framing: <hex-length>\r\n<data>\r\n
                             # Relay first — client never waits for capture I/O.
-                            self.wfile.write(f'{len(chunk):X}\r\n'.encode('ascii'))
+                            # The underlying handler automatically applies HTTP/1.1 chunking
+                            # when protocol_version and Transfer-Encoding are set.
+                            # Manual chunk formatting is incorrect and was causing
+                            # BrokenPipeError as the client received a malformed stream.
                             self.wfile.write(chunk)
-                            self.wfile.write(b'\r\n')
                             self.wfile.flush()
                             if capture_buf is not None:
                                 capture_buf += chunk
-                        # Final zero-length chunk terminates the response body.
-                        self.wfile.write(b'0\r\n\r\n')
-                        self.wfile.flush()
+                        # The final zero-length chunk is sent automatically by the
+                        # handler when the wfile is closed.
                     except (BrokenPipeError, ConnectionResetError):
                         # Client disconnected mid-stream; fall through to capture
                         # whatever bytes were buffered (best-effort partial capture).

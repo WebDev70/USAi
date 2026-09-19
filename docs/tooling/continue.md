@@ -19,11 +19,10 @@ application.
 | Path | Role |
 |------|------|
 | `.continue/rules/` | Always-on (or glob-scoped) behavioral rules — the "how to work" |
-| `.continue/checks/` | `/check` QA pass/fail gates — the "verify it was done" |
 | `.continue/agents/` | Selectable agent modes (product-owner, planner, security, improver) |
 | `.continue/mcpServers/` | MCP server connections (Obsidian, etc.) |
 | `.continue/rules/CONTINUE.md` | Full architecture reference + troubleshooting (deep Continue-specific reference) |
-| `scripts/cli-check.sh` | CLI equivalent of `/check` — runs the coverage-gated suite, optionally `cn review` |
+| `scripts/cli-check.sh` | Compatibility wrapper for the neutral review-check manifest validator |
 
 ---
 
@@ -34,20 +33,20 @@ The **RAIL pipeline** in Continue is expressed as:
 | RAIL mechanism | Continue artifact | Trigger |
 |----------------|-------------------|---------|
 | Behavioral guidance per role | **Rules** (`.continue/rules/*.md`) | Always-on (`alwaysOn: true`) or glob-scoped (`globs: [...]`) or manually invoked |
-| QA pass/fail gates | **Checks** (`.continue/checks/*.md`) | Run via `/check` command in VS Code (or `scripts/cli-check.sh` from CLI) |
+| QA pass/fail gates | **Checks** (in `docs/quality/review-checks/`) | Run via `scripts/quality-gate.sh` |
 | Dedicated role modes | **Agents** (`.continue/agents/*.yaml`) | Selected from the agent dropdown |
 
 ### Rule trigger types
 
 | Type | How it activates | Which of our rules |
 |------|------------------|--------------------|
-| **Always-on** | Loaded for every chat in this project | `code-planner`, `development-sme`, `testing-standards`, `tdd-workflow`, `continuous-improvement`, `product-owner`, `agile-workflow`, `devsecops`, `infrastructure-as-code`, `observability`, `keep-docs-in-sync`, `CONTINUE.md` |
+| **Always-on** | Loaded for every chat in this project | `code-planner`, `development-sme`, `testing-standards`, `tdd-workflow`, `continuous-improvement`, `recommended-next-step`, `product-owner`, `agile-workflow`, `devsecops`, `infrastructure-as-code`, `observability`, `keep-docs-in-sync`, `CONTINUE.md` |
 | **Auto-attached (glob)** | Loaded when matching files are open | `ui-ux-design` (`index.html`, `styles.css`) |
 | **Agent-requested** | Explicitly invoked from the agent dropdown | Any of the dedicated agent modes |
 
 ### Checks (QA gates)
 
-Checks live in `.continue/checks/` and are evaluated when you run `/check` in VS Code.
+Check definitions live in `docs/quality/review-checks/` and are evaluated when you run the quality gate.
 Each file is a pass/fail criterion. The full list:
 
 - `definition-of-ready.md` — start gate for features
@@ -77,26 +76,25 @@ See [`docs/rail-pipeline.md`](../rail-pipeline.md) §3 for what each check verif
 ## Running QA gates
 
 ### In VS Code
-Run **`/check`** — Continue evaluates every check file in `.continue/checks/` and
+Run **`/check`** — Continue evaluates every check file in `docs/quality/review-checks/` and
 reports pass/fail for each criterion.
 
 ### From the CLI (Continue CLI / headless)
 The `/check` QA-gate is a **VS Code extension** feature — the Continue CLI (`cn`)
-has no `/check` command. Use `scripts/cli-check.sh` instead:
+has no `/check` command. Run the deterministic commands explicitly:
 
 ```bash
-./scripts/cli-check.sh              # coverage-gated test suite only (matches test-coverage check)
-./scripts/cli-check.sh --review     # suite + cn review with all check files as rules
-./scripts/cli-check.sh --review-only# skip tests; AI review pass only
+./scripts/quality-gate.sh              # validate the neutral review-check manifest
+./run-tests.sh --coverage              # syntax, tests, and coverage thresholds
+./scripts/security-scan.sh             # gitleaks + bandit + pip-audit
+./scripts/doc-consistency-check.sh      # live-policy consistency
 ```
 
-The script:
-1. Runs `./run-tests.sh --coverage` (same gate as the `test-coverage` check).
-2. Optionally feeds each `.continue/checks/*.md` file into `cn review --rule` so
-   the AI review applies security, code-quality, docs-in-sync, and ui-ux standards.
-3. Falls back to `npx @continuedev/cli --config ~/.continue/config.yaml` when `cn`
-   isn't on `PATH`.
-4. Exits non-zero on gate failure (CI / pre-push friendly).
+`./scripts/cli-check.sh` remains a compatibility wrapper for
+`quality-gate.sh`. Both validate only that the files listed by
+`docs/quality/review-checks/README.md` exist and are non-empty; neither command runs
+the other gates or launches AI review. Apply the manifested criteria in the Continue
+review and retain the direct command outputs as evidence.
 
 > **Note:** The **rules** in `.continue/rules/` *are* loaded automatically by the
 > Continue CLI when launched from the project root — only the **checks** need the

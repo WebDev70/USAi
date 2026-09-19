@@ -4,6 +4,9 @@ Archive/
 # Local Python virtual environment
 .venv/
 
+# Editor-local settings (machine-specific, not source)
+.vscode/
+
 # Continue extension — MCP server configs may contain API keys (e.g. Context7)
 .continue/mcpServers/
 
@@ -14,6 +17,13 @@ chat_history.json
 .chunk_cache/
 logs/*.log
 logs/*.jsonl
+# Project workspaces + uploaded project files created at runtime by
+# backend/server.py (PROJECTS_DIR). User data, never source.
+.projects/
+
+# Python bytecode caches — build artifacts, never source.
+__pycache__/
+*.py[cod]
 
 # macOS cruft
 .DS_Store

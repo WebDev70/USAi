@@ -14,8 +14,8 @@ Flag as **failing** if any of these are true:
 
 - **Config drift.** `load_config()` in `server.py` reads a new environment variable
   but `.env.example` was not updated to document it (the
-  `tests/python/test_env_example_sync.py` guard should also catch this — it must
-  not be weakened to hide drift).
+  `backend/tests/python/test_env_example_sync.py` guard should also catch this — it
+  must not be weakened to hide drift).
 - **Hardcoded environment values.** A host, port, path, URL, or credential that
   should come from config/env was hardcoded into source (e.g. binding a literal
   address instead of honoring `HOST`/`PORT`).

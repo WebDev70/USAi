@@ -36,7 +36,8 @@ check asserts them):
    (`server.py` ≥ 90%, JS branch ≥ 70%).
 3. **Security gate passes.** `./scripts/security-scan.sh` is clean (or findings are
    triaged), and no runtime dependency was added (`docs/principles.md` §1).
-4. **QA `/check` passes.** All applicable checks in `.continue/checks/` are green.
+4. **The QA gate passes.** Run `scripts/quality-gate.sh`; all applicable review
+   criteria in `docs/quality/review-checks/` must be green.
 5. **Acceptance criteria met** (for features) — verified by the Product Owner role.
 6. **Docs in sync** (`keep-docs-in-sync`): CHANGELOG always; USER_GUIDE/README/
    backlog/CONTINUE/AGENTS as applicable.
