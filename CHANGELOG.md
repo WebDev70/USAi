@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+### Changed
+- **`#74` coverage floors ratcheted to current reproducible coverage.** Python line
+  remains **90%**, Python branch rises **80% → 90%**, and JS branch rises
+  **70% → 75%** across `.coverage-thresholds`, `run-tests.sh`, and GitHub Actions.
+  `scripts/ratchet-check.sh` now emits a non-failing per-metric advisory whenever
+  passing coverage has at least 5 percentage points of unused headroom, preventing
+  future coverage growth from leaving stale floors unnoticed. Regression tests pin
+  local/CI threshold consistency plus the inclusive 5.00-point advisory boundary.
+
 ### Fixed
 - **`#76(a)` pre-commit verification contract corrected.** A direct source audit found
   that `scripts/quality-gate.sh` is a 50-line neutral review-manifest validator, while

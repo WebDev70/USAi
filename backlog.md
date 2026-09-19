@@ -340,8 +340,12 @@ Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
   table and MRO block. Spec: (governance ADVISORY-01 — no separate spec doc).
   - Files: `docs/ARCHITECTURE.md`, `CHANGELOG.md`.
 
-- [ ]  **74. Ratchet coverage thresholds + add self-advancement guard** *(S)*
-  — 📋 ADVISORY-02 (gov 2026-09-18). `.coverage-thresholds` has never been
+- [x]  **74. Ratchet coverage thresholds + add self-advancement guard** *(S)*
+  — **Done (2026-09-19):** raised Python branch 80→90 and JS branch 70→75
+  (Python line remains 90) across local, committed, and CI gates; added a
+  non-failing advisory at ≥5 points of threshold headroom plus regression tests.
+  Spec: `docs/specs/coverage-ratchet.md`.
+  — 📋 ADVISORY-02 (gov 2026-09-18). `.coverage-thresholds` had never been
   ratcheted since creation (`bfd1f91`). **Live numbers re-measured 2026-09-18
   during the grooming pass** (`./run-tests.sh --coverage`, exit 0):
 
@@ -364,13 +368,10 @@ Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
     3. A ratchet reminder exists in `.clinerules/workflows/loop.md` done-criteria, OR
        `scripts/ratchet-check.sh` gains an advisory "headroom ≥ 5 pts — consider
        ratcheting" warning that does not fail the build.
-  - **⚠️ Sequencing dependency — do #76(a) first.** The measured numbers above include
-    `backend/tests/python/test_file_parser.py` (15 tests) and `test_migration.py`
-    (4 tests), which are still **untracked**. Ratcheting against coverage that only
-    exists in one working tree would hard-fail the first fresh clone or CI run.
-    Commit #76(a), re-measure, *then* set the gates.
-  - Files: `.coverage-thresholds`, `.clinerules/workflows/loop.md`, (optional)
-    `scripts/ratchet-check.sh` or `Makefile`.
+  - **Sequencing dependency resolved:** #76(a) was committed at `3131df5` and the
+    clean-checkout coverage was reverified before these floors were raised.
+  - Files: `.coverage-thresholds`, `run-tests.sh`, `.github/workflows/tests.yml`,
+    `scripts/ratchet-check.sh`, `backend/tests/python/test_scripts.py`, `CHANGELOG.md`.
 
 - [x]  **75. Document #69 retrieval features in USER_GUIDE.md** *(XS)*
   — **Done (2026-09-18):** Added "How retrieval works" subsection to §7 of

@@ -254,6 +254,9 @@ class TestSpecCheckMissingTestFile(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 RATCHET_CHECK = os.path.join(REPO_ROOT, "scripts", "ratchet-check.sh")
+COVERAGE_THRESHOLDS = os.path.join(REPO_ROOT, ".coverage-thresholds")
+RUN_TESTS = os.path.join(REPO_ROOT, "run-tests.sh")
+CI_TESTS = os.path.join(REPO_ROOT, ".github", "workflows", "tests.yml")
 
 
 def _run_ratchet(thresholds_file, python_line, python_branch, js_branch):
@@ -300,6 +303,64 @@ class TestRatchetCheckPass(unittest.TestCase):
             _write_thresholds(tf, python_line=90, python_branch=80, js_branch=70)
             rc, out = _run_ratchet(tf, python_line=90, python_branch=80, js_branch=70)
             self.assertEqual(rc, 0, msg=f"Expected exit 0 (live == thresholds), got {rc}.\n{out}")
+
+
+class TestRatchetCommittedThresholds(unittest.TestCase):
+    """Backlog #74: committed floors match the approved verified coverage."""
+
+    def test_committed_thresholds_are_ratcheted(self):
+        with open(COVERAGE_THRESHOLDS) as fh:
+            configured = {
+                key: value
+                for key, value in (
+                    line.strip().split("=", 1)
+                    for line in fh
+                    if line.strip() and not line.startswith("#")
+                )
+            }
+
+        self.assertEqual(configured, {
+            "python_line": "90",
+            "python_branch": "90",
+            "js_branch": "75",
+        })
+
+    def test_local_and_ci_gates_match_committed_thresholds(self):
+        with open(RUN_TESTS) as fh:
+            local_runner = fh.read()
+        with open(CI_TESTS) as fh:
+            ci_workflow = fh.read()
+
+        self.assertIn("PY_MIN=90", local_runner)
+        self.assertIn("PY_BRANCH_MIN=90", local_runner)
+        self.assertIn("JS_MIN=75", local_runner)
+        self.assertIn("node tests/js-coverage.mjs 75", ci_workflow)
+        self.assertIn("if branch_int < 90:", ci_workflow)
+
+
+class TestRatchetHeadroomAdvisory(unittest.TestCase):
+    """Backlog #74: excessive threshold headroom is visible but non-blocking."""
+
+    def test_advises_at_five_points_without_failing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = os.path.join(tmp, ".coverage-thresholds")
+            _write_thresholds(tf, python_line=90, python_branch=90, js_branch=75)
+            rc, out = _run_ratchet(tf, python_line=90, python_branch=95, js_branch=75)
+
+        self.assertEqual(rc, 0, msg=f"Advisory must not fail the build:\n{out}")
+        self.assertIn("ADVISORY", out)
+        self.assertIn("python_branch", out)
+        self.assertIn("5.00", out)
+        self.assertIn("ratchet", out.lower())
+
+    def test_does_not_advise_below_five_points(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tf = os.path.join(tmp, ".coverage-thresholds")
+            _write_thresholds(tf, python_line=90, python_branch=90, js_branch=75)
+            rc, out = _run_ratchet(tf, python_line=94.99, python_branch=94.99, js_branch=79.99)
+
+        self.assertEqual(rc, 0, msg=out)
+        self.assertNotIn("ADVISORY", out)
 
 
 class TestRatchetCheckFail(unittest.TestCase):

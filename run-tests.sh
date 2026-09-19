@@ -26,8 +26,8 @@ COVERAGE=0
 # Coverage thresholds (ratchet UP over time; never lower to make a change pass).
 # Also committed in .coverage-thresholds for the machine-enforced ratchet guard.
 PY_MIN=90        # server.py line coverage %
-PY_BRANCH_MIN=80 # server.py branch coverage % (RAIL Phase 2)
-JS_MIN=70        # app.js BRANCH coverage % of the exported/tested helpers
+PY_BRANCH_MIN=90 # server.py branch coverage % (RAIL Phase 2)
+JS_MIN=75        # app.js BRANCH coverage % of the exported/tested helpers
 
 # Prefer the venv's Python (so python-dotenv is available); fall back to python3.
 PY=".venv/bin/python"

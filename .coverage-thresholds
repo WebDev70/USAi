@@ -3,5 +3,5 @@
 # Ratchet rule: NEVER lower a value to make a change pass — add tests instead.
 # Run scripts/ratchet-check.sh (called by run-tests.sh --coverage) to enforce.
 python_line=90
-python_branch=80
-js_branch=70
+python_branch=90
+js_branch=75

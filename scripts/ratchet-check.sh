@@ -5,7 +5,8 @@
 # Purpose: compare live coverage values against the committed high-water marks in
 # .coverage-thresholds and fail (exit 1) if any live value is LOWER than the
 # committed threshold. This prevents anyone from silently lowering a coverage gate
-# to make a change pass.
+# to make a change pass. Passing metrics with at least 5 points of headroom emit a
+# non-failing advisory so maintainers know when the high-water mark is stale.
 #
 # Usage:
 #   ./scripts/ratchet-check.sh \
@@ -102,6 +103,13 @@ _check() {
         ERRORS=$((ERRORS + 1))
     else
         echo "  ✓  ${metric}: live=${live}%  threshold=${threshold}%"
+        # Keep this advisory separate from ERRORS: unused headroom should prompt a
+        # deliberate ratchet without turning normal coverage growth into a failure.
+        local headroom
+        headroom=$(awk -v l="$live" -v t="$threshold" 'BEGIN { printf "%.2f", l-t }')
+        if awk -v gap="$headroom" 'BEGIN { exit !(gap >= 5) }'; then
+            echo "     ADVISORY — ${metric} has ${headroom} points of headroom; consider ratcheting its threshold."
+        fi
     fi
 }
 

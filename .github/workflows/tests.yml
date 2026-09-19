@@ -36,7 +36,7 @@ jobs:
         # and avoids relying on bash globstar (`**`), which is off in CI shells.
         run: node --test $(find frontend/tests/js -name '*.test.mjs')
       - name: JS coverage gate (exported helpers)
-        run: node tests/js-coverage.mjs 70
+        run: node tests/js-coverage.mjs 75
 
   python:
     name: Python unit tests + coverage (unittest)
@@ -65,7 +65,7 @@ jobs:
         # .coveragerc branch=True enables branch measurement (RAIL Phase 2).
         # We enforce two independent thresholds that mirror run-tests.sh --coverage:
         #   • Line coverage:   fail_under=90% (coverage.py --fail-under)
-        #   • Branch coverage: PY_BRANCH_MIN=80% (extracted from coverage JSON)
+        #   • Branch coverage: PY_BRANCH_MIN=90% (extracted from coverage JSON)
         # The ratchet guard is run-tests.sh-only because scripts/ratchet-check.sh
         # requires bash 4+ which is not guaranteed on all CI images; the two gates
         # above are sufficient to catch regressions in CI. (#39)
@@ -85,11 +85,11 @@ jobs:
           pct = (cb / nb * 100) if nb > 0 else 100.0
           branch_int = int(pct)
           print(f'server.py branch coverage: {pct:.2f}%')
-          if branch_int < 80:
-              print(f'FAIL: branch coverage {pct:.2f}% is below 80% threshold — add tests.')
+          if branch_int < 90:
+              print(f'FAIL: branch coverage {pct:.2f}% is below 90% threshold — add tests.')
               sys.exit(1)
           else:
-              print(f'PASS: branch coverage >= 80%')
+              print(f'PASS: branch coverage >= 90%')
           EOF
 
   security:
