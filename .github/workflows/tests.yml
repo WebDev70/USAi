@@ -32,6 +32,14 @@ jobs:
       - name: Install dev-only JS test dependencies
         # jsdom powers browser-behavior tests only; it is not shipped at runtime.
         run: npm ci
+      - name: Assert jsdom is resolvable (no silent behavior-suite skip)
+        # The coverage gate deliberately SKIPS the jsdom-only behavior suite when
+        # jsdom is missing, so the Python job (which installs no npm packages) can
+        # run it. In THIS job the suite must actually run, so verify the dependency
+        # resolves the way `import { JSDOM } from 'jsdom'` will. Without this, a
+        # broken/partial `npm ci` would silently reduce the suite to a no-op and
+        # still report a green build.
+        run: node -e "require.resolve('jsdom'); console.log('jsdom resolved:', require('jsdom/package.json').version)"
       - name: Syntax check (app.js)
         run: node --check frontend/app.js
       - name: Run JS unit tests
@@ -40,6 +48,11 @@ jobs:
         # and avoids relying on bash globstar (`**`), which is off in CI shells.
         run: node --test $(find frontend/tests/js -name '*.test.mjs')
       - name: JS coverage gate (exported helpers)
+        # REQUIRE_JSDOM=1 makes the gate exit 3 rather than skipping the behavior
+        # suite — defence in depth alongside the assertion step above, covering the
+        # case where node_modules is damaged between the two steps.
+        env:
+          REQUIRE_JSDOM: "1"
         run: node tests/js-coverage.mjs 75
 
   python:

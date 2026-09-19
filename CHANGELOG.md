@@ -10,6 +10,22 @@
   local/CI threshold consistency plus the inclusive 5.00-point advisory boundary.
 
 ### Fixed
+- **The jsdom skip can no longer hide a broken `npm ci`.** Making the JS coverage gate
+  tolerant of a missing jsdom (below) fixed the Python job but opened a new blind spot in
+  the **JavaScript** job, where the behavior suite is supposed to run: a partial or failed
+  `npm ci` would print the skip warning, drop `app.behavior.test.mjs`, and still exit 0 —
+  a green build silently measuring less surface, the same "gate passes while the check
+  doesn't run" defect class as `#76(a)`. Three changes close it: (1) `tests/js-coverage.mjs`
+  now detects jsdom with `createRequire(...).resolve('jsdom')` instead of an
+  `existsSync(node_modules/jsdom)` directory check, so a corrupted install with a missing
+  entry point counts as absent rather than usable; (2) a new `REQUIRE_JSDOM=1` strict mode
+  exits **3** with an explanatory message instead of skipping; (3) the CI JavaScript job
+  asserts `require.resolve('jsdom')` *before* the gate **and** runs the gate with
+  `REQUIRE_JSDOM=1` (defence in depth, covering damage between the two steps). The Python
+  job deliberately stays tolerant. Pinned by T-10d (`TestJsCoverageRequireJsdom` — strict
+  mode fails, and unset flag still skips, guarding against over-correction) and T-10e
+  (`TestCiJobRequiresJsdom` — the JS job sets the flag, the Python job does not, and the
+  assertion precedes the gate).
 - **The Python CI job no longer fails on a missing JS dev dependency.** `tests/js-coverage.mjs`
   enumerated *every* `frontend/tests/js/*.test.mjs` file, including the jsdom-only
   `app.behavior.test.mjs`. The GitHub Actions **Python** job installs no npm packages, yet it

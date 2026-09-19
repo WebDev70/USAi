@@ -722,6 +722,21 @@ def _run_js_coverage(min_pct=None):
     return result.returncode, result.stdout + result.stderr
 
 
+def _make_jsdom_free_tree(tmp_dir):
+    """
+    Build a minimal repo layout (tests/ + frontend/) with NO node_modules, so
+    js-coverage.mjs sees jsdom as absent. Returns the path to the copied script.
+
+    frontend/ is symlinked rather than copied so we don't duplicate app.js
+    (~193 KB) and its four test suites for every test.
+    """
+    os.makedirs(os.path.join(tmp_dir, "tests"))
+    script = os.path.join(tmp_dir, "tests", "js-coverage.mjs")
+    shutil.copy(JS_COVERAGE, script)
+    os.symlink(os.path.join(REPO_ROOT, "frontend"), os.path.join(tmp_dir, "frontend"))
+    return script
+
+
 @unittest.skipUnless(NODE_BIN, "node not installed — JS coverage gate is dev-only")
 class TestJsSentinelWritten(unittest.TestCase):
     """
@@ -803,15 +818,9 @@ class TestJsCoverageWithoutJsdom(unittest.TestCase):
     def test_gate_passes_when_jsdom_absent(self):
         """Excludes the jsdom-only suite, warns, and still reports branch %."""
         with tempfile.TemporaryDirectory() as tmp:
-            # Mirror the repo layout the script expects (tests/ + frontend/) without
-            # a node_modules directory, so existsSync(node_modules/jsdom) is false.
-            os.makedirs(os.path.join(tmp, "tests"))
-            shutil.copy(JS_COVERAGE, os.path.join(tmp, "tests", "js-coverage.mjs"))
-            # Symlink frontend/ rather than copying app.js (193 KB) + its test suites.
-            os.symlink(os.path.join(REPO_ROOT, "frontend"), os.path.join(tmp, "frontend"))
-
+            script = _make_jsdom_free_tree(tmp)
             result = subprocess.run(
-                ["node", os.path.join(tmp, "tests", "js-coverage.mjs"), "75"],
+                ["node", script, "75"],
                 capture_output=True, text=True, cwd=tmp,
             )
             out = result.stdout + result.stderr
@@ -825,6 +834,114 @@ class TestJsCoverageWithoutJsdom(unittest.TestCase):
                              msg=f"jsdom must not be imported at all:\n{out}")
             self.assertRegex(out, r"branch\s+[\d.]+%",
                              msg=f"Gate must still report a branch %:\n{out}")
+
+
+@unittest.skipUnless(NODE_BIN, "node not installed — JS coverage gate is dev-only")
+class TestJsCoverageRequireJsdom(unittest.TestCase):
+    """
+    T-10d: REQUIRE_JSDOM=1 turns the tolerant skip into a hard failure.
+
+    WHY: making the gate tolerate a missing jsdom (T-10c) fixed the Python job but
+    opened a blind spot in the JavaScript job — a broken `npm ci` would warn, drop
+    the behavior suite, and still exit 0, i.e. a green build measuring less surface.
+    The JS CI job sets REQUIRE_JSDOM=1 so the skip path is reachable only where it
+    is intended.
+    """
+
+    def test_exits_3_when_jsdom_required_but_absent(self):
+        """REQUIRE_JSDOM=1 + no jsdom → exit 3 with an explanatory message."""
+        with tempfile.TemporaryDirectory() as tmp:
+            script = _make_jsdom_free_tree(tmp)
+            result = subprocess.run(
+                ["node", script, "75"],
+                capture_output=True, text=True, cwd=tmp,
+                env={**os.environ, "REQUIRE_JSDOM": "1"},
+            )
+            out = result.stdout + result.stderr
+
+        self.assertEqual(result.returncode, 3,
+                         msg=f"Expected exit 3 (strict mode, jsdom absent), got "
+                             f"{result.returncode}:\n{out}")
+        self.assertIn("REQUIRE_JSDOM", out,
+                      msg=f"Failure must name the strict-mode switch:\n{out}")
+        self.assertNotRegex(out, r"✓ JS coverage gate passed",
+                            msg=f"Strict mode must not report a pass:\n{out}")
+
+    def test_unset_require_jsdom_still_skips(self):
+        """Guard against over-correction: without the flag the skip still applies."""
+        with tempfile.TemporaryDirectory() as tmp:
+            script = _make_jsdom_free_tree(tmp)
+            env = {**os.environ}
+            env.pop("REQUIRE_JSDOM", None)
+            result = subprocess.run(
+                ["node", script, "75"],
+                capture_output=True, text=True, cwd=tmp, env=env,
+            )
+            out = result.stdout + result.stderr
+
+        self.assertEqual(result.returncode, 0,
+                         msg=f"Expected exit 0 (tolerant mode), got "
+                             f"{result.returncode}:\n{out}")
+        self.assertIn("jsdom not installed", out, msg=out)
+
+    def test_partial_jsdom_install_counts_as_absent(self):
+        """
+        A jsdom directory that exists but cannot be resolved (no entry point) must be
+        treated as absent. The original existsSync(node_modules/jsdom) check called it
+        present, then `node --test` died with ERR_MODULE_NOT_FOUND — the failure mode
+        this gate exists to prevent.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            script = _make_jsdom_free_tree(tmp)
+            os.makedirs(os.path.join(tmp, "node_modules", "jsdom"))  # empty → unresolvable
+            env = {**os.environ}
+            env.pop("REQUIRE_JSDOM", None)
+            result = subprocess.run(
+                ["node", script, "75"],
+                capture_output=True, text=True, cwd=tmp, env=env,
+            )
+            out = result.stdout + result.stderr
+
+        self.assertEqual(result.returncode, 0,
+                         msg=f"Partial install must degrade to the skip path, got "
+                             f"{result.returncode}:\n{out}")
+        self.assertNotIn("ERR_MODULE_NOT_FOUND", out, msg=out)
+        self.assertIn("jsdom not installed", out, msg=out)
+
+
+class TestCiJobRequiresJsdom(unittest.TestCase):
+    """
+    T-10e: the CI contract itself pins the strict/tolerant split, so a future edit
+    cannot quietly let the JavaScript job skip the behavior suite.
+    """
+
+    def test_js_job_asserts_jsdom_and_sets_strict_flag(self):
+        with open(CI_TESTS) as fh:
+            workflow = fh.read()
+
+        js_job, _, python_job = workflow.partition("\n  python:")
+
+        self.assertIn("require.resolve('jsdom')", js_job,
+                      msg="JS job must assert jsdom resolves before the coverage gate.")
+        # Match the YAML mapping, not the bare name: the surrounding comment also
+        # mentions REQUIRE_JSDOM, so a substring check on the name alone survived
+        # mutation-deleting the actual `env:` block.
+        self.assertRegex(js_job, r'REQUIRE_JSDOM:\s*"?1"?',
+                         msg="JS job must set REQUIRE_JSDOM: \"1\" on the coverage gate step.")
+        # The Python job installs no npm packages — strict mode there would
+        # reintroduce the exact failure this pair of guards exists to prevent.
+        self.assertNotIn("REQUIRE_JSDOM", python_job,
+                         msg="Python job must stay tolerant of a missing jsdom.")
+
+    def test_jsdom_assertion_precedes_the_coverage_gate(self):
+        """Ordering matters: asserting after the gate would not prevent a skip."""
+        with open(CI_TESTS) as fh:
+            workflow = fh.read()
+
+        assert_idx = workflow.index("require.resolve('jsdom')")
+        gate_idx = workflow.index("node tests/js-coverage.mjs 75")
+        self.assertLess(assert_idx, gate_idx,
+                        msg="jsdom assertion must run before the JS coverage gate.")
 
 
 # ---------------------------------------------------------------------------

@@ -10,10 +10,14 @@
 // gives for the tested functions), and fails if it dips below the threshold.
 //
 // Usage:  node tests/js-coverage.mjs [minBranchPct]   (default 70)
+// Env:    REQUIRE_JSDOM=1  → hard-fail (exit 3) instead of skipping the
+//         jsdom-only behavior suite when jsdom cannot be resolved. CI's
+//         JavaScript job sets this; see .github/workflows/tests.yml.
 // Requires Node >= 22 for --experimental-test-coverage.
 
 import { execSync } from 'node:child_process';
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { readdirSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -39,7 +43,33 @@ const jsDir = path.join(here, '..', 'frontend', 'tests', 'js');
 // contributes nothing to app.js's measured branch % (verified identical at 75.19%
 // with and without it).
 const JSDOM_ONLY_TESTS = new Set(['app.behavior.test.mjs']);
-const hasJsdom = existsSync(path.join(repoRoot, 'node_modules', 'jsdom'));
+
+// Resolve jsdom the same way Node will when the behavior suite imports it,
+// rather than merely checking that node_modules/jsdom is a directory: a partial
+// or corrupted install (directory present, entry point missing) must count as
+// "not installed", not as a usable dependency.
+function resolveJsdom() {
+  try {
+    createRequire(import.meta.url).resolve('jsdom');
+    return true;
+  } catch {
+    return false;
+  }
+}
+const hasJsdom = resolveJsdom();
+
+// STRICT MODE (REQUIRE_JSDOM=1) — closes the blind spot the skip above opens.
+// The skip is correct where npm packages are never installed (the Python CI job),
+// but in the JavaScript job the behavior suite is *supposed* to run. Without this
+// gate a broken `npm ci` would print the warning, silently drop that suite, and
+// still exit 0 — a green build measuring less surface. Fail loudly instead.
+if (!hasJsdom && process.env.REQUIRE_JSDOM === '1') {
+  console.error('✕ REQUIRE_JSDOM=1 but jsdom could not be resolved — refusing to ' +
+    'skip the behavior suite in an environment that must run it.');
+  console.error('  Check that `npm ci` succeeded and node_modules/jsdom is intact.');
+  process.exit(3);
+}
+
 const files = readdirSync(jsDir)
   .filter((f) => f.endsWith('.test.mjs'))
   .filter((f) => hasJsdom || !JSDOM_ONLY_TESTS.has(f))
