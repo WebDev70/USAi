@@ -62,7 +62,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install coverage
+          pip install coverage==7.10.7
       - name: Syntax check (server.py)
         run: python -m py_compile backend/server.py
       - name: Run Python tests with branch coverage gate
@@ -74,6 +74,7 @@ jobs:
         # requires bash 4+ which is not guaranteed on all CI images; the two gates
         # above are sufficient to catch regressions in CI. (#39)
         run: |
+          set -x
           PYTHONPATH=backend python -m coverage run --branch --source=backend -m unittest discover -s backend/tests/python -p 'test_*.py'
           python -m coverage report -m
           python -m coverage report --fail-under=90

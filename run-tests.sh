@@ -18,6 +18,7 @@
 #   compares live values against the committed .coverage-thresholds file so no
 #   threshold can be silently lowered.
 set -euo pipefail
+set -x
 cd "$(dirname "$0")"
 
 COVERAGE=0
