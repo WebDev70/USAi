@@ -405,7 +405,8 @@ Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
   - **Priority:** ahead of #90 per user request ("addressed immediately after" the current
     push). Recommend sequencing: publish `45dd1ae` → `/spec` #94 → then resume #90.
 
-- [ ] **95. 📋 ADVISORY — small default `max_tokens` truncates answers / clarify the cap** *(XS)*
+- [x] **95. 📋 ADVISORY — small default `max_tokens` truncates answers / clarify the cap** *(XS)* — Done (2026-09-20): Placeholder, label badge, tooltip, and USER_GUIDE.md updated to say "blank = model default (recommended)"; pure helper `shouldSendMaxTokens` extracted and exported; MT-1..MT-5 green.
+       Spec: docs/specs/max-tokens-clarify-cap.md
   - **Reported by user (2026-09-20):** LLM responses felt "so small." Investigation: we do
     **not** hard-cap output — the frontend only sends `max_tokens` when the user sets it
     (`app.js` ~L3699–3703), and that value is the ceiling. Observed answers were 452 and

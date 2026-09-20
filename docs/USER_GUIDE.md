@@ -184,11 +184,14 @@ Open the **Prompt & Parameters** section.
 |---------|--------------|
 | **System prompt** | Optional instructions that set the AI's behavior/persona for the whole chat |
 | **Temperature** (0–2) | Creativity dial. Lower = focused/predictable, higher = creative/varied. **Leave blank to omit** (some models reject it) |
-| **Max tokens** | The maximum length of the AI's reply. **Leave blank to omit** |
+| **Max tokens** | Cap the reply length. **Leave blank** to let the model use its own default (recommended). Reasoning models ignore this field — it is omitted automatically even if set. |
 | **Reasoning effort** | In the composer toolbar — how much a reasoning model "thinks" before answering |
 
 > Leaving **Temperature** or **Max tokens** blank means the app won't send that
-> parameter at all, letting the model use its own default.
+> parameter at all, letting the model use its own default. For **Max tokens**
+> this is the recommended setting — most models already impose a sensible cap.
+> Reasoning models (e.g. o1, o3) never receive `max_tokens` regardless of what
+> you enter here; the field is silently ignored for those models.
 
 ---
 
@@ -614,7 +617,8 @@ A `400` means the API provider rejected the request. Common causes:
   (try **Load Models** to see valid options).
 - **A parameter the model doesn't support** — e.g. some models reject `reasoning_effort`,
   `response_format` (JSON mode), or images. Try turning those off and resend.
-- **Max tokens too high** for that model — lower the **Max tokens** value.
+- **Max tokens too high** for that model — lower the **Max tokens** value,
+  or leave it blank to let the model choose.
 - **Empty or malformed message** — make sure there's actual text/content.
 
 💡 Open the **Debug Logs** panel and look at the error entry for details — it often

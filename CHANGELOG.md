@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+### Changed
+- **`#95` Max tokens UX copy clarified.** The `Max tokens` field placeholder,
+  label badge, tooltip, and `USER_GUIDE.md` now say "blank = model default
+  (recommended)" instead of the previous misleading "blank = off" /
+  "e.g. 512 (or leave blank)" wording. Reasoning models (o1, o3-family) already
+  ignored any value entered; that behaviour is unchanged but is now explicitly
+  documented. A pure helper `shouldSendMaxTokens(excludedParams, maxTokens)` was
+  extracted from `sendMessage()` and exported so the payload-assembly contract is
+  unit-testable without a DOM/network harness (MT-1..MT-5 all green).
+
 ### Fixed
 - **`#94` 🚨 BLOCKING — project context isolation (RAG leak).** A chat opened
   inside one project could retrieve a document belonging to a *different*

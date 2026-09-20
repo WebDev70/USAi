@@ -286,6 +286,16 @@ function getExcludedParams(modelId) {
   return excluded;
 }
 
+
+// Decide whether the max_tokens parameter should be included in a chat
+// request. Extracted from sendMessage() so the behavior contract is
+// unit-testable without a DOM/network harness (#95): blank/0/NaN/negative
+// => omit; a positive value => include, UNLESS the model excludes
+// max_tokens (reasoning models). Pure - no DOM, no network, no side effects.
+function shouldSendMaxTokens(excludedParams, maxTokens) {
+  return !excludedParams.has('max_tokens') && !Number.isNaN(maxTokens) && maxTokens > 0;
+}
+
 // Reflect the current model's parameter support in the sidebar UI: disabled,
 // dimmed fields with an explanatory tooltip when a param is unsupported.
 function updateParamFieldStates() {
@@ -3737,7 +3747,7 @@ async function sendMessage() {
     logger.info('chat', `Omitting "temperature" — not supported by model "${inputs.model}"`);
   }
 
-  if (!excludedParams.has('max_tokens') && !Number.isNaN(inputs.maxTokens) && inputs.maxTokens > 0) {
+  if (shouldSendMaxTokens(excludedParams, inputs.maxTokens)) {
     payload.max_tokens = inputs.maxTokens;
   } else if (excludedParams.has('max_tokens') && !Number.isNaN(inputs.maxTokens) && inputs.maxTokens > 0) {
     logger.info('chat', `Omitting "max_tokens" — not supported by model "${inputs.model}"`);
@@ -4513,6 +4523,7 @@ if (typeof module !== 'undefined' && module.exports) {
     extractBalanced,
     formatUsage,
     getExcludedParams,
+    shouldSendMaxTokens,
     MODEL_PARAM_EXCLUSIONS,
     buildResponseFormat,
     // Additional pure helpers exposed for unit testing (no browser effect):
