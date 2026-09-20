@@ -349,10 +349,13 @@ detail-view cluster (#82 unblocks #67).
   - Files: `requirements-dev.txt`, `scripts/dev-deps-check.sh`, `Makefile`,
     `backend/tests/python/test_dev_deps.py`, `CHANGELOG.md`.
 
-- [ ] **90. 🚨 BLOCKING — reconcile the Done pile with the code that actually exists** *(M)*
+- [~] **90. 🚨 BLOCKING — reconcile the Done pile with the code that actually exists** *(M)* — spec: docs/specs/done-pile-reconciliation-90.md
   - Governance report 2026-09-19 (BLOCKING-02 / SBA-4, ADVISORY-04, ADVISORY-07).
     Decide implement-or-strike for #10, #11a/#11c, #12, #29, and #34 sub-claims 3/5;
     correct dependent docs; reconcile stale/orphan/missing specs; archive the oversized Done pile.
+
+- [ ] **97. 🚨 BLOCKING — Fix incomplete spec for #90** *(XS)* — The spec for #90 (`docs/specs/done-pile-reconciliation-90.md`) is not implementable. Acceptance Criterion 3 (AC-3) requires updating 16 stale spec files and removing 7 orphan spec files, but the spec does not list these files. The information could not be located in the referenced `ADVISORY-04` or related governance reports. The spec must be amended to include these file lists before `/loop` can proceed on #90.
+
   - Needs a dedicated `/spec` because the per-claim product decisions remain open.
 
 - [ ] **91. 📋 ADVISORY — reconcile ARCHITECTURE §3b with the live routes** *(S)*
@@ -617,7 +620,11 @@ detail-view cluster (#82 unblocks #67).
     `.clinerules/workflows/spec.md`. Batch with **#85** (same file, both XS/S doc-only edits).
   - Files: `.clinerules/workflows/spec.md` or `docs/rail-pipeline.md`, `CHANGELOG.md`.
 
-- [ ]  **82. Dedicated project settings modal + detail-view delete** *(S)*
+- [x]  **82. Dedicated project settings modal + detail-view delete** *(S)* — Done (2026-09-20):
+  dedicated `#projectSettingsModal` (no handler-swap), detail-view **🗑️ Delete Project**
+  button (confirm → DELETE → empty chat state), delete handler un-nested from the
+  `streamToggle` listener into `DOMContentLoaded`. PD-JS-7/8/9 behavior tests green;
+  `./run-tests.sh --coverage` passes. Spec: docs/specs/dedicated-project-settings-modal.md
   — Descoped from #81 (2026-09-18). Two loose ends in the project detail view:
   1. `_showProjectSettingsModal` re-uses the **create-project** modal and swaps its
      submit handler at runtime. This is fragile (stale closures, title/button text
@@ -1085,7 +1092,7 @@ detail-view cluster (#82 unblocks #67).
     JS branch coverage to 70.56% ✅. Gates: server.py 94% ✅, security scan clean ✅.
     Spec: `docs/specs/streaming-tool-calling.md`.
 
-- [x] **10. Export / import conversations** *(S)*
+- [S] **10. Export / import conversations** *(S)* — **STRUCK (2026-09-20)**: This feature was never implemented. The `[x]` Done claim was found to be false during the Sprint 19 governance audit (BLOCKING-02). The cited functions (`exportSessionData`, `buildMarkdownExport`, `_post_import_session`) do not exist in the codebase. See spec `docs/specs/done-pile-reconciliation-90.md`.
   - Download a session as JSON/Markdown; re-import later.
   - Files: `app.js`, possibly `server.py`.
   - **Done (2026-06-26):** Export button downloads dual-file package (`<title>.json` +
@@ -1102,10 +1109,10 @@ detail-view cluster (#82 unblocks #67).
   - *related to: #9 (both touch the streaming path)*
   - **Done (2026-06-26):** All sub-items complete.
   - **Sub-items:**
-    - [x] **#11a** — Streaming SSE relay: `extractReasoningText()` + collapsible 💭 Thinking block in `app.js`/`styles.css`. Done (2026-06-26).
+    - [S] **#11a** — Streaming SSE relay: `extractReasoningText()` + collapsible 💭 Thinking block in `app.js`/`styles.css`. **STRUCK (2026-09-20):** False claim. The function and UI block were never implemented.
     - [x] **#11b** — Non-streaming path: reasoning block shown on completed non-stream responses. Done (2026-06-26).
-    - [x] **#11c** — Persist + session restore: `persistExchange()` stores `reasoning` field; `restoreReasoningForTurn()` re-attaches 💭 block across `restoreSession()`, `loadChatHistory()`, `rerenderConversation()`. 77/77 JS tests ✅. Done (2026-06-26).
-    - [x] **#11d** — Python proxy integration test: `ProxyReasoningStreamTests` + `_ReasoningStreamUpstreamHandler` in `tests/python/test_server_proxy.py` verifies the proxy relays `reasoning`/`reasoning_content` fields verbatim in SSE frames (T-11d-1…4). Done (2026-06-29). Spec: `docs/specs/reasoning-proxy-integration-test.md`.
+    - [S] **#11c** — Persist + session restore: `persistExchange()` stores `reasoning` field; `restoreReasoningForTurn()` re-attaches 💭 block across `restoreSession()`, `loadChatHistory()`, `rerenderConversation()`. **STRUCK (2026-09-20):** False claim. `restoreReasoningForTurn` was never implemented.
+    - [✓] **#11d** — Python proxy integration test: `ProxyReasoningStreamTests` + `_ReasoningStreamUpstreamHandler` in `tests/python/test_server_proxy.py` verifies the proxy relays `reasoning`/`reasoning_content` fields verbatim in SSE frames (T-11d-1…4). **VERIFIED (2026-09-20):** This sub-item is real and correctly implemented.
     - [x] **#11e** — (included in earlier phases). Done (2026-06-26).
 
 - [x] **12. Prompt templates / saved system prompts** *(S)* — Done (2026-06-26): Built-in + user-saveable prompt template library shipped; Templates button in UI, apply/save/delete/persist with `localStorage`; 12 PT-* tests (PT-1…PT-12); JS branch 70.95% ✅.
@@ -1639,7 +1646,7 @@ detail-view cluster (#82 unblocks #67).
     a per-server tool allow-list has to compose with the existing `getEnabledTools()` gating
     rather than bypass it.
 
-- [x] **29. Startup API key auth probe warning**
+- [S] **29. Startup API key auth probe warning** — **STRUCK (2026-09-20):** False claim. The startup auth probe (`probe_upstream_auth`, `run_startup_auth_probe`) was never implemented, and the cited spec `docs/specs/startup-auth-probe.md` is missing.
   - Fire a non-blocking probe at server startup that emits a loud `[WARNING]`
     log + stderr print when the configured API key is rejected (HTTP 401/403),
     so a bad/expired key is obvious immediately rather than surfacing later as a

@@ -1,6 +1,25 @@
 ## [Unreleased]
 
 ### Changed
+- **`#82` Dedicated project settings modal + detail-view delete.** The project
+  detail view now has its own dedicated `#projectSettingsModal` in `index.html`
+  (name, memory mode, instructions, project files) plus a **🗑️ Delete Project**
+  action button — `_showProjectSettingsModal` no longer mutates the create-project
+  modal's title, button text, or submit handler (the fragile handler-swap path is
+  gone). Saving the settings modal `PUT`s `/projects/<id>` and re-renders the
+  detail view in place (no page reload). Clicking **Delete Project** confirms via
+  `confirm()`, `DELETE`s the project, clears `currentProjectId`, and returns to the
+  empty chat state via `_showChatView()` (never a blank canvas — the PD-JS-6 class
+  of bug). Cancelling the confirmation leaves the project intact. The delete
+  handler was moved out of the `streamToggle` change listener where it had been
+  mis-nested (it was never registered on load) and is now wired directly in
+  `DOMContentLoaded`. `styles.css` carries a `.modal-btn--danger` style; the
+  stylesheet is already at `?v=33`. New jsdom behaviour tests **PD-JS-7**
+  (open→edit→save), **PD-JS-8** (open→delete→confirm), and **PD-JS-9**
+  (open→delete→cancel) cover the flows; `./run-tests.sh --coverage` passes
+  (153 JS unit + 18 JS behavior + 465 Python tests green; server.py branch 92.31%,
+  JS branch 76.2%). Spec: `docs/specs/dedicated-project-settings-modal.md`.
+
 - **`#85` `/spec` pre-flight backlog-ID guard.** `.clinerules/workflows/spec.md`
   Step 3 now opens with a mandatory **Pre-flight: Backlog ID** block that carries
   the max-ID verification command verbatim, states the new ID **MUST be `max + 1`**

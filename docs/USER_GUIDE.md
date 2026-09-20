@@ -410,8 +410,10 @@ detail view** opens in the main pane showing:
 - The project name and a snippet of its instructions.
 - A list of all saved chats in this project (click any row to restore that chat).
 - A **"＋ New chat"** button to start a fresh conversation in this project.
-- A **"⚙ Settings"** button to edit the project name, instructions, memory mode,
-  and shared files.
+- A **"⚙ Settings"** button that opens the **project settings modal** to edit the
+  project name, instructions, memory mode, and shared files.
+- A **"🗑️ Delete Project"** button to delete the project directly from the detail
+  view (see *Delete a project* below).
 
 Project chats also appear **grouped under their project row** in the sidebar as
 a collapsible sub-list, so you can jump directly to any chat without opening the
@@ -446,7 +448,12 @@ its current project) at any time:
 > chat's `projectId` metadata is updated.
 
 #### Delete a project
-In the ⋯ context menu, click **Delete**. A confirmation prompt appears.
+You can delete a project two ways:
+- From the **project detail view**, click the **🗑️ Delete Project** button.
+- From the sidebar, hover over the project, open the **⋯** context menu, and click **Delete**.
+
+Either path shows a confirmation prompt first. Deleting from the detail view
+returns you to the empty chat state.
 > **What happens to chats and memories?**
 > - Chats that belonged to the project are **kept** and moved to the **Chats** section
 >   (they are never deleted).
@@ -455,7 +462,7 @@ In the ⋯ context menu, click **Delete**. A confirmation prompt appears.
 
 #### Memory Modes
 
-Every project has a **Memory mode** that is chosen at creation and **can be changed later** from the project settings (⋯ → **Settings** on the project row). It governs how Obsidian memory searches and saves are scoped for all chats in that project.
+Every project has a **Memory mode** that is chosen at creation and **can be changed later** from the project settings (open the project and click **⚙ Settings**, or use ⋯ → **Settings** on the project row). It governs how Obsidian memory searches and saves are scoped for all chats in that project.
 
 | Mode | Search behaviour | Save behaviour |
 |------|-----------------|----------------|
@@ -483,7 +490,7 @@ Each project can have a set of **custom instructions** that are automatically pr
 
 **Setting instructions:**
 - When **creating** a project, enter text in the optional **Instructions** textarea in the modal (up to 8 192 characters / ~2 000 words).
-- After creation, open the project settings (⋯ → **Settings** on the project row) and update the Instructions field, then click **Save**.
+- After creation, open the project settings (open the project and click **⚙ Settings**, or ⋯ → **Settings** on the project row) and update the Instructions field, then click **Save**.
 
 **How the system prompt is composed:**
 

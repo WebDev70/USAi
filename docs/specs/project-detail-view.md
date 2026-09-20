@@ -34,14 +34,13 @@ inside it, and manage settings — without losing access to those chats.
   sidebar sub-list — no longer hidden.
 - [x] **PD-5** Backend: `GET /sessions?projectId=<id>` returns only that
   project's sessions; traversal → 400.
-- [~] **PD-6** Project **Settings** (name, instructions, memory mode, files)
-  available from ⚙ button in detail view and from ⋯ menu. **PARTIAL:** ⚙ button
-  wired and functional, but it re-uses the existing `_showProjectSettingsModal`
-  handler-swap path. Dedicated `#projectSettingsModal` **descoped** → tracked as
-  backlog item #82.
-- [ ] **PD-7** Delete from detail view confirms and returns to empty chat state.
-  **DESCOPED** — delete remains available from the sidebar ⋯ menu only; tracked
-  as backlog item #82.
+- [x] **PD-6** Project **Settings** (name, instructions, memory mode, files)
+  available from ⚙ button in detail view and from ⋯ menu. **COMPLETE (#82,
+  2026-09-20):** the ⚙ button now opens a dedicated `#projectSettingsModal`; the
+  fragile `_showProjectSettingsModal` handler-swap path was removed.
+- [x] **PD-7** Delete from detail view confirms and returns to empty chat state.
+  **COMPLETE (#82, 2026-09-20):** the detail view has a 🗑️ Delete Project button
+  that confirms, `DELETE`s, and lands on the empty chat state (PD-JS-8/9).
 - [x] **PD-8** All existing tests pass; new PD-* tests green.
 
 ## 3. Affected files

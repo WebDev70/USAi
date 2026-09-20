@@ -234,6 +234,16 @@ body {
   transform: translateY(-1px);
 }
 
+
+.modal-btn--danger {
+    background-color: #dc3545;
+    color: white;
+}
+
+.modal-btn--danger:hover {
+    background-color: #c82333;
+}
+
 .new-chat-btn:active,
 .theme-toggle:active {
   transform: translateY(0);

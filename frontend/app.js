@@ -1939,30 +1939,20 @@ function _showProjectRenameModal(projectId, currentName) {
 }
 
 async function _showProjectSettingsModal(projectId) {
-  // Re-use the create project modal for settings.
-  const modal = document.getElementById('createProjectModal');
+  const modal = document.getElementById('projectSettingsModal');
   if (!modal) return;
 
   // Get all the DOM elements
-  const title = modal.querySelector('#createProjectTitle');
-  const nameInput = modal.querySelector('#projectNameInput');
-  const modeRow = modal.querySelector('.project-modal-mode-row');
-  const modeSelect = modal.querySelector('#projectMemoryMode');
-  const instTextarea = modal.querySelector('#projectInstructionsInput');
-  const filesSection = modal.querySelector('#projectFilesSection');
-  const saveBtn = modal.querySelector('#createProjectSaveBtn');
-  const uploadInput = modal.querySelector('#projectFileUploadInput');
+  const nameInput = modal.querySelector('#settingsProjectName');
+  const modeSelect = modal.querySelector('#settingsProjectMemoryMode');
+  const instTextarea = modal.querySelector('#settingsProjectInstructions');
+  const saveBtn = modal.querySelector('#projectSettingsSaveBtn');
+  const cancelBtn = modal.querySelector('#projectSettingsCancelBtn');
 
   // Fetch full project config
   const r = await loggedFetch(`/projects/${encodeURIComponent(projectId)}`);
   if (!r.ok) { return; }
   const project = await r.json();
-
-  // Switch modal to "Settings" mode
-  if (title) title.textContent = 'Project settings';
-  if (saveBtn) saveBtn.textContent = 'Save';
-  if (modeRow) modeRow.style.display = '';
-  if (filesSection) filesSection.removeAttribute('hidden');
 
   // Populate fields
   nameInput.value = project.name || '';
@@ -1970,14 +1960,10 @@ async function _showProjectSettingsModal(projectId) {
   if (instTextarea) instTextarea.value = project.instructions || '';
 
   // Render file list and wire up handlers
-  await _renderProjectFiles(projectId);
+  await _renderProjectFiles(projectId, 'settings');
 
   modal.removeAttribute('hidden');
   nameInput.focus();
-
-  // Override the save handler for this call
-  const originalHandler = saveBtn._projectSaveHandler;
-  if (originalHandler) saveBtn.removeEventListener('click', originalHandler);
 
   const settingsSaveHandler = async () => {
     const updates = {
@@ -1987,69 +1973,69 @@ async function _showProjectSettingsModal(projectId) {
     };
     if (!updates.name) return;
 
-    saveBtn.removeEventListener('click', settingsSaveHandler);
-    closeCreateProjectModal();
-
-    // Reset modal state
-    if (title) title.textContent = 'New project';
-    if(saveBtn) saveBtn.textContent = 'Create';
-    if (filesSection) filesSection.setAttribute('hidden', '');
-    if (originalHandler) saveBtn.addEventListener('click', originalHandler);
+    modal.setAttribute('hidden', '');
 
     await updateProject(projectId, updates);
     await showSessionsList();
-  };
-  saveBtn.addEventListener('click', settingsSaveHandler);
-
-  // Uploader
-  const uploadHandler = async (e) => {
-    const statusEl = modal.querySelector('#projectFileUploadStatus');
-    statusEl.textContent = 'Uploading...';
-    try {
-      const files = Array.from(e.target.files);
-      let uploadedCount = 0;
-      for (const file of files) {
-        const uploaded = await uploadProjectFile(projectId, file);
-        const uploadedFilename = uploaded.filename;
-        uploadedCount++;
-        statusEl.textContent = `Uploaded ${uploadedCount} of ${files.length} files.`;
-
-        // Asynchronously trigger embedding generation. Fire-and-forget.
-        // The server reads projectId from the query string and expects the
-        // list of chunk ids to embed in the JSON body — without chunkIds it
-        // embeds nothing, so we pass every chunk id produced for this file.
-        logger.info('Project-Settings', `Triggering embedding generation for ${uploadedFilename}`);
-        loggedFetch(`/generate-embeddings?projectId=${encodeURIComponent(projectId)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: uploadedFilename, chunkIds: uploaded.chunkIds }),
-        }).then(resp => {
-          if (resp.ok) {
-            logger.info('Project-Settings', `Embedding generation for ${uploadedFilename} started successfully.`);
-          } else {
-            resp.json().then(err => {
-              logger.error('Project-Settings', `Failed to start embedding generation for ${uploadedFilename}`, { error: err.error || 'Unknown error' });
-            }).catch(() => {
-              resp.text().then(errText => logger.error('Project-Settings', `Failed to start embedding generation for ${uploadedFilename}`, { error: errText }));
-            });
-          }
-        }).catch(error => {
-          logger.error('Project-Settings', `Error triggering embedding generation for ${uploadedFilename}`, { error: error.message });
-        });
-      }
-      statusEl.textContent = 'Upload complete!';
-      await _renderProjectFiles(projectId); // Refresh list
-    } catch (err) {
-      statusEl.textContent = `Error: ${err.message}`;
+    if (currentProjectId === projectId) {
+        await showProjectDetail(projectId);
     }
-    // Clear the input so the same file can be selected again
-    e.target.value = '';
   };
-  uploadInput.addEventListener('change', uploadHandler, { once: true });
+
+  const cancelHandler = () => {
+      modal.setAttribute('hidden', '');
+  };
+
+  saveBtn.addEventListener('click', settingsSaveHandler, { once: true });
+  cancelBtn.addEventListener('click', cancelHandler, { once: true });
+
+    const uploadInput = modal.querySelector('#settingsProjectFileUploadInput');
+    const uploadHandler = async (e) => {
+        const statusEl = modal.querySelector('#settingsProjectFileUploadStatus');
+        statusEl.textContent = 'Uploading...';
+        try {
+            const files = Array.from(e.target.files);
+            let uploadedCount = 0;
+            for (const file of files) {
+                const uploaded = await uploadProjectFile(projectId, file);
+                const uploadedFilename = uploaded.filename;
+                uploadedCount++;
+                statusEl.textContent = `Uploaded ${uploadedCount} of ${files.length} files.`;
+
+                // Asynchronously trigger embedding generation.
+                logger.info('Project-Settings', `Triggering embedding generation for ${uploadedFilename}`);
+                loggedFetch(`/generate-embeddings?projectId=${encodeURIComponent(projectId)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: uploadedFilename, chunkIds: uploaded.chunkIds }),
+                }).then(resp => {
+                    if (resp.ok) {
+                        logger.info('Project-Settings', `Embedding generation for ${uploadedFilename} started successfully.`);
+                    } else {
+                        resp.json().then(err => {
+                            logger.error('Project-Settings', `Failed to start embedding generation for ${uploadedFilename}`, { error: err.error || 'Unknown error' });
+                        }).catch(() => {
+                            resp.text().then(errText => logger.error('Project-SETTINGS', `Failed to start embedding generation for ${uploadedFilename}`, { error: errText }));
+                        });
+                    }
+                }).catch(error => {
+                    logger.error('Project-Settings', `Error triggering embedding generation for ${uploadedFilename}`, { error: error.message });
+                });
+            }
+            statusEl.textContent = 'Upload complete!';
+            await _renderProjectFiles(projectId, 'settings'); // Refresh list
+        } catch (err) {
+            statusEl.textContent = `Error: ${err.message}`;
+        }
+        // Clear the input so the same file can be selected again
+        e.target.value = '';
+    };
+    uploadInput.addEventListener('change', uploadHandler, { once: true });
 }
 
-async function _renderProjectFiles(projectId) {
-  const listEl = document.getElementById('projectFilesList');
+async function _renderProjectFiles(projectId, context = 'create') {
+  const listId = context === 'settings' ? 'settingsProjectFilesList' : 'projectFilesList';
+  const listEl = document.getElementById(listId);
   if (!listEl) return;
 
   const files = await listProjectFiles(projectId);
@@ -2067,9 +2053,10 @@ async function _renderProjectFiles(projectId) {
       if (confirm(`Delete ${filename} from this project?`)) {
         try {
           await deleteProjectFile(projectId, filename);
-          await _renderProjectFiles(projectId); // Refresh list
+          await _renderProjectFiles(projectId, context); // Refresh list
         } catch (err) {
-          const statusEl = document.getElementById('projectFileUploadStatus');
+            const statusId = context === 'settings' ? 'settingsProjectFileUploadStatus' : 'projectFileUploadStatus';
+          const statusEl = document.getElementById(statusId);
           if (statusEl) statusEl.textContent = `Error: ${err.message}`;
         }
       }
@@ -4060,6 +4047,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (currentProjectId) _showProjectSettingsModal(currentProjectId);
   });
 
+  // Delete the currently-open project from the detail view. Uses confirm()
+  // as a guard, then clears state and returns to the empty chat view. Wired
+  // here (not inside another handler) so it is always registered on load.
+  document.getElementById('projectDeleteBtn')?.addEventListener('click', async () => {
+    if (currentProjectId && confirm('Delete this project? Its chats will be moved to the main chat list.')) {
+      await deleteProject(currentProjectId);
+      currentProjectId = null;
+      _showChatView();
+      await showSessionsList();
+    }
+  });
+
   document.getElementById('send').addEventListener('click', () => {
     // The same button acts as Send or Stop depending on request state.
     if (activeAbortController) {
@@ -4621,6 +4620,13 @@ if (typeof module !== 'undefined' && module.exports) {
     // Per-chat chunks + tool registry exposed so the search_uploaded_files tool
     // can be exercised end-to-end against the retrieval pipeline (INT-2).
     get fileChunks() { return fileChunks; },
+
+    showProjectDetail,
+
+
+    _showProjectSettingsModal,
+    deleteProject,
+
     TOOL_REGISTRY,
     getRelevantChunks,
     _getRelevantChunksTest: (chunks, query, topK, fetchFn, semanticFlag) =>

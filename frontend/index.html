@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-    <link rel="stylesheet" href="styles.css?v=32">
+    <link rel="stylesheet" href="styles.css?v=33">
 
   </head>
   <body>
@@ -225,6 +225,8 @@
               <div class="project-detail-actions">
                 <button id="projectNewChatBtn" class="modal-btn modal-btn--primary" type="button">＋ New chat</button>
                 <button id="projectSettingsBtn" class="modal-btn" type="button">⚙ Settings</button>
+                 <button id="projectDeleteBtn" class="modal-btn modal-btn--danger" type="button">🗑️ Delete Project</button>
+
               </div>
             </div>
             <div class="project-detail-sessions-heading">Recent chats</div>
@@ -322,6 +324,46 @@
           <button id="createProjectCancelBtn" class="modal-btn" type="button">Cancel</button>
         </div>
       </div>
+    <!-- Project Settings Modal -->
+    <div id="projectSettingsModal" class="modal-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="projectSettingsTitle">
+      <div class="modal-box">
+        <h2 id="projectSettingsTitle" class="modal-title">Project settings</h2>
+        <label for="settingsProjectName" class="modal-label">Name</label>
+        <input id="settingsProjectName" type="text" class="modal-input" placeholder="e.g. Q3 Research" maxlength="80" autocomplete="off" />
+        <div class="project-modal-mode-row">
+          <label for="settingsProjectMemoryMode" class="modal-label">Memory mode</label>
+          <select id="settingsProjectMemoryMode" class="modal-select">
+            <option value="default">Default</option>
+            <option value="core">Core (essential facts only)</option>
+            <option value="archival">Archival (long-term, detailed)</option>
+          </select>
+        </div>
+        <div class="project-modal-instructions-row">
+          <label for="settingsProjectInstructions" class="modal-label">Instructions
+            <span class="modal-label-hint">(how the AI should behave in this project)</span>
+          </label>
+          <textarea id="settingsProjectInstructions" class="modal-textarea" rows="4" maxlength="8192" placeholder="e.g. Always reply in French. Be concise."></textarea>
+          <div id="settingsProjectInstructionsCounter" class="modal-char-counter" aria-live="polite">0 / 8192</div>
+        </div>
+        <div class="project-files-section" id="settingsProjectFilesSection">
+          <label class="modal-label">Project files
+            <span class="modal-label-hint">(shared across all chats in this project)</span>
+          </label>
+          <ul id="settingsProjectFilesList" class="project-files-list" aria-label="Uploaded project files"></ul>
+          <label class="modal-btn modal-btn--sm" for="settingsProjectFileUploadInput" id="settingsProjectFileUploadBtn">
+            + Upload file
+            <input id="settingsProjectFileUploadInput" type="file" hidden multiple accept=".txt,.md,.pdf,.docx,.json,.csv" />
+          </label>
+          <span id="settingsProjectFileUploadStatus" class="project-files-status" aria-live="polite"></span>
+        </div>
+        <div class="modal-actions">
+          <button id="projectSettingsSaveBtn" class="modal-btn modal-btn--primary" type="button">Save</button>
+          <button id="projectSettingsCancelBtn" class="modal-btn" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+
     </div>
 
     <script src="app.js"></script>

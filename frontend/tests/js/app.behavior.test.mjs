@@ -57,6 +57,25 @@ const MINIMAL_HTML = `<!DOCTYPE html><html lang="en"><head><title>USAi Test</tit
     </div>
     <div id="chatSessionsList"></div>
     <div class="sidebar-settings">
+    <div id="projectDetailView" hidden>
+      <span id="projectDetailName"></span>
+      <span id="projectDetailInstructions"></span>
+      <div id="projectDetailSessions"></div>
+      <button id="projectNewChatBtn"></button>
+      <button id="projectSettingsBtn"></button>
+      <button id="projectDeleteBtn"></button>
+    </div>
+    <div id="projectSettingsModal" hidden>
+        <input id="settingsProjectName" />
+        <select id="settingsProjectMemoryMode"><option value="default">default</option></select>
+        <textarea id="settingsProjectInstructions"></textarea>
+        <ul id="settingsProjectFilesList"></ul>
+        <input id="settingsProjectFileUploadInput" type="file" />
+        <span id="settingsProjectFileUploadStatus"></span>
+        <button id="projectSettingsSaveBtn"></button>
+        <button id="projectSettingsCancelBtn"></button>
+    </div>
+
       <select id="modelSelect"><option value="gpt-4o">gpt-4o</option></select>
       <input id="modelCustom" value="" /><input id="apiKeyInput" type="password" value="" />
       <input id="baseUrlInput" value="http://localhost:8000" />
@@ -209,8 +228,21 @@ function loadApp(fetchMap = {}) {
 
   // Run app.js inside the jsdom window context so all module-scope functions
   // land in win (dom.window) and are accessible as win.callChatApi etc.
+  // Provide a `module` object so app.js's `module.exports` guard also fires —
+  // this exposes the getter/setter accessors (e.g. currentProjectId) that let
+  // tests read and mutate module-scope state that is otherwise closed over.
   const ctx = vm.createContext(win);
+  win.module = { exports: {} };
   vm.runInContext(APP_SRC, ctx, { filename: 'app.js' });
+  // Mirror the exported accessors onto win so tests can use win.currentProjectId
+  // (a plain property assignment on win would NOT reach the module-scope `let`).
+  if (win.module && win.module.exports) {
+    const ex = win.module.exports;
+    const desc = Object.getOwnPropertyDescriptor(ex, 'currentProjectId');
+    if (desc && (desc.get || desc.set)) {
+      Object.defineProperty(win, 'currentProjectId', desc);
+    }
+  }
 
   // Dispatch DOMContentLoaded so event-listener wiring in app.js runs.
   // Guard with try/catch: the .new-chat-btn click listener in DOMContentLoaded
@@ -474,6 +506,96 @@ describe('global error handlers', () => {
       await new Promise(r => setTimeout(r, 15));
     } catch { threw = true; }
     assert.equal(threw, false, 'unhandledrejection handler must not throw');
+  });
+});
+
+
+
+describe('#82 Project Settings & Delete', () => {
+  test('PD-JS-7: settings save PUTs the project and re-renders the detail view', async () => {
+    // Open the settings modal, change the name, click Save. Verify a PUT to
+    // /projects/<id> fires and the detail view re-renders (showProjectDetail
+    // is invoked because currentProjectId matches the edited project).
+    let putCalled = false;
+    const win = loadApp({
+      '/config':      { status: 200, body: '{}' },
+      '/sessions':    { status: 200, body: '[]' },
+      '/chunk-cache': { status: 200, body: '[]' },
+      '/projects/p1': (url, opts) => {
+        if (opts && opts.method === 'PUT') { putCalled = true; return { status: 200, body: '{}' }; }
+        return { status: 200, body: JSON.stringify({ name: 'Proj One', instructions: '', memoryMode: 'default' }) };
+      },
+      '/projects':    { status: 200, body: '[]' },
+    });
+
+    // Simulate an open project so the save handler re-renders the detail view.
+    win.currentProjectId = 'p1';
+
+    await win._showProjectSettingsModal('p1');
+
+    const modal = win.document.getElementById('projectSettingsModal');
+    assert.equal(modal.hasAttribute('hidden'), false, 'modal must be visible after open');
+    assert.equal(win.document.getElementById('settingsProjectName').value, 'Proj One',
+      'name field must be populated from the fetched project');
+
+    // Change the name and click Save.
+    win.document.getElementById('settingsProjectName').value = 'Renamed';
+    win.document.getElementById('projectSettingsSaveBtn').click();
+    await new Promise(r => setTimeout(r, 10));
+
+    assert.equal(putCalled, true, 'Save must PUT /projects/<id>');
+    assert.equal(modal.hasAttribute('hidden'), true, 'modal must hide after save');
+    const putCall = fetchCalls.find(c => c.url.includes('/projects/p1') && c.options?.method === 'PUT');
+    assert.ok(putCall, 'a PUT request should have been recorded');
+    assert.match(putCall.options.body, /Renamed/, 'PUT body must carry the new name');
+  });
+
+  test('PD-JS-8: detail-view delete confirmed deletes project and returns to chat view', async () => {
+    let deleteCalled = false;
+    const win = loadApp({
+      '/config':      { status: 200, body: '{}' },
+      '/sessions':    { status: 200, body: '[]' },
+      '/chunk-cache': { status: 200, body: '[]' },
+      '/projects/p1': (url, opts) => {
+        if (opts && opts.method === 'DELETE') { deleteCalled = true; return { status: 200, body: '{}' }; }
+        return { status: 200, body: JSON.stringify({ name: 'Proj One' }) };
+      },
+      '/projects':    { status: 200, body: '[]' },
+    });
+
+    win.confirm = () => true;      // user confirms the delete
+    win.currentProjectId = 'p1';
+
+    win.document.getElementById('projectDeleteBtn').click();
+    await new Promise(r => setTimeout(r, 10));
+
+    assert.equal(deleteCalled, true, 'confirmed delete must DELETE /projects/<id>');
+    assert.equal(win.currentProjectId, null, 'currentProjectId must be cleared after delete');
+    const detailEl = win.document.getElementById('projectDetailView');
+    assert.equal(detailEl.hasAttribute('hidden'), true, 'detail view must be hidden after delete');
+  });
+
+  test('PD-JS-9: detail-view delete cancelled leaves the project intact', async () => {
+    let deleteCalled = false;
+    const win = loadApp({
+      '/config':      { status: 200, body: '{}' },
+      '/sessions':    { status: 200, body: '[]' },
+      '/chunk-cache': { status: 200, body: '[]' },
+      '/projects/p1': (url, opts) => {
+        if (opts && opts.method === 'DELETE') { deleteCalled = true; return { status: 200, body: '{}' }; }
+        return { status: 200, body: JSON.stringify({ name: 'Proj One' }) };
+      },
+      '/projects':    { status: 200, body: '[]' },
+    });
+
+    win.confirm = () => false;     // user cancels the confirmation
+    win.currentProjectId = 'p1';
+
+    win.document.getElementById('projectDeleteBtn').click();
+    await new Promise(r => setTimeout(r, 10));
+
+    assert.equal(deleteCalled, false, 'cancelled delete must NOT DELETE the project');
+    assert.equal(win.currentProjectId, 'p1', 'currentProjectId must remain set when cancelled');
   });
 });
 
