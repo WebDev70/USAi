@@ -250,7 +250,7 @@ disk error can never interrupt request handling. The `persist_logs` boolean is
 exposed via `GET /config` (never the raw flag value).
 
 **Log file viewer (#50):** `GET /logs/files` lists persisted log file names and
-metadata. `GET /logs/files?file=<name>` returns up to 500 entries from that file.
+metadata. `GET /logs/files?name=<name>` returns up to 500 entries from that file.
 All path resolution is traversal-guarded; only files inside the `logs/` directory
 are accessible.
 
