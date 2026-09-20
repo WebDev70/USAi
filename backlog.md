@@ -325,6 +325,36 @@ Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
   - Files: `scripts/security-scan.sh`, `backend/tests/python/test_scripts.py`.
 
 
+### 🔧 Governance findings (Sprint 19 close — 2026-09-19)
+
+- [x] **89. 🚨 BLOCKING — fix the `mutmut` pin and make hash verification real** *(S)* — Done (2026-09-20): corrected the `mutmut==2.5.1` digest to the only published artifact hash; `scripts/dev-deps-check.sh` now runs `pip download --no-deps --require-hashes` so a wrong/tampered digest fails the gate; restored `make dev-setup` + `make mutation`; hermetic T-6/T-7/T-8 regressions (local wheels via `PIP_NO_INDEX`/`PIP_FIND_LINKS`) added, full suite 456 tests OK, coverage/security/quality/doc gates green. Spec: `docs/specs/dev-dependency-hash-verification.md`
+  - Governance report 2026-09-19 (BLOCKING-01 / SE-3). Replace the fabricated
+    `mutmut==2.5.1` digest with the verified published-artifact digest; make
+    `scripts/dev-deps-check.sh` execute pip's hash enforcement; restore the promised
+    `make dev-setup` and `make mutation` entry points; add hermetic regression coverage.
+  - Files: `requirements-dev.txt`, `scripts/dev-deps-check.sh`, `Makefile`,
+    `backend/tests/python/test_dev_deps.py`, `CHANGELOG.md`.
+
+- [ ] **90. 🚨 BLOCKING — reconcile the Done pile with the code that actually exists** *(M)*
+  - Governance report 2026-09-19 (BLOCKING-02 / SBA-4, ADVISORY-04, ADVISORY-07).
+    Decide implement-or-strike for #10, #11a/#11c, #12, #29, and #34 sub-claims 3/5;
+    correct dependent docs; reconcile stale/orphan/missing specs; archive the oversized Done pile.
+  - Needs a dedicated `/spec` because the per-claim product decisions remain open.
+
+- [ ] **91. 📋 ADVISORY — reconcile ARCHITECTURE §3b with the live routes** *(S)*
+  - Governance report 2026-09-19 (ADVISORY-01 / SA-2). Remove or annotate absent routes,
+    document omitted live routes and prefix dispatch, and fix `/logs/files?file=` to `?name=`.
+    Consider generating the endpoint table to prevent recurrence.
+
+- [ ] **92. 📋 ADVISORY — enforce Mode B self-improvement in session notes** *(XS)*
+  - Governance report 2026-09-19 (ADVISORY-03 / SPMS-5). Require each session note to record
+    either a workflow improvement proposal or an explicit "no improvement found" outcome.
+
+- [ ] **93. 📋 ADVISORY — stop security-scan skips reading as passes** *(XS)*
+  - Governance report 2026-09-19 (ADVISORY-05/06; third consecutive audit, escalates to
+    BLOCKING next audit). Use strict scanner invocation where required or make skipped
+    scanners and vault checks unambiguously non-passing.
+
 ### 🔧 Governance findings (Sprint 16 close — 2026-09-18)
 
 > Items below were identified by the Sprint 16 belated Governance Board audit.

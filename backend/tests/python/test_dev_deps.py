@@ -13,10 +13,12 @@ Exit-code contract for dev-deps-check.sh:
   1 — at least one installed version differs from the pin
   2 — usage error: missing pin file, or a checked package not found in pin file
 """
+import hashlib
 import os
 import subprocess
 import tempfile
 import unittest
+import zipfile
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 DEV_DEPS_CHECK = os.path.join(REPO_ROOT, "scripts", "dev-deps-check.sh")
@@ -36,6 +38,27 @@ def _write_req_dev(path, entries):
                 fh.write(f"{pkg} \\\n    --hash={sha}\n")
             else:
                 fh.write(f"{pkg}\n")
+
+
+def _write_wheel(directory, package, version):
+    """Create a minimal valid wheel and return its sha256 requirement hash."""
+    distribution = package.replace("-", "_")
+    filename = f"{distribution}-{version}-py3-none-any.whl"
+    path = os.path.join(directory, filename)
+    dist_info = f"{distribution}-{version}.dist-info"
+    with zipfile.ZipFile(path, "w") as wheel:
+        wheel.writestr(
+            f"{dist_info}/METADATA",
+            f"Metadata-Version: 2.1\nName: {package}\nVersion: {version}\n",
+        )
+        wheel.writestr(
+            f"{dist_info}/WHEEL",
+            "Wheel-Version: 1.0\nGenerator: usai-test\nRoot-Is-Purelib: true\n"
+            "Tag: py3-none-any\n",
+        )
+        wheel.writestr(f"{dist_info}/RECORD", "")
+    with open(path, "rb") as artifact:
+        return "sha256:" + hashlib.sha256(artifact.read()).hexdigest()
 
 
 def _run_check(req_file, python_exe=None, extra_env=None):
@@ -108,10 +131,16 @@ class TestDevDepsCheckPass(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             req = os.path.join(tmp, "requirements-dev.txt")
+            # Build local wheels and pin their REAL digests so the hash phase
+            # passes offline. Fake digests (or network access) would make the
+            # now-executed --require-hashes gate correctly fail.
+            cov_hash = _write_wheel(tmp, "coverage", cov_ver)
+            ban_hash = _write_wheel(tmp, "bandit", ban_ver)
+            audit_hash = _write_wheel(tmp, "pip-audit", pip_audit_ver)
             _write_req_dev(req, [
-                (f"coverage=={cov_ver}", "sha256:dummy"),
-                (f"bandit=={ban_ver}", "sha256:dummy"),
-                (f"pip-audit=={pip_audit_ver}", "sha256:dummy"),
+                (f"coverage=={cov_ver}", cov_hash),
+                (f"bandit=={ban_ver}", ban_hash),
+                (f"pip-audit=={pip_audit_ver}", audit_hash),
             ])
             # Limit checked packages to only the three we pinned above — avoids
             # exit 2 from mutmut being in the default list but absent from the
@@ -119,7 +148,13 @@ class TestDevDepsCheckPass(unittest.TestCase):
             rc, out = _run_check(
                 req,
                 python_exe=venv_py,
-                extra_env={"CHECKED_PACKAGES_OVERRIDE": "coverage bandit pip-audit"},
+                extra_env={
+                    "CHECKED_PACKAGES_OVERRIDE": "coverage bandit pip-audit",
+                    # Keep the hash phase hermetic: resolve artifacts from the
+                    # local wheel dir, never PyPI.
+                    "PIP_NO_INDEX": "1",
+                    "PIP_FIND_LINKS": tmp,
+                },
             )
             self.assertEqual(rc, 0, msg=f"Expected exit 0, got {rc}.\n{out}")
             self.assertIn("✓", out, msg=f"Expected ✓ in output:\n{out}")
@@ -251,6 +286,69 @@ class TestDevDepsCheckPinnedButNotInstalled(unittest.TestCase):
             self.assertEqual(rc, 1, msg=f"Expected exit 1 (pinned but not installed), got {rc}.\n{out}")
             self.assertIn("not installed", out.lower(),
                           msg=f"Expected 'not installed' in output:\n{out}")
+
+
+# ---------------------------------------------------------------------------
+# T-6/T-7: pip executes hash verification against a local artifact
+# ---------------------------------------------------------------------------
+
+class TestDevDepsHashVerification(unittest.TestCase):
+    """The checker must execute pip's hash control, not merely parse versions."""
+
+    def _run_local_hash_case(self, corrupt=False):
+        venv_py = os.path.join(REPO_ROOT, ".venv", "bin", "python")
+        if not os.path.isfile(venv_py):
+            self.skipTest(".venv not present")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            digest = _write_wheel(tmp, "coverage", "7.10.7")
+            if corrupt:
+                digest = "sha256:" + ("0" * 64)
+            req = os.path.join(tmp, "requirements-dev.txt")
+            _write_req_dev(req, [("coverage==7.10.7", digest)])
+            return _run_check(
+                req,
+                python_exe=venv_py,
+                extra_env={
+                    "CHECKED_PACKAGES_OVERRIDE": "coverage",
+                    # pip reads these natively — no custom option plumbing in
+                    # the script, and no network access during the test.
+                    "PIP_NO_INDEX": "1",
+                    "PIP_FIND_LINKS": tmp,
+                },
+            )
+
+    def test_exits_0_when_local_artifact_hash_matches(self):
+        rc, out = self._run_local_hash_case()
+        self.assertEqual(rc, 0, msg=out)
+        self.assertIn("artifact hashes verified", out.lower())
+
+    def test_exits_1_when_local_artifact_hash_is_corrupt(self):
+        rc, out = self._run_local_hash_case(corrupt=True)
+        self.assertEqual(rc, 1, msg=out)
+        self.assertIn("hash verification failed", out.lower())
+
+
+# ---------------------------------------------------------------------------
+# T-8: documented Make entry points exist
+# ---------------------------------------------------------------------------
+
+class TestDevDependencyMakeTargets(unittest.TestCase):
+    """Failure remediation and mutation docs must resolve to real Make targets."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(REPO_ROOT, "Makefile"), encoding="utf-8") as makefile:
+            cls.makefile = makefile.read()
+
+    def test_dev_setup_runs_hash_enforced_install(self):
+        self.assertIn("dev-setup:", self.makefile)
+        self.assertIn("--require-hashes", self.makefile)
+        self.assertIn("requirements-dev.txt", self.makefile)
+
+    def test_mutation_target_uses_project_venv(self):
+        self.assertIn("mutation:", self.makefile)
+        self.assertIn("PYTHON=$(PY) ./scripts/mutation-audit.sh", self.makefile)
 
 
 if __name__ == "__main__":

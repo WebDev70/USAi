@@ -22,7 +22,29 @@
   local/CI threshold consistency plus the inclusive 5.00-point advisory boundary.
 
 ### Fixed
-- **The jsdom skip can no longer hide a broken `npm ci`.** Making the JS coverage gate
+- **`#89` dev-dependency artifact hashes are now an executed supply-chain control, and
+  the fabricated `mutmut` digest is corrected.** Sprint 19 governance (BLOCKING-01)
+  proved two defects that five prior audits scored 4–5 without catching: (1)
+  `requirements-dev.txt` pinned `mutmut==2.5.1` to a digest (`sha256:c69b8dea…`) that
+  matches **no** published artifact, so `pip install --require-hashes` had never once
+  verified; and (2) `scripts/dev-deps-check.sh` compared *installed versions* only and
+  never touched the hashes — its green output looked like hash coverage but wasn't. The
+  pin is corrected to PyPI's only published digest
+  (`sha256:d8fea2538805277f6290922e88881ad045002fc284d5a53c2b3915298b77f79d`), and the
+  checker now runs `pip download --no-deps --require-hashes -r requirements-dev.txt` into
+  a `mktemp -d` scratch dir (removed by an EXIT trap) so a tampered or wrong digest fails
+  the same gate that claims to validate the manifest. `--no-deps` is deliberate: the file
+  is a hash-pinned **top-level** manifest, not a full transitive lock. Hermeticity uses
+  pip's native `PIP_NO_INDEX`/`PIP_FIND_LINKS` against a local wheel directory rather than
+  a custom Bash option array — expanding an empty indexed array under `set -u` in bash 3.2
+  raises "unbound variable", so the array approach was removed entirely. The `make setup`
+  → `make dev-setup` chain (hash-enforced install, then transitive dev-only resolution) and
+  `make mutation` (project-venv wrapper) entry points promised by earlier specs are restored.
+  Pinned by hermetic regressions in `backend/tests/python/test_dev_deps.py`: a locally built
+  wheel with its real sha256 passes (T-6), the same artifact with a corrupt digest exits 1
+  (T-7), and the Make targets resolve to the required commands (T-8); the existing
+  version/missing-pin/uninstalled exit contracts (T-1–T-5) stay green.
+
   tolerant of a missing jsdom (below) fixed the Python job but opened a new blind spot in
   the **JavaScript** job, where the behavior suite is supposed to run: a partial or failed
   `npm ci` would print the skip warning, drop `app.behavior.test.mjs`, and still exit 0 —

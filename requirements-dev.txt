@@ -1,6 +1,9 @@
 # requirements-dev.txt
 # Dev/CI-only tooling — never installed in the app runtime.
 # Hash-pinned for reproducibility; verified by scripts/dev-deps-check.sh.
+# These are top-level dev tools, not a complete transitive lock. Hash verification
+# therefore uses --no-deps; `make dev-setup` resolves transitive dev-only packages
+# only after every declared artifact has passed pip's --require-hashes control.
 #
 # To regenerate hashes after a version bump:
 #   pip download <pkg>==<ver> --no-deps -d /tmp/wheels && pip hash /tmp/wheels/<whl>
@@ -19,4 +22,4 @@ pip-audit==2.9.0 \
 # mutmut — opt-in mutation testing (scripts/mutation-audit.sh, make mutation).
 # Not a hard gate; always-exits-0 informational wrapper.
 mutmut==2.5.1 \
-    --hash=sha256:c69b8dea1f63e53e7f1f2e9a0162e8e8bb2d77a21c427ac4bf46e85ef3e7b0b6
+    --hash=sha256:d8fea2538805277f6290922e88881ad045002fc284d5a53c2b3915298b77f79d

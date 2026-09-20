@@ -124,6 +124,33 @@ if [[ ${#mismatches[@]} -gt 0 ]]; then
     exit 1
 fi
 
+
+# ---- Hash verification (pip download) ---------------------------------------
 echo ""
-echo "✓ All dev tools match their pinned versions."
-exit 0
+echo "Verifying artifact hashes..."
+
+# Hermeticity is controlled via pip's own environment variables, which the
+# caller (or the test harness) sets directly — PIP_NO_INDEX=1 and
+# PIP_FIND_LINKS=<dir> point pip at a local artifact directory instead of PyPI.
+# We deliberately avoid a custom option array: expanding an empty indexed array
+# under `set -u` in bash 3.2 raises "unbound variable", and word-splitting a
+# free-form options string is fragile with paths that contain spaces.
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+set +e
+out=$("$PY" -m pip download --no-deps --require-hashes -r "$REQ_DEV" -d "$tmpdir" 2>&1)
+rc=$?
+set -e
+
+if [[ $rc -ne 0 ]]; then
+    echo ""
+    echo "FAIL: pip hash verification failed. The following artifacts may be" >&2
+    echo "      tampered with, or their digests in ${REQ_DEV} are wrong." >&2
+    echo ""
+    echo "$out" >&2
+    exit 1
+fi
+
+echo "✓ All declared artifact hashes verified."
+
