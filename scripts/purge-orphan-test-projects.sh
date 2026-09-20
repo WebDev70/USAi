@@ -25,6 +25,7 @@ cd "$(dirname "$0")/.."   # project root
 
 PROJECTS_DIR=".projects"
 CHUNK_CACHE_DIR=".chunk_cache/projects"
+SESSIONS_DIR=".chat_sessions"
 
 # Test-project display-name patterns (extended regex). Real projects must never
 # use these names. Add patterns here if new test names appear.
@@ -48,7 +49,26 @@ fi
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR=".purge-backup/$STAMP"
 
+# Build the set of projectIds that are still referenced by a saved chat session,
+# so we NEVER purge a project a real chat points to (extra safety beyond the
+# name allowlist). Uses stdlib python; empty set if the dir is absent.
+REFERENCED_IDS="$(python3 - "$SESSIONS_DIR" <<'PY'
+import json, os, sys, glob
+d = sys.argv[1]
+ids = set()
+for p in glob.glob(os.path.join(d, '*.json')):
+    try:
+        pid = json.load(open(p)).get('projectId')
+        if pid:
+            ids.add(pid)
+    except Exception:
+        pass
+print('\n'.join(sorted(ids)))
+PY
+)"
+
 count=0
+skipped=0
 echo "Scanning $PROJECTS_DIR for orphan test projects (patterns: $TEST_NAME_PATTERNS)"
 echo
 
@@ -58,6 +78,12 @@ for meta in "$PROJECTS_DIR"/*.json; do
   name="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("name",""))' "$meta" 2>/dev/null)"
   pid="$(basename "$meta" .json)"
   if printf '%s' "$name" | grep -Eq "$TEST_NAME_PATTERNS"; then
+    # Safety: skip any project still referenced by a saved chat session.
+    if printf '%s\n' "$REFERENCED_IDS" | grep -qxF "$pid"; then
+      skipped=$((skipped + 1))
+      echo "SKIP (referenced by a saved chat)  $pid  (name: $name)"
+      continue
+    fi
     count=$((count + 1))
     if [ "$APPLY" -eq 1 ]; then
       if [ "$HARD" -eq 1 ]; then
@@ -77,6 +103,7 @@ for meta in "$PROJECTS_DIR"/*.json; do
 done
 
 echo
+echo "Skipped (referenced by a saved chat, preserved): $skipped"
 if [ "$APPLY" -eq 1 ]; then
   if [ "$HARD" -eq 1 ]; then
     echo "Permanently deleted $count orphan test project(s)."

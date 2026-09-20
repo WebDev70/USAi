@@ -21,6 +21,10 @@ logs/*.jsonl
 # backend/server.py (PROJECTS_DIR). User data, never source.
 .projects/
 
+# Reversible backups written by scripts/purge-orphan-test-projects.sh.
+# Runtime user data moved out of .projects/, never source.
+.purge-backup/
+
 # Python bytecode caches — build artifacts, never source.
 __pycache__/
 *.py[cod]

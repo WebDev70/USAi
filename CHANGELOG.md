@@ -17,8 +17,9 @@
   before the target project's chunks load. New regression suite
   `frontend/tests/js/project-context-isolation.test.mjs` (PCI-1..PCI-5)
   reconstructs the exact incident and asserts the leak is closed. A dry-run-first
-  `scripts/purge-orphan-test-projects.sh` safely removes the 537 orphan test
-  projects left by 2026-09-13 manual QA. Spec:
+  `scripts/purge-orphan-test-projects.sh` safely removes the orphan test projects
+  left by manual QA (it skips any project still referenced by a saved chat session
+  and backs projects up to `.purge-backup/<stamp>/` by default). Spec:
   `docs/specs/project-context-isolation.md`.
 
 ### Added
