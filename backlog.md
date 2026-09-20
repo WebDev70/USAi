@@ -17,25 +17,36 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 > grep -oE '^- \[.\] +\*\*[0-9]+\.' backlog.md | grep -oE '[0-9]+' | sort -n | tail -3
 > ```
 
-> **Last groomed:** 2026-09-18 — full grooming pass. Verified #77 complete
-> (proxy suite runs clean in isolation, 26 tests OK); flipped to Done.
-> Wrote explicit acceptance criteria for #79/#82/#83/#84/#85. Flagged #67, #68,
-> #86, #13, #14, #15 and #57 as **not yet DoR**, each with its specific open
-> design questions. #76 re-scoped against a measured working tree; steps (b)–(f)
-> executed, only (a) "commit the shipped work" remains. Roo/Zoo experiment kept
-> and tracked as **#86** (branch `feat/zoo-migration`), not deleted.
-> Recommended near-term order:
-> #76 → #74 → #85 → #79 → (#82, #83, #84) → (#70, #71, #68) → #67.
+> **Last groomed:** 2026-09-20 — post-Sprint-20 audit + grooming pass. Six items
+> shipped since the 2026-09-19 governance close: **#89** (BLOCKING mutmut pin),
+> **#94** (BLOCKING project-isolation RAG leak), **#95** (max_tokens copy),
+> **#85** (backlog-ID pre-flight guard), **#79** (grep-redact Check G-4), and
+> **#93** (security-scan skip reporting). All committed and pushed to `origin/main`
+> (HEAD `cd36dc6`); working tree clean; `./run-tests.sh --coverage`,
+> `./scripts/security-scan.sh`, and `./scripts/quality-gate.sh` all green. The
+> earlier "`main` is red / #76 is BLOCKING" verification below is **resolved and
+> historical** — #76 shipped 2026-09-19.
+>
+> **Highest-severity open item:** **#90** (🚨 BLOCKING — reconcile the Done pile
+> with code that actually exists). #89 (the other Sprint-19 blocker) is now Done.
+> Recommended order: **#90 → #91 → #92** (governance debt) → **#82 → #83 → #84**
+> (project detail-view cluster) → **#70 → #71** (retrieval, specs already written).
+>
+> **Note on ID #96:** the header count reflects ID **96**, which was assigned to the
+> *batch spec* `docs/specs/spec-workflow-hardening-79-85.md` covering #79+#85 — there
+> is no standalone `#96` backlog item, and per the "gaps are never reused" rule the
+> next new ID is **97**.
+>
 > Mirror: `Cline/scrum/product-backlog.md` in the Obsidian vault.
 >
-> **Second-pass verification (same day):** cloned `main` HEAD to a scratch dir and
-> ran the gates there rather than in the working tree. **`main` is red:**
-> `./run-tests.sh` exits 1 (21 failures / 11 errors) and `./scripts/quality-gate.sh`
-> exits 1 (missing `docs/quality/review-checks/` manifest). #76 is therefore
-> **BLOCKING, not advisory** — the uncommitted tree is load-bearing, not cosmetic.
-> #74 is now explicitly **blocked by #76(a)** (its measured coverage includes two
-> untracked test files). Also fixed a dangling `implementation_plan.md` reference in
-> `docs/specs/obsidian-mcp-bridge.md` that #76(d)'s deletion orphaned.
+> ---
+>
+> **Historical verification (2026-09-18, resolved) —** kept for the audit trail:
+> cloned `main` HEAD to a scratch dir and ran the gates there. At the time `main`
+> was **red** (`./run-tests.sh` exit 1, 21 failures / 11 errors; `quality-gate.sh`
+> exit 1, missing manifest), which made #76 **BLOCKING, not advisory**. #74 was
+> blocked by #76(a). All resolved: #76, #74, #87, #88 shipped in Sprint 19; #89, #94,
+> #95, #85, #79, #93 shipped in Sprint 20.
 
 ---
 
@@ -96,32 +107,35 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 ## Open items
 
-### 🎯 Ready to pull next (groomed 2026-09-18)
+### 🎯 Ready to pull next (groomed 2026-09-20)
 
 Sprint-ready in the recommended order. Everything here passes
 [`docs/quality/review-checks/definition-of-ready.md`](docs/quality/review-checks/definition-of-ready.md):
-it has a bounded scope, a named file list, and testable acceptance criteria.
+it has a bounded scope, a named file list, and testable acceptance criteria —
+**except** the three governance items (#90/#91/#92) which are approved but still
+need a `/spec` pass to resolve open per-claim product decisions.
 
 | # | Title | Size | Why now |
 |---|-------|------|---------|
-| 87 | Restore `doc-consistency-check.sh` scan scope | S | 🚨 Must be decided *before* #76(a) commits it — the working-tree guard scans 3 files instead of 15, leaving all 12 `.clinerules/*.md` unguarded, and 5 guard tests were deleted. |
-| 74 | Ratchet coverage thresholds | S | Headroom re-measured; js_branch already drifted 77.75% → 75.19% unnoticed. **Do after #76(a)** — the measured numbers include two untracked test files. |
-| 85 | Pre-flight backlog-ID check in `/spec` | XS | Cheapest guard; prevents the duplicate-ID bug that already happened once (#79). |
-| 79 | Redact grep-output as a standing `/spec` rule | S | Same workflow file as #85 — batch the two together. |
-| 82 | Project settings modal + detail-view delete | S | Unblocks #67; removes the fragile create-modal-reuse hack. |
-| 83 | jsdom behavior tests for project detail view | S | Closes the DOM-coverage gap #81 shipped with. |
-| 84 | Refactor `appendMessage` to a turn object | S | Retro action; 6-positional-arg signature is now the top regression source. |
-| 70 | Whole-document analysis | L | Spec already written (`advanced-document-retrieval.md` §4.6–4.7). |
-| 71 | Optional reranking | M | Spec already written (§4.8); verified `rerank` absent from code. |
+| 90 | 🚨 BLOCKING — reconcile the Done pile with code that actually exists | M | Highest-severity open item. Five `[x]` items (#10, #11a/#11c, #12, #29, #34) cite code absent from history; three docs describe features that don't exist. Needs `/spec` for the implement-or-strike calls. |
+| 91 | 📋 ADVISORY — reconcile `ARCHITECTURE.md` §3b with the live routes | S | Endpoint table lists absent routes and misses live ones; `/logs/files?file=` should be `?name=`. Needs `/spec`. |
+| 92 | 📋 ADVISORY — enforce Mode B self-improvement in session notes | XS | Cheapest of the three; require each note to record a proposal or an explicit "no improvement found". Needs `/spec`. |
+| 82 | Project settings modal + detail-view delete | S | DoR ✅. Unblocks #67; removes the fragile create-modal-reuse hack. |
+| 83 | jsdom behavior tests for project detail view | S | DoR ✅. Closes the DOM-coverage gap #81 shipped with. |
+| 84 | Refactor `appendMessage` to a turn object | S | DoR ✅. Retro action; 6-positional-arg signature is now the top regression source. |
+| 70 | Whole-document analysis | L | DoR ✅. Spec already written (`advanced-document-retrieval.md` §4.6–4.7). |
+| 71 | Optional reranking | M | DoR ✅. Spec already written (§4.8); verified `rerank` absent from code. |
 
 **Not ready — needs `/spec` first:** #68 (M, schema changed under it),
 #67 (L, 4 open design questions), #86 (L, new), #13 / #14 / #15 / #57 (parking lot).
 
-**Suggested next sprint (Sprint 19):** #87 → #76 → #74 + #85 + #79 — one cohesive
-"unbreak `main` and clear the governance debt" sprint, all S/XS, no app-code risk.
-Note the hard ordering: **#87 gates #76(a)** (don't commit a weakened guard), and
-**#76(a) gates #74** (don't ratchet coverage measured against untracked tests).
-Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
+**Suggested next sprint (Sprint 21):** clear the remaining governance debt —
+**#90 → #91 → #92** — a cohesive "make the backlog and docs match the code" sprint.
+Note the sequencing: #90 is the load-bearing reconciliation (it may retire or
+correct doc claims that #91 then has to reflect), so do it first. Once the
+governance queue is clear, Sprint 22 takes the **#82 → #83 → #84** project
+detail-view cluster (#82 unblocks #67).
+
 
 ### Projects follow-up work (found 2026-09-13)
 
