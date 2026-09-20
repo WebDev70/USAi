@@ -183,6 +183,12 @@ Confirm the spec's §4b table is filled:
 | G-1 AC testability | ✅ / ❌ | ✅ addressed / deferred to #N / N/A |
 | G-2 Scope / value | ✅ / ❌ | ✅ addressed / deferred to #N / N/A |
 | G-3 Dependency coherence | ✅ / ❌ | ✅ addressed / deferred to #N / N/A |
+| G-4 Grep-based security specs | ✅ / ❌ / N/A | ✅ addressed / deferred to #N / N/A |
+
+> **G-4 is conditional** — mark it `N/A` unless the spec adds a grep/regex-based
+> scanner. When it does apply, confirm the spec carries the redaction AC *and* the
+> hermetic planted-token test (`/spec` Step 2b Check G-4); if either is missing,
+> emit `GAP [security]: grep scanner spec missing redaction AC / hermetic test.`
 
 - If §4b is missing entirely: emit `GAP [docs]: spec §4b not filled — add shift-left findings table.`
 - If a ⚠️ finding has no deferral backlog item: emit as an **advisory GAP** (non-blocking):

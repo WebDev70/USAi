@@ -10,7 +10,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **95**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **96**.
 >
 > Before assigning a new ID, confirm the current maximum (see #85):
 > ```bash
@@ -579,7 +579,7 @@ Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
     `docs/tooling/continue.md`, `.clinerules/workflows/review.md`,
     `.clinerules/rail-pipeline.md`, `CHANGELOG.md`.
 
-- [ ]  **79. Promote "redact grep-check output" to a permanent `/spec` requirement** *(S)*
+- [x]  **79. Promote "redact grep-check output" to a permanent `/spec` requirement** *(S)* — Done (2026-09-20): Check G-4 added to `/spec` Step 2b (conditional — fires only for grep/regex scanner specs), requiring a `[REDACTED]` finding AC + a hermetic planted-token test; G-4 row added to the spec §4b template and the `/review` §6g gate; cross-ref added to `docs/rail-pipeline.md` §3 `security-review`. Spec: docs/specs/spec-workflow-hardening-79-85.md
   — 💡 INNOV-01 (gov 2026-09-18-1159). Sprint 17 retro + Entry 010 in self-improvement log
   identified that when writing any grep-based security check, the requirement to redact the
   matched value from diagnostic output ("A finding reports only path:line, never the matched
@@ -676,7 +676,7 @@ Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
        no js_branch regression.
   - Files: `frontend/app.js`, `frontend/tests/js/app.behavior.test.mjs`, `CHANGELOG.md`.
 
-- [ ]  **85. Pre-flight backlog-ID check in the `/spec` workflow** *(XS)*
+- [x]  **85. Pre-flight backlog-ID check in the `/spec` workflow** *(XS)* — Done (2026-09-20): `/spec` Step 3 opens with a mandatory "Pre-flight: Backlog ID" block carrying the max-ID command verbatim, the `max + 1` rule (gaps never reused), and the same-turn `backlog.md` header-note bump. Spec: docs/specs/spec-workflow-hardening-79-85.md
   — Sprint 18 assigned `#79`/`#80` to two items while `#79` was already taken by the
   INNOV-01 grep-redaction item, so the attachment tray and detail view shipped with
   wrong ids in code comments, spec titles, and the CHANGELOG (corrected 2026-09-18).

@@ -1,6 +1,25 @@
 ## [Unreleased]
 
 ### Changed
+- **`#85` `/spec` pre-flight backlog-ID guard.** `.clinerules/workflows/spec.md`
+  Step 3 now opens with a mandatory **Pre-flight: Backlog ID** block that carries
+  the max-ID verification command verbatim, states the new ID **MUST be `max + 1`**
+  (gaps are never reused — they mark renumbered/merged/retired IDs that may still
+  be cited), and requires bumping the `"highest-assigned ID is **N**"` header note
+  in `backlog.md` in the same turn. Prevents the Sprint 18 duplicate-`#79` class of
+  error, where one ID was assigned to two items and leaked into code comments, spec
+  titles, and the CHANGELOG.
+- **`#79` Grep-redact promoted to a standing `/spec` requirement.** The Entry 010
+  lesson (Sprint 17 retro / governance INNOV-01) is no longer tribal knowledge:
+  `.clinerules/workflows/spec.md` Step 2b gains **Check G-4 — Grep-based security
+  specs**, a *conditional* check that fires only when a spec's scope includes a
+  grep/regex scanner. When it fires, the spec must carry (a) an AC that findings
+  report `path:line` only with the matched value rendered `[REDACTED]`, and (b) a
+  hermetic test that plants a known fake token, runs the scanner, and asserts both
+  non-zero exit **and** the token's absence from stdout+stderr. A `G-4` row was
+  added to the spec `§4b` template and to the `/review` `§6g` findings gate, and
+  `docs/rail-pipeline.md` §3 `security-review` now cross-references the check.
+  Codifies the already-proven pattern in `scripts/security-scan.sh` (L119–134).
 - **`#95` Max tokens UX copy clarified.** The `Max tokens` field placeholder,
   label badge, tooltip, and `USER_GUIDE.md` now say "blank = model default
   (recommended)" instead of the previous misleading "blank = off" /

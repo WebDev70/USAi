@@ -258,7 +258,9 @@ The Planner outputs a brief plan (skip for trivial edits) that seeds every later
   gates pass; handler changes have integration tests.
 - **`security-review`** — no hardcoded secrets; `/config` exposes no keys; any
   filesystem endpoint validates input and rejects path traversal; upstreams are
-  http(s) only; no secrets logged.
+  http(s) only; no secrets logged. For **grep/regex scanners** see
+  `.clinerules/workflows/spec.md` Step 2b Check G-4 — findings must report
+  `path:line` only (value `[REDACTED]`) and carry a hermetic planted-token test.
 - **`dependency-and-supply-chain-review`** — no unjustified runtime dependency; any
   new dep is vetted/pinned; `pip-audit` clean (or an ignore is documented &
   justified).

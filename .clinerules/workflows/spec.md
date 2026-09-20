@@ -96,10 +96,11 @@ Flag any conflicts in the spec's Risks section.
 > a **sprint-close / on-demand** activity — those macro-assessment roles require a
 > body of completed work to assess and cannot be meaningfully run per-spec.
 
-Run the following three lightweight checks **silently** (no user interruption unless
+Run the following four lightweight checks **silently** (no user interruption unless
 a check fails). Record the outcome in **§4b of the spec template** (see below).
 All findings are **advisory** — they are recorded in the spec but do not block
-Status: Ready on their own.
+Status: Ready on their own. Checks G-1..G-3 apply to every spec; **G-4 is
+conditional** and applies only to specs that add a grep/regex-based scanner.
 
 ### Check G-1 — AC testability (SBA-3)
 For each acceptance criterion from Step 1 Q2:
@@ -124,15 +125,77 @@ For each acceptance criterion from Step 1 Q2:
   prerequisite is already done (`[x]` in `backlog.md`) or still open.
 - Open prerequisites are advisory, not blocking — but they must be named.
 
+### Check G-4 — Grep-based security specs (Entry 010 standing requirement)
+
+> **Applies only when** the spec's scope includes a **grep/regex-based scanner** —
+> a secret scan, a pattern guard, a forbidden-string check, or any check that
+> greps files and reports matches. Skip (record `N/A`) for every other spec.
+
+When it applies, the spec **MUST** carry both of the following before Status: Ready:
+
+1. **A redaction acceptance criterion**, worded so it is binary and observable:
+   > "A finding reports only the location (`path:line`), never the matched value —
+   > the value is rendered as `[REDACTED]`."
+
+   *Why:* echoing grep's matching line makes the scanner itself leak the secret it
+   just found into CI logs, terminal scrollback, and any captured build artifact.
+
+2. **A mandatory hermetic test** in the spec's §5 test plan that:
+   - plants a **known fake token** in a temp file (never a real credential);
+   - runs the scanner against that temp location;
+   - asserts the scanner **exits non-zero** (it detected the plant); **and**
+   - asserts the planted token string is **absent from both stdout and stderr**.
+
+   Both assertions are required — an exit-code-only test passes even when the
+   scanner is leaking the value, and an output-only test passes even when the
+   scanner failed to detect anything.
+
+Record the outcome in the spec's §4b table as `✅ Pass` (both present), `⚠️ Added`
+(the spec was amended to add them), or `N/A` (no grep/regex scanner in scope).
+
+*Source: Sprint 17 retro + governance INNOV-01, captured as Entry 010 in
+`Cline/memories/self-improvement-log.md`. Cross-referenced from
+`docs/rail-pipeline.md` §3 `security-review`.*
+
 ### Outcome
-- All three checks pass → proceed to Step 3 with no further action.
-- One or more flags → rewrite the affected AC / trim scope / note the dependency,
-  then record the findings in **§4b** of the spec. Do not block or re-interview
-  the user unless a rewrite requires their input.
+- All applicable checks pass → proceed to Step 3 with no further action.
+- One or more flags → rewrite the affected AC / trim scope / note the dependency /
+  add the redaction AC + hermetic test, then record the findings in **§4b** of the
+  spec. Do not block or re-interview the user unless a rewrite requires their input.
 
 ---
 
 ## Step 3 — Write the spec file (Code Planner output)
+
+### Pre-flight: Backlog ID (mandatory — run before writing the file)
+
+Backlog IDs are **stable identifiers** referenced from `CHANGELOG.md`, specs, and
+code comments, so a duplicate is expensive to unwind. Sprint 18 assigned `#79`
+twice — the attachment tray and detail view shipped with the wrong ID in code
+comments, spec titles, and the CHANGELOG. Never assign an ID from memory.
+
+**1. Confirm the current maximum** by running this command verbatim:
+
+```bash
+grep -oE '^- \[.\] +\*\*[0-9]+\.' backlog.md | grep -oE '[0-9]+' | sort -n | tail -3
+```
+
+**2. The new ID MUST be `max + 1`** — strictly greater than every existing ID.
+If the command's last line is `95`, the next spec is `#96`. Do not reuse a gap:
+gaps mark IDs that were renumbered, merged, or retired and may still be cited
+elsewhere.
+
+**3. Update the header note in `backlog.md` in the same turn.** The line
+
+```
+> that were renumbered, merged, or retired; the highest-assigned ID is **N**.
+```
+
+must be bumped to the ID you just assigned. That line was four IDs stale until
+the 2026-09-18 grooming pass caught it — it only stays accurate if every `/spec`
+run updates it alongside the new entry.
+
+---
 
 Write `docs/specs/<kebab-case-feature-name>.md` using **exactly** this template.
 Set **Status: Ready** once the Definition of Ready is confirmed.
@@ -207,6 +270,7 @@ As a <user> I want <goal> so that <value>.
 | G-1 AC testability | ✅ Pass / ⚠️ Rewritten / N/A | <detail or "all ACs are binary and observable"> |
 | G-2 Scope / value | ✅ Pass / ⚠️ Advisory | <detail or "no scope creep identified"> |
 | G-3 Dependency coherence | ✅ Pass / ⚠️ Advisory | <detail or "no prerequisite backlog items"> |
+| G-4 Grep-based security specs | ✅ Pass / ⚠️ Added / N/A | <detail or "no grep/regex scanner in scope"> |
 
 ---
 
