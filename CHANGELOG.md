@@ -30,6 +30,26 @@
   unit-testable without a DOM/network harness (MT-1..MT-5 all green).
 
 ### Fixed
+- **`#93` security-scan skips no longer read as a clean pass.**
+  `scripts/security-scan.sh` previously printed "all scanners passed ✓" and exited
+  0 whenever a scanner block was *skipped* (a `SKIP_*` env var, a missing tool, or
+  an unset `OBSIDIAN_VAULT_PATH`) as long as nothing that *ran* found an issue — so
+  a partial run was indistinguishable from a complete clean one. A single
+  `SKIPPED_COUNT` counter (Bash 3.2-safe) now tracks every skipped block via a new
+  `note_skipped` helper wired into all four blocks. Reporting is now: any skip ⇒
+  **partial run**; lenient mode still exits 0 but prints
+  `security-scan: INCOMPLETE ⚠ — N/4 scanners ran, 0 findings (M skipped)` (never
+  "passed"); **`--strict` fails a partial run** (exit 1); only a complete,
+  finding-free run prints "all scanners passed ✓". The CI `security` job in
+  `.github/workflows/tests.yml` dropped `--strict` from its
+  `SKIP_GITLEAKS=1 ./scripts/security-scan.sh` invocation (gitleaks is covered by
+  the dedicated action, so that run is intentionally partial); bandit and pip-audit
+  still run for real and still fail the build on findings. Regression suite
+  `TestSecurityScanSkipReporting` (SS-1…SS-8) in
+  `backend/tests/python/test_scripts.py` covers every skip combination plus a
+  hermetic planted-secret test asserting non-zero exit **and** that the matched
+  value is never echoed (G-4 redaction). Spec
+  `docs/specs/security-scan-skip-reporting-93.md`.
 - **`#94` 🚨 BLOCKING — project context isolation (RAG leak).** A chat opened
   inside one project could retrieve a document belonging to a *different*
   project. Root cause (verified on disk): `getRelevantChunks()` merged

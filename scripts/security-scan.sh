@@ -15,28 +15,44 @@
 #
 # Usage:
 #   ./scripts/security-scan.sh            # run every available scanner
-#   ./scripts/security-scan.sh --strict   # FAIL (exit 1) if a scanner is missing
+#   ./scripts/security-scan.sh --strict   # FAIL (exit 1) if a scanner is missing or skipped
 #
 # Tools are auto-skipped (with install hints) when absent, so the script is usable
 # on a fresh machine; CI installs them so the gate is real there. Exit code is
-# non-zero if any scanner that DID run found an issue.
+# non-zero if any scanner that DID run found an issue. A run in which any scanner
+# block did NOT run (missing tool, SKIP_* env var, or unavailable input) is a
+# PARTIAL run: in lenient mode it may still exit 0 but reports "INCOMPLETE" — never
+# "passed" — and in --strict mode it fails (backlog #93).
 set -uo pipefail
 cd "$(dirname "$0")/.."   # project root
 
 STRICT=0
 [ "${1:-}" = "--strict" ] && STRICT=1
 
-FAILED=0       # a scanner that ran reported a finding
-MISSING=0      # a scanner wasn't installed
+FAILED=0        # a scanner that ran reported a finding
+MISSING=0       # a scanner wasn't installed
+SKIPPED_COUNT=0 # how many of the four scanner blocks did NOT run (missing tool,
+                # SKIP_* env var, or an unavailable input such as an unset vault).
+                # A run with SKIPPED_COUNT > 0 is a PARTIAL run: it may still exit 0
+                # in lenient mode, but it must NEVER report "all scanners passed",
+                # and in --strict mode it fails (backlog #93).
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# Record that a scanner block was skipped for any reason (missing tool, SKIP_*
+# env var, or unavailable input). Every skip path routes through here so the
+# partial-run bookkeeping and the strict-mode failure stay in one place.
+note_skipped() {
+  SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+  [ "$STRICT" -eq 1 ] && FAILED=1
+}
 
 note_missing() {
   local tool="$1" hint="$2"
   MISSING=1
+  note_skipped
   if [ "$STRICT" -eq 1 ]; then
     echo "  ✕ $tool not installed (required in --strict). Install: $hint"
-    FAILED=1
   else
     echo "  ⚠ $tool not installed — skipping. Install (dev-only): $hint"
   fi
@@ -45,6 +61,7 @@ note_missing() {
 echo "══ 1/4 Secret scanning (gitleaks) ════════════════════════════════"
 if [ "${SKIP_GITLEAKS:-0}" = "1" ]; then
   echo "  ⚠ gitleaks skipped (SKIP_GITLEAKS=1)"
+  note_skipped
 elif have gitleaks; then
   # Scan the working tree AND git history for committed secrets.
   if gitleaks detect --no-banner --redact --source . ; then
@@ -63,6 +80,7 @@ echo "══ 2/4 SAST (bandit on production backend code) ═══════�
 PY=".venv/bin/python"; [ -x "$PY" ] || PY="python3"
 if [ "${SKIP_BANDIT:-0}" = "1" ]; then
   echo "  ⚠ bandit skipped (SKIP_BANDIT=1)"
+  note_skipped
 elif "$PY" -m bandit --version >/dev/null 2>&1; then
   # Scan production recursively so new modules cannot silently escape SAST.
   # Test fixtures are excluded because intentional unsafe inputs belong to the
@@ -89,6 +107,7 @@ echo "══ 3/4 Dependency CVE audit (pip-audit) ══════════
 PIP_AUDIT_IGNORE=(--ignore-vuln GHSA-mf9w-mj56-hr94)
 if [ "${SKIP_PIP_AUDIT:-0}" = "1" ]; then
   echo "  ⚠ pip-audit skipped (SKIP_PIP_AUDIT=1)"
+  note_skipped
 elif "$PY" -m pip_audit --version >/dev/null 2>&1; then
   if "$PY" -m pip_audit "${PIP_AUDIT_IGNORE[@]}" -r requirements.txt ; then
     echo "  ✓ no known (unignored) vulnerabilities in runtime deps"
@@ -111,8 +130,10 @@ echo "══ 4/4 Memory-note secret scan (Obsidian Cline/memories/) ════
 VAULT_PATH="${OBSIDIAN_VAULT_PATH:-}"
 if [ -z "$VAULT_PATH" ]; then
   echo "  ⚠ OBSIDIAN_VAULT_PATH not set — memory-note scan skipped"
+  note_skipped
 elif [ ! -d "$VAULT_PATH/Cline/memories" ]; then
   echo "  ⚠ $VAULT_PATH/Cline/memories not found — memory-note scan skipped"
+  note_skipped
 else
   MEM_DIR="$VAULT_PATH/Cline/memories"
   # Require a bounded, secret-shaped value rather than a checklist word or an
@@ -140,11 +161,21 @@ fi
 
 echo
 if [ "$FAILED" -ne 0 ]; then
-  echo "══ security-scan FAILED ✕ ════════════════════════════════════════"
+  # A scanner that ran found a real issue, OR --strict was set and the run was
+  # partial. Either way this is a hard failure.
+  if [ "$SKIPPED_COUNT" -ne 0 ] && [ "$STRICT" -eq 1 ]; then
+    echo "══ security-scan FAILED ✕ ($SKIPPED_COUNT scanner(s) skipped; --strict) ══"
+  else
+    echo "══ security-scan FAILED ✕ ════════════════════════════════════════"
+  fi
   exit 1
 fi
-if [ "$MISSING" -ne 0 ]; then
-  echo "══ security-scan: passed (some scanners skipped) ⚠ ═══════════════"
+if [ "$SKIPPED_COUNT" -ne 0 ]; then
+  # PARTIAL run: some scanners did not run, but every scanner that DID run was
+  # clean. In lenient mode this exits 0 (usable on a fresh machine), but it must
+  # never claim "passed" — a partial run is not a clean bill of health (#93).
+  RAN=$((4 - SKIPPED_COUNT))
+  echo "══ security-scan: INCOMPLETE ⚠ — $RAN/4 scanners ran, 0 findings ($SKIPPED_COUNT skipped) ══"
 else
   echo "══ security-scan: all scanners passed ✓ ═════════════════════════"
 fi

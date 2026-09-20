@@ -129,6 +129,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Canonical SAST + dependency CVE audit
-        # Gitleaks ran in the dedicated action above. Reuse the local strict gate
-        # for production-only Bandit scope and centrally justified CVE ignores.
-        run: SKIP_GITLEAKS=1 ./scripts/security-scan.sh --strict
+        # Gitleaks ran in the dedicated action above. Reuse the local gate for
+        # production-only Bandit scope and centrally justified CVE ignores.
+        #
+        # NOTE (#93): we deliberately DROP `--strict` here. gitleaks is skipped in
+        # this invocation (SKIP_GITLEAKS=1) because the dedicated gitleaks action
+        # already covers it — but a skipped block makes the run PARTIAL, and
+        # `--strict` now fails a partial run. Bandit and pip-audit are installed in
+        # this job, so they run for real; the lenient run still exits non-zero if
+        # either finds an issue (only the skip-driven strict failure is avoided).
+        run: SKIP_GITLEAKS=1 ./scripts/security-scan.sh

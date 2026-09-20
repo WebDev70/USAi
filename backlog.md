@@ -350,7 +350,7 @@ Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
   - Governance report 2026-09-19 (ADVISORY-03 / SPMS-5). Require each session note to record
     either a workflow improvement proposal or an explicit "no improvement found" outcome.
 
-- [ ] **93. 📋 ADVISORY — stop security-scan skips reading as passes** *(XS)*
+- [x] **93. 📋 ADVISORY — stop security-scan skips reading as passes** *(XS)* — Done (2026-09-20): security-scan.sh now reports a partial run as `INCOMPLETE` (never "passed"), `--strict` fails any skip, and CI dropped `--strict` on its gitleaks-skipped invocation. Spec: docs/specs/security-scan-skip-reporting-93.md
   - Governance report 2026-09-19 (ADVISORY-05/06; third consecutive audit, escalates to
     BLOCKING next audit). Use strict scanner invocation where required or make skipped
     scanners and vault checks unambiguously non-passing.

@@ -690,6 +690,184 @@ class TestMemoryNoteScanDirty(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Item #93 — security-scan.sh skip-reporting tests (SS-1 … SS-8)
+#
+# The scan must never report "passed" when any of its four scanner blocks was
+# skipped. A skip can come from a SKIP_* env var, a missing tool, or an
+# unavailable input (unset vault path). These tests drive the script via
+# subprocess and assert exit code + summary wording for each skip combination.
+#
+# Skips are forced with SKIP_* env vars (deterministic on any machine); gitleaks/
+# bandit/pip-audit availability is irrelevant because the SKIP_* branch short-
+# circuits before the tool probe. The vault block is skipped by unsetting
+# OBSIDIAN_VAULT_PATH.
+# ---------------------------------------------------------------------------
+
+def _run_security_scan(env_overrides=None, strict=False):
+    """
+    Run security-scan.sh with the given env overrides. Returns
+    (returncode, stdout+stderr). Starts from a clean copy of the current env,
+    removes OBSIDIAN_VAULT_PATH unless the caller supplies one, and applies the
+    requested SKIP_* overrides.
+    """
+    env = {**os.environ}
+    env.pop("OBSIDIAN_VAULT_PATH", None)
+    if env_overrides:
+        for key, value in env_overrides.items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
+    cmd = ["bash", SECURITY_SCAN]
+    if strict:
+        cmd.append("--strict")
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT, env=env)
+    return result.returncode, result.stdout + result.stderr
+
+
+# All four blocks skipped → the scan runs no scanners at all. Reused by several
+# cases where the point is the summary wording, not which specific block ran.
+_ALL_SKIPPED = {"SKIP_GITLEAKS": "1", "SKIP_BANDIT": "1", "SKIP_PIP_AUDIT": "1"}
+
+
+class TestSecurityScanSkipReporting(unittest.TestCase):
+    """#93: a partial run must never read as 'all scanners passed'."""
+
+    def _make_vault(self, tmp):
+        """Create a clean Cline/memories vault dir so the 4th block can run."""
+        mem_dir = os.path.join(tmp, "Cline", "memories")
+        os.makedirs(mem_dir)
+        with open(os.path.join(mem_dir, "2099-01-01-clean.md"), "w") as fh:
+            fh.write("# Session note\nNo secrets here, just prose.\n")
+        return tmp
+
+    def test_ss1_all_run_no_findings_reports_passed(self):
+        """
+        SS-1: when every block runs and none skip, the summary says 'all scanners
+        passed' and exit is 0. We can only guarantee all four blocks RUN when the
+        scanner tools are installed, so skip this case if any is absent — the
+        negative cases below carry the #93 contract regardless.
+        """
+        py = os.path.join(REPO_ROOT, ".venv", "bin", "python")
+        py = py if os.path.exists(py) else "python3"
+        have_gitleaks = shutil.which("gitleaks") is not None
+        have_bandit = subprocess.run([py, "-m", "bandit", "--version"],
+                                     capture_output=True).returncode == 0
+        have_pip_audit = subprocess.run([py, "-m", "pip_audit", "--version"],
+                                        capture_output=True).returncode == 0
+        if not (have_gitleaks and have_bandit and have_pip_audit):
+            self.skipTest("SS-1 needs gitleaks + bandit + pip-audit installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            self._make_vault(tmp)
+            rc, out = _run_security_scan({"OBSIDIAN_VAULT_PATH": tmp})
+            self.assertEqual(rc, 0, msg=out)
+            self.assertIn("all scanners passed", out, msg=out)
+            self.assertNotIn("INCOMPLETE", out, msg=out)
+
+    def test_ss2_skip_gitleaks(self):
+        """SS-2: SKIP_GITLEAKS → lenient exit 0 & no 'passed'; strict exit != 0."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._make_vault(tmp)
+            base = {"OBSIDIAN_VAULT_PATH": tmp, "SKIP_BANDIT": "1", "SKIP_PIP_AUDIT": "1"}
+            rc, out = _run_security_scan({**base, "SKIP_GITLEAKS": "1"})
+            self.assertEqual(rc, 0, msg=out)
+            self.assertNotIn("passed", out.lower(), msg=out)
+            self.assertIn("INCOMPLETE", out, msg=out)
+            rc_s, out_s = _run_security_scan({**base, "SKIP_GITLEAKS": "1"}, strict=True)
+            self.assertNotEqual(rc_s, 0, msg=out_s)
+
+    def test_ss3_skip_bandit(self):
+        """SS-3: SKIP_BANDIT → lenient exit 0 & no 'passed'; strict exit != 0."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._make_vault(tmp)
+            base = {"OBSIDIAN_VAULT_PATH": tmp, "SKIP_GITLEAKS": "1", "SKIP_PIP_AUDIT": "1"}
+            rc, out = _run_security_scan({**base, "SKIP_BANDIT": "1"})
+            self.assertEqual(rc, 0, msg=out)
+            self.assertNotIn("passed", out.lower(), msg=out)
+            self.assertIn("INCOMPLETE", out, msg=out)
+            rc_s, out_s = _run_security_scan({**base, "SKIP_BANDIT": "1"}, strict=True)
+            self.assertNotEqual(rc_s, 0, msg=out_s)
+
+    def test_ss4_skip_pip_audit(self):
+        """SS-4: SKIP_PIP_AUDIT → lenient exit 0 & no 'passed'; strict exit != 0."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._make_vault(tmp)
+            base = {"OBSIDIAN_VAULT_PATH": tmp, "SKIP_GITLEAKS": "1", "SKIP_BANDIT": "1"}
+            rc, out = _run_security_scan({**base, "SKIP_PIP_AUDIT": "1"})
+            self.assertEqual(rc, 0, msg=out)
+            self.assertNotIn("passed", out.lower(), msg=out)
+            self.assertIn("INCOMPLETE", out, msg=out)
+            rc_s, out_s = _run_security_scan({**base, "SKIP_PIP_AUDIT": "1"}, strict=True)
+            self.assertNotEqual(rc_s, 0, msg=out_s)
+
+    def test_ss5_vault_path_unset(self):
+        """SS-5: unset OBSIDIAN_VAULT_PATH → 4th block skips; no 'passed'; strict != 0."""
+        rc, out = _run_security_scan({**_ALL_SKIPPED, "OBSIDIAN_VAULT_PATH": None})
+        self.assertEqual(rc, 0, msg=out)
+        self.assertNotIn("passed", out.lower(), msg=out)
+        self.assertIn("INCOMPLETE", out, msg=out)
+        rc_s, out_s = _run_security_scan(
+            {**_ALL_SKIPPED, "OBSIDIAN_VAULT_PATH": None}, strict=True)
+        self.assertNotEqual(rc_s, 0, msg=out_s)
+
+    def test_ss6_multiple_skips(self):
+        """SS-6: several blocks skipped → lenient exit 0, 'INCOMPLETE'; strict != 0."""
+        rc, out = _run_security_scan({**_ALL_SKIPPED, "OBSIDIAN_VAULT_PATH": None})
+        self.assertEqual(rc, 0, msg=out)
+        self.assertIn("INCOMPLETE", out, msg=out)
+        self.assertNotIn("passed", out.lower(), msg=out)
+        # The count in the summary reflects all four blocks being skipped.
+        self.assertIn("4 skipped", out, msg=out)
+        rc_s, _ = _run_security_scan(
+            {**_ALL_SKIPPED, "OBSIDIAN_VAULT_PATH": None}, strict=True)
+        self.assertNotEqual(rc_s, 0)
+
+    def test_ss7_finding_plus_skip_fails_even_lenient(self):
+        """
+        SS-7: a real finding (planted secret in a memory note) plus a skip must
+        exit non-zero even in lenient mode — a finding always dominates.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            mem_dir = os.path.join(tmp, "Cline", "memories")
+            os.makedirs(mem_dir)
+            with open(os.path.join(mem_dir, "2099-01-01-dirty.md"), "w") as fh:
+                fh.write("# Session note\napi_key=sk-abc123secret456\n")
+            rc, out = _run_security_scan({
+                "OBSIDIAN_VAULT_PATH": tmp,
+                "SKIP_GITLEAKS": "1",  # a skip is present alongside the finding
+                "SKIP_BANDIT": "1",
+                "SKIP_PIP_AUDIT": "1",
+            })
+            self.assertNotEqual(rc, 0, msg=out)
+            self.assertIn("FAILED", out, msg=out)
+
+    def test_ss8_planted_secret_detected_but_not_echoed(self):
+        """
+        SS-8 (AC-6, G-4 redaction): plant a known fake token, run the vault block,
+        and assert the script exits non-zero AND the token never appears in the
+        combined stdout/stderr. Guards the redaction guarantee.
+        """
+        planted = "sk-PLANTEDdeadbeef1234567890"
+        with tempfile.TemporaryDirectory() as tmp:
+            mem_dir = os.path.join(tmp, "Cline", "memories")
+            os.makedirs(mem_dir)
+            with open(os.path.join(mem_dir, "2099-01-01-planted.md"), "w") as fh:
+                fh.write(f"# Session note\napi_key={planted}\n")
+            rc, out = _run_security_scan({
+                "OBSIDIAN_VAULT_PATH": tmp,
+                "SKIP_GITLEAKS": "1",
+                "SKIP_BANDIT": "1",
+                "SKIP_PIP_AUDIT": "1",
+            })
+            self.assertNotEqual(rc, 0, msg="Planted secret must fail the scan.")
+            self.assertNotIn(planted, out,
+                             msg="The matched secret value must never be echoed.")
+            self.assertIn("[REDACTED]", out, msg=out)
+
+
+
+
+# ---------------------------------------------------------------------------
 # Item #37 — JS branch-coverage sentinel tests (T-10a, T-10b)
 # Tests for the sentinel file write in tests/js-coverage.mjs and the
 # run-tests.sh read of that sentinel.
