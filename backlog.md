@@ -10,7 +10,7 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **88**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **95**.
 >
 > Before assigning a new ID, confirm the current maximum (see #85):
 > ```bash
@@ -354,6 +354,71 @@ Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
   - Governance report 2026-09-19 (ADVISORY-05/06; third consecutive audit, escalates to
     BLOCKING next audit). Use strict scanner invocation where required or make skipped
     scanners and vault checks unambiguously non-passing.
+
+- [~] **94. 🚨 BLOCKING — project isolation leak: foreign-project files injected into a chat** *(M)* — spec: docs/specs/project-context-isolation.md
+  - **Reported by user (2026-09-20), with production urgency.** Asking *"How do the
+    documents in this project differ?"* inside the `EmbeddingNegTest` project returned an
+    answer that cited `eOffer Data Dictionary.xlsx` / `dataDictionary.csv` — a document
+    that does **not** belong to the open project. The projects feature must isolate
+    context per project before it can be trusted for production use.
+  - **Confirmed on-disk evidence (not speculation):**
+    - The chat `session_1789910567298` ("How do the documents in this project differ?")
+      is stamped `projectId = project_1789910130524933_2f6d37`.
+    - Project `2f6d37` contains **only** `FSSOnline as is state.txt` +
+      `FAS Cloud Services Overview.txt`. `eOffer`/`dataDictionary` is **not** in it.
+    - `eOffer` actually lives in a **different** project that is *also* named
+      `EmbeddingNegTest`: `project_1789778243766721_30a89f`.
+    - Token accounting proves the leak: turn 1 sent **8,219 input tokens** (≈ the two
+      legitimate files); turn 3 jumped to **15,934 input tokens** — a ~7,700-token
+      increase that matches `eOffer`'s 32,704 chars ÷ 4 ≈ 8,176 tokens. Foreign chunks
+      were physically injected into the request.
+  - **Likely contributing causes to investigate (open questions for `/spec`):**
+    1. **Duplicate project display names.** 156 of 537 project dirs are all named
+       `EmbeddingNegTest` (leftover negative-embedding test runs). The UI/retrieval can
+       pick the wrong project by name; the sidebar and `openProject()`/`restoreSession()`
+       path need to key strictly on `projectId`, never on name, and the app should not
+       allow silent duplicate-name collisions that mislead the user.
+    2. **`loadProjectChunks()` loads *every* file in a project dir** (`app.js` ~L435–456).
+       If the active `projectId` is ever wrong, or if a stale `projectChunks` array is not
+       cleared on project/session switch, foreign docs enter the context window. Audit the
+       clear-on-switch invariants (`openProject`, `restoreSession`, move-out-of-project at
+       ~L1775) for gaps.
+    3. **Retrieval selects too broadly.** Open-project chunks have `embedding: false`, so
+       `getRelevantChunks()` falls back to lexical ranking with a **120,000-char**
+       (`CONTEXT_CHAR_LIMIT`, `app.js` ~L3264) window that sweeps in nearly everything
+       loaded. Decide whether to (a) enforce embeddings for project files, (b) tighten the
+       char/`topK` budget, and/or (c) hard-scope retrieval to the *current* project's
+       chunk set only.
+  - **Acceptance criteria (draft — finalize in `/spec`):**
+    - [ ] A chat opened inside project P can only ever retrieve/inject files that belong
+          to P; a regression test asserts a second project's file is never present in the
+          composed context.
+    - [ ] Project selection is keyed on `projectId`; duplicate display names cannot cause
+          the wrong project's chunks to load (add a test with two same-named projects).
+    - [ ] `projectChunks` is provably cleared on every project switch and session restore
+          (unit/jsdom test for the clear-on-switch invariant).
+    - [ ] Housekeeping: a documented, safe way to purge the 156 orphaned `EmbeddingNegTest`
+          test projects (script or maintenance endpoint), leaving real projects intact.
+    - [ ] Backend `/chunk-cache?projectId=` path-traversal + cross-project read guards
+          re-verified (they exist for storage; confirm the read/list path is equally scoped).
+  - **Needs a dedicated `/spec`** — the isolation model and the cleanup decision are open.
+  - **Priority:** ahead of #90 per user request ("addressed immediately after" the current
+    push). Recommend sequencing: publish `45dd1ae` → `/spec` #94 → then resume #90.
+
+- [ ] **95. 📋 ADVISORY — small default `max_tokens` truncates answers / clarify the cap** *(XS)*
+  - **Reported by user (2026-09-20):** LLM responses felt "so small." Investigation: we do
+    **not** hard-cap output — the frontend only sends `max_tokens` when the user sets it
+    (`app.js` ~L3699–3703), and that value is the ceiling. Observed answers were 452 and
+    323 output tokens, consistent with a low **Max tokens** setting. The `index.html`
+    field (~L108) uses `placeholder="e.g. 512 (or leave blank)"`, which nudges users to a
+    small value.
+  - **Acceptance criteria (draft):**
+    - [ ] Confirm/document that leaving Max tokens blank omits the cap (models use their
+          own default); surface this clearly in the UI/USER_GUIDE.
+    - [ ] Reconsider the `512` placeholder / default so it does not steer users into
+          truncated answers (e.g. blank-by-default or a larger suggested value).
+    - [ ] No behavior regression for reasoning models that reject `max_tokens`
+          (existing `max_completion_tokens` exclusion logic must remain intact).
 
 ### 🔧 Governance findings (Sprint 16 close — 2026-09-18)
 
