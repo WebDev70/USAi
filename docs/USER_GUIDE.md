@@ -414,6 +414,13 @@ Project chats also appear **grouped under their project row** in the sidebar as
 a collapsible sub-list, so you can jump directly to any chat without opening the
 detail view first.
 
+> **Document isolation.** Each project chat can only retrieve documents that
+> belong to *that* project (its shared files) plus files you attach to that
+> specific chat. Documents from other projects are never mixed into a chat's
+> context — this holds even when two projects happen to share the same name,
+> because isolation is keyed on the project's internal id, not its display name.
+
+
 #### Rename or pin a project
 Hover over the project in the sidebar and click **⋯** to open the context menu:
 - **Rename** — change the project name.

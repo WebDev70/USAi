@@ -1,6 +1,6 @@
 # Spec: Project Context Isolation (RAG leak fix)
 
-**Status:** Ready
+**Status:** Done
 **Type:** bugfix (regression test required first; PO acceptance gate skipped)
 **Created:** 2026-09-20
 **Author:** Cline
@@ -78,27 +78,27 @@ As a user working across multiple projects, I want each chat's document context
 to be strictly limited to its own project, so that no other project's documents
 ever leak into my prompts or the model's answers.
 
-- [ ] **AC-1 (isolation):** A chat whose session `projectId = P` retrieves
+- [x] **AC-1 (isolation):** A chat whose session `projectId = P` retrieves
   chunks only from project *P*'s shared files plus files attached to that chat.
   No chunk tagged with a different `projectId` is ever selected or injected.
-- [ ] **AC-2 (projectId-keyed, name-immune):** Isolation holds even when two
+- [x] **AC-2 (projectId-keyed, name-immune):** Isolation holds even when two
   projects share an identical display name; selection and scoping use
   `projectId`, never the name.
-- [ ] **AC-3 (clear on switch):** `projectChunks`, `fileChunks`, and
+- [x] **AC-3 (clear on switch):** `projectChunks`, `fileChunks`, and
   `uploadedFiles` are provably empty immediately after `openProject()`,
   `startNewProjectChat()`, `restoreSession()`, new-chat, and project move-out
   (before any new load for the target project runs).
-- [ ] **AC-4 (defense in depth):** Even if a stale chunk from another project
+- [x] **AC-4 (defense in depth):** Even if a stale chunk from another project
   is present in a module array, retrieval drops it because it does not match
   the active `projectId` (a chunk with no `projectId` is treated as per-chat
   and allowed only for the current chat).
-- [ ] **AC-5 (regression):** A test reconstructs the observed scenario
+- [x] **AC-5 (regression):** A test reconstructs the observed scenario
   (open project 30a89f with an eOffer per-chat upload → open project 2f6d37 →
   ask a question) and asserts eOffer chunks are NOT in the retrieval result.
-- [ ] **AC-6 (backend scoping re-verified):** `/chunk-cache?projectId=` read and
+- [x] **AC-6 (backend scoping re-verified):** `/chunk-cache?projectId=` read and
   list operations remain confined to the requested project's cache dir
   (existing guard `_resolve_chunk_cache_dir` + `_safe_project_id`).
-- [ ] **AC-7 (safe purge):** A documented, dry-run-first procedure removes the
+- [x] **AC-7 (safe purge):** A documented, dry-run-first procedure removes the
   orphaned Sept-13 test projects without touching real projects, and is
   reversible until confirmed.
 
@@ -180,10 +180,10 @@ Run: `./run-tests.sh --coverage` (server.py ≥ 90%, JS branch ≥ 70%).
   project referenced by a real (non-test) session.
 
 ## 10. Review checklist (Reviewer role)
-- [ ] Implementation matches spec sections 5–7
-- [ ] `./run-tests.sh --coverage` passes (gates met)
-- [ ] `./scripts/security-scan.sh` clean
-- [ ] Docs updated (section 8)
-- [ ] Memory note written
-- [ ] Regression test (AC-5) present and green
+- [x] Implementation matches spec sections 5–7
+- [x] `./run-tests.sh --coverage` passes (gates met)
+- [x] `./scripts/security-scan.sh` clean
+- [x] Docs updated (section 8)
+- [x] Memory note written
+- [x] Regression test (AC-5) present and green
 

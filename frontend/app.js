@@ -446,7 +446,10 @@ async function loadProjectChunks(projectId) {
       if (!detail.ok) continue;
       const d = normalizeChunkCache(await detail.json());
       for (const c of d.chunks) {
-        projectChunks.push({ ...c, fileName: c.fileName || f.filename });
+        // Stamp every project chunk with its owning projectId (#94 AC-1/AC-4).
+        // Retrieval uses this tag to guarantee a chat can only ever surface
+        // chunks from its own project — even if a stale chunk survives a switch.
+        projectChunks.push({ ...c, fileName: c.fileName || f.filename, projectId });
       }
     }
     logger.info('cache', `Loaded ${projectChunks.length} project chunks for project "${projectId}"`);
@@ -454,6 +457,21 @@ async function loadProjectChunks(projectId) {
     logger.warn('cache', 'loadProjectChunks failed (non-fatal)', { error: e?.message });
   }
 }
+
+// resetChatContextState clears ALL retrieval state that must not survive a
+// project/session switch (#94 AC-3): per-chat uploads (fileChunks/uploadedFiles/
+// pendingImages) AND the project-shared chunks (projectChunks). Called at the
+// top of every switch entry point — openProject, startNewProjectChat,
+// restoreSession, the new-chat handler, and move-out — BEFORE the target
+// project's chunks are (re)loaded. This is the belt-and-suspenders defense that
+// complements the projectId hard-scope in getRelevantChunks.
+function resetChatContextState() {
+  fileChunks.length = 0;
+  uploadedFiles.length = 0;
+  pendingImages.length = 0;
+  projectChunks.length = 0;
+}
+
 
 // extractTextServerSide POSTs a PDF/DOCX File to the /extract-text endpoint and
 // returns { text, filename }, where `filename` is the .txt-suffixed name used as
@@ -1424,6 +1442,9 @@ function closeCreateProjectModal() {
 // the "＋ New chat" button in the detail view (startNewProjectChat).
 async function openProject(projectId) {
   currentProjectId = projectId;
+  // #94 AC-3: clear all stale retrieval state BEFORE loading the target
+  // project's chunks, so nothing from the previously-open chat/project survives.
+  resetChatContextState();
   // Load instructions + shared chunks so sendMessage has them ready when the
   // user eventually starts a chat from the detail view.
   try {
@@ -1451,6 +1472,11 @@ async function startNewProjectChat() {
   conversationHistory.length = 0;
   chatDisplayHistory.length = 0;
   currentSessionId = null;
+  // #94 AC-3: clear stale per-chat + project retrieval state, then reload the
+  // current project's shared chunks so the fresh chat starts with exactly its
+  // own project context and nothing carried over from a prior chat/project.
+  resetChatContextState();
+  if (currentProjectId) await loadProjectChunks(currentProjectId);
   // Switch back to chat view (hide detail view).
   _showChatView();
   document.querySelector('.main-content').classList.remove('in-conversation');
@@ -2062,7 +2088,10 @@ async function restoreSession(id) {
     conversation.innerHTML = '';
     conversationHistory.length = 0;
     chatDisplayHistory.length = 0;
-
+    // #94 AC-3: clear stale per-chat + project retrieval state before this
+    // session's project chunks are (re)loaded below via loadProjectChunks, so a
+    // restored chat cannot inherit chunks from the previously-open chat/project.
+    resetChatContextState();
     for (const turn of turns) {
       const { group } = appendMessage(conversation, turn.content, turn.role, turn.note || '', turn.images || [], turn.attachments || []);
       addMessageActions(group, turn.role, chatDisplayHistory.length);
@@ -2587,9 +2616,18 @@ let semanticSearchEnabled = false;
 
 // getRelevantChunks ranks every chunk lexically, fuses eligible semantic results
 // by rank rather than raw score, then restores one-hop structural context.
-async function getRelevantChunks(query, topK = 5, chunksArr, fetchFn, semanticFlag) {
+//
+// #94: `activeProjectId` (optional) hard-scopes retrieval. When provided, any
+// chunk whose `projectId` is set AND differs from activeProjectId is dropped
+// BEFORE ranking, so a chat can never surface another project's documents even
+// if a stale chunk survived a switch. Chunks with no `projectId` are genuine
+// per-chat uploads for the current chat and are always allowed.
+async function getRelevantChunks(query, topK = 5, chunksArr, fetchFn, semanticFlag, activeProjectId) {
   const rawChunks = chunksArr ?? [...fileChunks, ...projectChunks];
-  const chunks = normalizeChunkCache({ chunks: rawChunks }).chunks;
+  const scoped = (activeProjectId === undefined || activeProjectId === null)
+    ? rawChunks
+    : rawChunks.filter(c => c.projectId == null || c.projectId === activeProjectId);
+  const chunks = normalizeChunkCache({ chunks: scoped }).chunks;
   const useSemantic = (semanticFlag !== undefined) ? semanticFlag : semanticSearchEnabled;
   if (!chunks.length) return [];
 
@@ -3258,7 +3296,10 @@ async function prepareContextMessages(inputs) {
 
   // 2. File Chunks (per-chat + project-shared — AC-4)
   if (fileChunks.length + projectChunks.length > 0) {
-    const relevantChunks = await getRelevantChunks(inputs.content, topChunksPerQuery);
+    // #94: pass the active project so retrieval hard-scopes to the current
+    // project's files (+ unscoped per-chat uploads) and can never surface a
+    // foreign project's documents.
+    const relevantChunks = await getRelevantChunks(inputs.content, topChunksPerQuery, undefined, undefined, undefined, currentProjectId);
     if (relevantChunks.length > 0) {
       const method = describeRetrievalMethod(relevantChunks);
       const CONTEXT_CHAR_LIMIT = 120000; // ~30k tokens
@@ -3985,8 +4026,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.querySelector('.new-chat-btn').addEventListener('click', async () => {
     document.getElementById('conversation').innerHTML = '';
     document.getElementById('content').value = '';
-    clearUploadedFiles();
-    pendingImages.length = 0;
+    // #94 AC-3: a top-nav "New chat" leaves any project context entirely —
+    // clear per-chat AND project chunks so the fresh chat has no document scope.
+    resetChatContextState();
+    currentProjectId = null;
     showPendingImages();
     lastFetchedContext = null;
     conversationHistory.length = 0;
@@ -4571,6 +4614,12 @@ if (typeof module !== 'undefined' && module.exports) {
     getRelevantChunks,
     _getRelevantChunksTest: (chunks, query, topK, fetchFn, semanticFlag) =>
       getRelevantChunks(query, topK, chunks, fetchFn, semanticFlag),
+    // #94 project-context-isolation test hooks:
+    // _getRelevantChunksScopedTest exercises the projectId hard-scope path.
+    _getRelevantChunksScopedTest: (chunks, query, topK, activeProjectId, fetchFn, semanticFlag) =>
+      getRelevantChunks(query, topK, chunks, fetchFn, semanticFlag, activeProjectId),
+    // _resetChatContextState exposes the clear-on-switch invariant for AC-3/AC-5.
+    _resetChatContextState: resetChatContextState,
     // Move session to project (#66) — injectable fetch test hook
     _moveSessionToProjectTest,
     // ── Phase 2: Project Detail View (#81) test hooks ────────────────────────

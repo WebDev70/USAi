@@ -120,6 +120,44 @@ class ChunkCacheGetTests(ServerBranchTestBase):
         status, listing = _request('GET', self.url('/chunk-cache'))
         self.assertEqual(listing, [])
 
+    # #94 AC-6 — backend chunk-cache reads are confined to their projectId dir.
+    # Reconstructs the isolation contract at the API layer: a file stored under
+    # project A is invisible to a read scoped to project B, and neither leaks
+    # into the global (no-projectId) cache.
+    def test_chunk_cache_reads_are_project_scoped(self):
+        pid_a = 'project_iso_aaaa1111'
+        pid_b = 'project_iso_bbbb2222'
+        # Store the SAME filename under two different projects with distinct text.
+        status, _ = _request('POST', self.url(f'/chunk-cache?projectId={pid_a}'),
+                             {'filename': 'shared.txt', 'chunks': [{'text': 'ALPHA-ONLY'}]})
+        self.assertEqual(status, 200)
+        status, _ = _request('POST', self.url(f'/chunk-cache?projectId={pid_b}'),
+                             {'filename': 'shared.txt', 'chunks': [{'text': 'BRAVO-ONLY'}]})
+        self.assertEqual(status, 200)
+
+        # Listing project A must not show project B's cache and vice-versa.
+        status, list_a = _request('GET', self.url(f'/chunk-cache?projectId={pid_a}'))
+        self.assertEqual(status, 200)
+        status, list_b = _request('GET', self.url(f'/chunk-cache?projectId={pid_b}'))
+        self.assertEqual(status, 200)
+        self.assertEqual([e['filename'] for e in list_a], ['shared.txt'])
+        self.assertEqual([e['filename'] for e in list_b], ['shared.txt'])
+
+        # Reading shared.txt scoped to A returns ALPHA-ONLY, scoped to B returns
+        # BRAVO-ONLY — no cross-project bleed even with identical filenames.
+        status, got_a = _request('GET', self.url(f'/chunk-cache?projectId={pid_a}&file=shared.txt'))
+        self.assertEqual(status, 200)
+        status, got_b = _request('GET', self.url(f'/chunk-cache?projectId={pid_b}&file=shared.txt'))
+        self.assertEqual(status, 200)
+        self.assertEqual(got_a['chunks'][0]['text'], 'ALPHA-ONLY')
+        self.assertEqual(got_b['chunks'][0]['text'], 'BRAVO-ONLY')
+
+        # The global (no-projectId) cache must not see either project's file.
+        status, global_list = _request('GET', self.url('/chunk-cache'))
+        self.assertEqual(status, 200)
+        self.assertNotIn('shared.txt', [e['filename'] for e in global_list])
+
+
 
 class ChatHistoryAndNewSessionTests(ServerBranchTestBase):
     def test_chat_history_empty_then_save_then_new_session_archives(self):

@@ -1,6 +1,28 @@
 ## [Unreleased]
 
+### Fixed
+- **`#94` 🚨 BLOCKING — project context isolation (RAG leak).** A chat opened
+  inside one project could retrieve a document belonging to a *different*
+  project. Root cause (verified on disk): `getRelevantChunks()` merged
+  `[...fileChunks, ...projectChunks]` with **no `projectId` scoping**, and the
+  project/session switch entry points (`openProject`, `startNewProjectChat`,
+  `restoreSession`, top-nav "New chat", move-out) never cleared stale per-chat
+  `fileChunks`/`uploadedFiles`, so chunks from a previously-open chat survived
+  into the next chat's retrieval pool. Two defenses added: (1) **hard-scope
+  retrieval by `projectId`** — every project chunk is stamped with its owning
+  `projectId` in `loadProjectChunks()` and `getRelevantChunks()` now drops any
+  chunk whose `projectId` differs from the active project (unscoped per-chat
+  uploads are still allowed); (2) a **`resetChatContextState()`** helper called
+  at the top of every switch entry point clears all per-chat and project chunks
+  before the target project's chunks load. New regression suite
+  `frontend/tests/js/project-context-isolation.test.mjs` (PCI-1..PCI-5)
+  reconstructs the exact incident and asserts the leak is closed. A dry-run-first
+  `scripts/purge-orphan-test-projects.sh` safely removes the 537 orphan test
+  projects left by 2026-09-13 manual QA. Spec:
+  `docs/specs/project-context-isolation.md`.
+
 ### Added
+
 - **`make ci-local` / `make ci-local-coverage` — reproduce the CI Python job locally.**
   The new `run-tests.sh --ci-python` flag temporarily moves `node_modules` aside and
   skips the JS suites, so the Python tests are proven to pass with no npm packages

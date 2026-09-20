@@ -355,7 +355,7 @@ Then Sprint 20 takes the #82 / #83 / #84 detail-view cluster.
     BLOCKING next audit). Use strict scanner invocation where required or make skipped
     scanners and vault checks unambiguously non-passing.
 
-- [~] **94. 🚨 BLOCKING — project isolation leak: foreign-project files injected into a chat** *(M)* — spec: docs/specs/project-context-isolation.md
+- [x] **94. 🚨 BLOCKING — project isolation leak: foreign-project files injected into a chat** *(M)* — Done (2026-09-20): hard-scoped RAG retrieval by `projectId` in `getRelevantChunks()` + `loadProjectChunks()` tagging + `resetChatContextState()` on every switch entry point; regression suite PCI-1..PCI-5 reconstructs the eOffer scenario; backend AC-6 scope test; dry-run-first `scripts/purge-orphan-test-projects.sh`. Spec: docs/specs/project-context-isolation.md
   - **Reported by user (2026-09-20), with production urgency.** Asking *"How do the
     documents in this project differ?"* inside the `EmbeddingNegTest` project returned an
     answer that cited `eOffer Data Dictionary.xlsx` / `dataDictionary.csv` — a document
