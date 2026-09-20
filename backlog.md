@@ -278,7 +278,7 @@ detail-view cluster (#82 unblocks #67).
     `backend/tests/python/test_server_http.py`, `docs/ARCHITECTURE.md`,
     `docs/EMBEDDINGS_GUIDE.md`.
 
-- [ ] **70. Whole-document analysis — adaptive full-document context + hierarchical map-reduce** *(L)*
+- [x] **70. Whole-document analysis — adaptive full-document context + hierarchical map-reduce** *(L)* — Done (2026-09-20): intent-gated whole-document routing in `prepareContextMessages` — full-document injection when it fits `FULL_DOC_CHAR_BUDGET`, else hierarchical map-reduce (depth 3, abort-aware, per-batch failure degrades to markers); WDA-1…WDA-7 green. Spec: docs/specs/advanced-document-retrieval.md
   - Depends on #69 (uses its chunk schema + neighbor links). Add prompt-budget
     estimation (character-based, no tokenizer dependency) so a document that
     fits the budget is sent to the model in full instead of being truncated

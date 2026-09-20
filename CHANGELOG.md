@@ -1,6 +1,35 @@
 ## [Unreleased]
 
 ### Changed
+- **`#70` Whole-document analysis — adaptive full-document context + hierarchical
+  map-reduce.** `prepareContextMessages()` (`frontend/app.js`) now routes the
+  send path before hybrid retrieval: `detectWholeDocumentIntent()` — a
+  conservative, dependency-free regex classifier — decides whether the query is a
+  recognized whole-document request ("summarize this document", "review the whole
+  file", "compare all sections"). Only those requests take the new path; every
+  other query stays on hybrid retrieval, so the extra model calls of map-reduce
+  **never auto-trigger** for a plain factual question (the load-bearing safety
+  property). On a whole-document intent the router branches on
+  `documentsFitBudget()` (sum of chunk text vs. `FULL_DOC_CHAR_BUDGET = 80,000`
+  chars): if the corpus fits, `buildFullDocumentContext()` injects the file's
+  **complete** text in `(fileName, ordinal)` order (labelled via
+  `formatChunkLabel()`); if it exceeds the budget, `mapReduceSummarize()` runs a
+  hierarchical map-reduce — `buildMapBatches()` groups chunks into sub-budget
+  (40,000-char) batches, each summarized in an isolated non-streaming call
+  (`stream:false`, no tools), then `reduceSummaries()` recursively folds the
+  partials until they fit (max depth 3, then an explicit "additional sections
+  omitted" marker rather than silent truncation). A failed map batch degrades to a
+  per-section "section omitted" marker instead of aborting the whole analysis; the
+  batch loop honours the shared `activeAbortController` signal (Stop cancels
+  mid-analysis) and streams `batch N of M` progress to `#responseLog`. The final
+  user-facing answer is produced by the normal streaming/tool-enabled completion.
+  Zero new runtime deps — the map/reduce calls reuse the existing proxy + SSRF
+  guard. New JS unit tests **WDA-1…WDA-7** (intent detection incl. negative cases,
+  full-document fit/fallback, map-batch coverage, reduce depth truncation, mid-map
+  abort, single-batch-failure degradation) cover the ACs; `./run-tests.sh
+  --coverage` passes (server.py branch 92.31%, JS branch 75.29%, ratchet PASS).
+  Spec: `docs/specs/advanced-document-retrieval.md` §4.6–4.7 (AC-6/AC-7/AC-8).
+
 - **`#82` Dedicated project settings modal + detail-view delete.** The project
   detail view now has its own dedicated `#projectSettingsModal` in `index.html`
   (name, memory mode, instructions, project files) plus a **🗑️ Delete Project**

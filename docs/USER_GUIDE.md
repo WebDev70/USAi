@@ -368,6 +368,26 @@ Every added excerpt is **labelled** with its file name, section heading, and lin
 range (provenance) — you can always see exactly which part of which file contributed
 to an answer.
 
+#### Whole-document analysis
+
+When you explicitly ask about a **whole file** — for example *"summarize this
+document"*, *"review the whole file"*, or *"compare all sections"* — USAi
+switches from excerpt retrieval to whole-document analysis:
+
+- If the document is **small enough** to fit the model's context, the assistant
+  is given the **complete** file text in source order (no excerpting), so nothing
+  is missed.
+- If the document is **too large** to fit, USAi runs a **hierarchical
+  summarization** — it summarizes the file in sections, then combines those
+  section summaries into an overall answer. A `Analyzing document — batch N of M…`
+  message shows progress, and the **Stop** button cancels the analysis at any
+  point. If one section can't be summarized, it's marked as omitted rather than
+  failing the whole request.
+
+This only happens for clear whole-document requests. Ordinary, focused questions
+("what's the revenue in Q3?", "who signed the contract?") continue to use the fast
+hybrid retrieval above — the extra summarization work never runs automatically.
+
 Two settings control retrieval depth:
 
 | Setting | Meaning |

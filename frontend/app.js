@@ -2514,6 +2514,183 @@ function describeRetrievalMethod(chunks) {
     : 'keyword matching';
 }
 
+// ─── Whole-document analysis (#70, spec §4.6–4.7) ────────────────────────────
+// Character budget below which a document's *complete* text is injected instead
+// of a retrieval excerpt. Chosen to leave headroom under the 120,000-char
+// CONTEXT_CHAR_LIMIT for the model's own answer plus any Context7/memory context
+// injected the same turn. Char count (not a tokenizer) keeps zero new runtime
+// deps; it is a conservative heuristic (~4 chars/token) that deliberately errs
+// toward retrieval/map-reduce rather than overflowing the model's context.
+const FULL_DOC_CHAR_BUDGET = 80000;
+// Per-call sub-budget for a single map batch during hierarchical map-reduce.
+const MAP_REDUCE_SUB_BUDGET = 40000;
+// Max recursion depth for the reduce phase before summaries are truncated with
+// an explicit "additional sections omitted" marker rather than silently dropped.
+const MAP_REDUCE_MAX_DEPTH = 3;
+
+// Conservative, dependency-free classifier (spec §4.6a). Flags a query as a
+// "whole-document" request only when it clearly asks to operate over the whole
+// file — anything not matched stays on the focused hybrid-retrieval path so
+// map-reduce never auto-triggers for a plain factual question (AC-8). Pure
+// function: no DOM/side-effects, independently unit-testable.
+function detectWholeDocumentIntent(query) {
+  const q = String(query || '').toLowerCase();
+  if (!q.trim()) return false;
+  // verb (summarize/review/analyse/compare/overview) near a whole-document noun.
+  const verbNoun = /\b(summari[sz]e?|review|analy[sz]e|compare|overview|walk\s*through|go\s*through)\b[\s\S]*\b(document|file|whole|entire|all|everything|text|report|paper|contract)\b/;
+  const nounVerb = /\b(document|file|whole|entire|all|everything|text|report|paper|contract)\b[\s\S]*\b(summari[sz]e?|review|analy[sz]e|compare|overview)\b/;
+  const explicit = /\b(give me an overview|tldr|tl;dr|high[- ]level summary|overall summary)\b/;
+  return verbNoun.test(q) || nounVerb.test(q) || explicit.test(q);
+}
+
+// Total character length across a chunk set (sum of chunk text lengths).
+function totalChunkChars(chunks) {
+  return chunks.reduce((sum, c) => sum + String(c.text || '').length, 0);
+}
+
+// True when the complete text of every chunk fits inside the char budget (§4.6).
+function documentsFitBudget(chunks, budget = FULL_DOC_CHAR_BUDGET) {
+  return totalChunkChars(chunks) <= budget;
+}
+
+// Build the full-document context block: every chunk's complete text in source
+// order, each labelled with its provenance (§4.9). Used when documentsFitBudget.
+function buildFullDocumentContext(chunks) {
+  return chunks
+    .slice()
+    .sort(sourceOrder)
+    .map((c, i) => `${formatChunkLabel(c, i)}\n${c.text}`)
+    .join('\n\n---\n\n');
+}
+
+// Group chunks (in source order) into batches whose combined text fits the
+// sub-budget (§4.7 step 1). A single chunk larger than the sub-budget becomes
+// its own batch rather than being dropped, so coverage stays 100%.
+function buildMapBatches(chunks, subBudget = MAP_REDUCE_SUB_BUDGET) {
+  const ordered = chunks.slice().sort(sourceOrder);
+  const batches = [];
+  let current = [];
+  let used = 0;
+  for (const chunk of ordered) {
+    const len = String(chunk.text || '').length;
+    if (current.length && used + len > subBudget) {
+      batches.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(chunk);
+    used += len;
+  }
+  if (current.length) batches.push(current);
+  return batches;
+}
+
+// Hierarchical map-reduce over a document's structural chunks (spec §4.7).
+// Triggered only when a whole-document intent is detected AND the document does
+// not fit the full-document budget. Returns the reduced context string, or
+// { aborted: true } if the abort signal fired mid-map.
+//   query      — original user question, injected into each map instruction.
+//   chunks     — normalized v2 chunks for the relevant file(s).
+//   callFn     — non-streaming completion fn (default callChatApi); injectable.
+//   subBudget  — per-batch char budget for the map phase.
+//   reduceBudget — char budget the concatenated summaries must fit to stop.
+//   maxDepth   — max reduce recursion depth before truncating with a marker.
+//   onProgress — callback(batchIndex, batchCount) for the progress UI.
+//   signal     — AbortSignal; checked between map batches.
+//   model      — model id for the isolated map/reduce calls.
+async function mapReduceSummarize(query, chunks, {
+  callFn = callChatApi,
+  subBudget = MAP_REDUCE_SUB_BUDGET,
+  reduceBudget = FULL_DOC_CHAR_BUDGET,
+  maxDepth = MAP_REDUCE_MAX_DEPTH,
+  onProgress = null,
+  signal = null,
+  model = null,
+} = {}) {
+  // ── Map phase: summarize each batch in isolation (stream:false, no tools). ──
+  const batches = buildMapBatches(chunks, subBudget);
+  const summaries = [];
+  for (let i = 0; i < batches.length; i++) {
+    if (signal?.aborted) return { aborted: true };
+    if (onProgress) onProgress(i + 1, batches.length);
+    const batch = batches[i];
+    const first = batch[0];
+    const last = batch[batch.length - 1];
+    const heading = Array.isArray(first.headingPath) && first.headingPath.length
+      ? first.headingPath.join(' > ') : (first.fileName || 'document');
+    const lineRange = Number.isInteger(first.startLine) && Number.isInteger(last.endLine)
+      ? ` (lines ${first.startLine}-${last.endLine})` : '';
+    const excerpt = batch.map(c => c.text).join('\n\n');
+    const mapMessages = [
+      { role: 'system', content: `You are extracting the key facts and points from an excerpt of a larger document, relevant to this question: "${query}". List the salient points concisely; cite the section heading and line range for each. Do not answer the question yet — only extract.` },
+      { role: 'user', content: `[${first.fileName || 'document'} § ${heading}${lineRange}]\n${excerpt}` },
+    ];
+    const payload = { messages: mapMessages };
+    if (model) payload.model = model;
+    let res;
+    try {
+      res = await callFn(payload);
+    } catch (err) {
+      res = { error: err?.message || 'map batch failed' };
+    }
+    if (res?.aborted) return { aborted: true };
+    if (res?.error || !res?.assistantText) {
+      // One bad batch must not sink the whole summary (§4.7 step 4): record an
+      // omitted-section marker for this range and continue.
+      summaries.push(`[${first.fileName || 'document'} § ${heading}${lineRange}] — section omitted (summary unavailable)`);
+      continue;
+    }
+    summaries.push(`[${first.fileName || 'document'} § ${heading}${lineRange}]\n${res.assistantText}`);
+  }
+
+  // ── Reduce phase: fold summaries until they fit the budget (§4.7 step 2). ──
+  return reduceSummaries(summaries, {
+    callFn, query, reduceBudget, subBudget, maxDepth, depth: 0, model, signal,
+  });
+}
+
+// Recursively fold summary blocks until they fit reduceBudget or maxDepth is hit.
+async function reduceSummaries(summaries, opts) {
+  const joined = summaries.join('\n\n---\n\n');
+  if (joined.length <= opts.reduceBudget) return joined;
+  if (opts.depth >= opts.maxDepth) {
+    // Deepest level reached: keep as much as fits, flag the rest explicitly
+    // rather than silently dropping it (§4.7 step 2).
+    let kept = '';
+    for (const s of summaries) {
+      if (kept.length + s.length > opts.reduceBudget) break;
+      kept += (kept ? '\n\n---\n\n' : '') + s;
+    }
+    return `${kept}\n\n---\n\n[additional sections omitted — document exceeded summarization depth]`;
+  }
+  // Batch the summaries and reduce each group, then recurse one level deeper.
+  const groups = buildMapBatches(
+    summaries.map((text, i) => ({ text, fileName: 'summary', chunkId: i, ordinal: i })),
+    opts.subBudget,
+  );
+  const reduced = [];
+  for (const group of groups) {
+    if (opts.signal?.aborted) return { aborted: true };
+    const combined = group.map(g => g.text).join('\n\n');
+    const messages = [
+      { role: 'system', content: `Combine these section summaries into a single coherent summary that preserves the key points relevant to: "${opts.query}". Keep the section/heading citations.` },
+      { role: 'user', content: combined },
+    ];
+    const payload = { messages };
+    if (opts.model) payload.model = opts.model;
+    let res;
+    try {
+      res = await opts.callFn(payload);
+    } catch (err) {
+      res = { error: err?.message };
+    }
+    if (res?.aborted) return { aborted: true };
+    reduced.push((res && !res.error && res.assistantText) ? res.assistantText : combined);
+  }
+  return reduceSummaries(reduced, { ...opts, depth: opts.depth + 1 });
+}
+
+
 async function handleFileUpload(event) {
   const files = event.target.files;
   if (!files || files.length === 0) return;
@@ -3296,21 +3473,66 @@ async function prepareContextMessages(inputs) {
     // #94: pass the active project so retrieval hard-scopes to the current
     // project's files (+ unscoped per-chat uploads) and can never surface a
     // foreign project's documents.
-    const relevantChunks = await getRelevantChunks(inputs.content, topChunksPerQuery, undefined, undefined, undefined, currentProjectId);
-    if (relevantChunks.length > 0) {
-      const method = describeRetrievalMethod(relevantChunks);
-      const CONTEXT_CHAR_LIMIT = 120000; // ~30k tokens
-      let totalChars = 0;
-      const includedChunks = relevantChunks.filter(chunk => {
-        if (totalChars + chunk.text.length > CONTEXT_CHAR_LIMIT) return false;
-        totalChars += chunk.text.length;
-        return true;
-      });
-      const relevantChunksText = includedChunks
-        .map((c, i) => `${formatChunkLabel(c, i)}\n${c.text}`)
-        .join('\n\n---\n\n');
-      contextMessages.push({ role: 'system', content: `Uploaded files context (${method}):\n` + relevantChunksText });
-      contextDetails.push(`Files: ${uploadedFiles.join(', ')}`);
+    // Compute the project-scoped, normalized chunk set once so both the
+    // whole-document path (#70) and hybrid retrieval see the same corpus.
+    const rawChunks = [...fileChunks, ...projectChunks];
+    const scopedChunks = normalizeChunkCache({
+      chunks: (currentProjectId == null)
+        ? rawChunks
+        : rawChunks.filter(c => c.projectId == null || c.projectId === currentProjectId),
+    }).chunks;
+
+    // #70 §4.6a: only recognized whole-document requests take the adaptive
+    // full-document / map-reduce path. Anything else stays on hybrid retrieval,
+    // so map-reduce (which issues extra model calls) never auto-triggers for a
+    // plain factual question — the load-bearing safety property (AC-8).
+    const wholeDocIntent = detectWholeDocumentIntent(inputs.content);
+    let handledWhole = false;
+    if (wholeDocIntent && scopedChunks.length) {
+      if (documentsFitBudget(scopedChunks, FULL_DOC_CHAR_BUDGET)) {
+        // §4.6: whole document fits — inject the complete text, skip retrieval.
+        const fullText = buildFullDocumentContext(scopedChunks);
+        contextMessages.push({ role: 'system', content: 'Full document context (whole-document analysis):\n' + fullText });
+        contextDetails.push(`Files (whole document): ${uploadedFiles.join(', ')}`);
+        handledWhole = true;
+      } else {
+        // §4.7: too large to fit — hierarchical map-reduce over structural chunks.
+        const mr = await mapReduceSummarize(inputs.content, scopedChunks, {
+          model: inputs.model,
+          signal: activeAbortController?.signal,
+          onProgress: (n, m) => {
+            document.getElementById('responseLog').textContent = `Analyzing document — batch ${n} of ${m}...`;
+          },
+        });
+        if (mr && mr.aborted) {
+          // User hit Stop mid-analysis — leave the (empty) context and let the
+          // normal abort handling in sendMessage surface the cancellation.
+          handledWhole = true;
+        } else if (typeof mr === 'string' && mr.trim()) {
+          contextMessages.push({ role: 'system', content: 'Document analysis summary (hierarchical map-reduce):\n' + mr });
+          contextDetails.push(`Files (map-reduce summary): ${uploadedFiles.join(', ')}`);
+          handledWhole = true;
+        }
+      }
+    }
+
+    if (!handledWhole) {
+      const relevantChunks = await getRelevantChunks(inputs.content, topChunksPerQuery, undefined, undefined, undefined, currentProjectId);
+      if (relevantChunks.length > 0) {
+        const method = describeRetrievalMethod(relevantChunks);
+        const CONTEXT_CHAR_LIMIT = 120000; // ~30k tokens
+        let totalChars = 0;
+        const includedChunks = relevantChunks.filter(chunk => {
+          if (totalChars + chunk.text.length > CONTEXT_CHAR_LIMIT) return false;
+          totalChars += chunk.text.length;
+          return true;
+        });
+        const relevantChunksText = includedChunks
+          .map((c, i) => `${formatChunkLabel(c, i)}\n${c.text}`)
+          .join('\n\n---\n\n');
+        contextMessages.push({ role: 'system', content: `Uploaded files context (${method}):\n` + relevantChunksText });
+        contextDetails.push(`Files: ${uploadedFiles.join(', ')}`);
+      }
     }
   }
   
@@ -4536,6 +4758,14 @@ if (typeof module !== 'undefined' && module.exports) {
     expandChunkNeighbors,
     formatChunkLabel,
     describeRetrievalMethod,
+    // Whole-document analysis (#70) — pure/injectable helpers
+    detectWholeDocumentIntent,
+    documentsFitBudget,
+    buildFullDocumentContext,
+    buildMapBatches,
+    FULL_DOC_CHAR_BUDGET,
+    // _mapReduceSummarizeTest: injectable callFn/signal, no live network.
+    _mapReduceSummarizeTest: (query, chunks, opts) => mapReduceSummarize(query, chunks, opts),
     normalizeAssistantText,
     // Sidebar collapse helpers (tested via injected DOM stubs):
     applySidebarCollapsed,

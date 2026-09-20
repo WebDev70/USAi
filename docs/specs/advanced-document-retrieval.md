@@ -1,6 +1,6 @@
 # Spec: Advanced Document Retrieval — Structure-Aware Chunking, Hybrid Search & Hierarchical Whole-Document Analysis
 
-**Status:** In Progress (#69 Done · #70/#71 pending)
+**Status:** In Progress (#69 Done · #70 Done · #71 pending)
 **Created:** 2026-09-17
 **Author:** Cline (backlog #69/#70/#71 — architecture spec)
 
@@ -84,15 +84,15 @@ documents don't get silently truncated when the question needs all of them.
 - [x] AC-5: Top-ranked seed chunks are expanded with their immediate
       structural neighbors (same file, adjacent `ordinal`), deduplicated, and
       re-ordered by source position before being placed in the prompt.
-- [ ] AC-6: *(deferred to #70)* When every uploaded/project document relevant to the current
+- [x] AC-6: *(#70)* When every uploaded/project document relevant to the current
       turn fits inside a configured character budget (with headroom for the
       rest of the prompt), the assistant receives the **complete** document
       text in source order instead of a retrieval excerpt.
-- [ ] AC-7: *(deferred to #70)* Explicit whole-document requests ("summarize this document",
+- [x] AC-7: *(#70)* Explicit whole-document requests ("summarize this document",
       "review the whole file", "compare all sections") that do **not** fit
       the budget are answered via hierarchical map-reduce (§4.7) over
       structural chunks, not a single-shot truncated context.
-- [ ] AC-8: *(deferred to #70)* Ambiguous / narrow queries continue to use hybrid retrieval
+- [x] AC-8: *(#70)* Ambiguous / narrow queries continue to use hybrid retrieval
       (§4.4–4.5) by default — map-reduce only triggers on a recognized
       whole-document intent, never automatically for a plain factual
       question, so the number of extra model calls stays predictable.
@@ -456,7 +456,20 @@ follow-on spec is fine; it should link back here rather than duplicate design).
 - [x] Memory note written to `Cline/memories/`
       (`2026-09-17-190500-backlog-69-retrieval-foundations-shipped.md`)
 
-### Slices #70 / #71 — pending
+### Slice #70 — Whole-document analysis (reviewed 2026-09-20: PASS)
+
+- [x] Implementation matches this spec's §4.6–4.7, §4.9 for the whole-document path
+- [x] `./run-tests.sh --coverage` passes — server.py line ≥90%, branch 92.31%,
+      JS branch 75.29% (ratchet guard PASS); WDA-1…WDA-7 green
+- [x] `./scripts/security-scan.sh` clean (gitleaks + bandit + pip-audit; no new
+      runtime deps; map/reduce reuse the existing proxy + SSRF guard)
+- [x] Docs updated per §7 (CHANGELOG, USER_GUIDE, ARCHITECTURE §4d, this spec)
+- [x] Acceptance criteria AC-6, AC-7, AC-8 verified by WDA-2/3, WDA-4/5/7, WDA-1/6
+- [x] `docs/ARCHITECTURE.md` §4d accurately reflects shipped behavior (no
+      ahead-of-code claims; #71 named as future work)
+- [x] Memory note written to `Cline/memories/`
+
+### Slice #71 — pending
 
 - [ ] Implementation matches this spec's §3–5 for the slice under review
 - [ ] `./run-tests.sh --coverage` passes (server.py ≥ 90%, JS branch ≥ 70%)
@@ -471,6 +484,7 @@ follow-on spec is fine; it should link back here rather than duplicate design).
 
 | Date | Section | Amendment | Reason |
 |------|---------|-----------|--------|
+| 2026-09-20 | §2, §9 | Ticked AC-6/AC-7/AC-8 (#70 shipped); added the Slice #70 review-PASS checklist and split the pending checklist down to #71 only; header Status → "In Progress (#69 Done · #70 Done · #71 pending)". | #70 whole-document analysis shipped: adaptive full-document context + hierarchical map-reduce wired into `prepareContextMessages`, covered by WDA-1…WDA-7. |
 | 2026-09-17 | §2, §7, §9 | Ticked AC-1…AC-5/AC-10/AC-11 and the #69 doc items; marked AC-6…AC-9 as deferred to #70/#71; split §9 into a completed #69 checklist and a pending #70/#71 checklist; header Status → "In Progress (#69 Done)". | #69 shipped; the spec is the review source of truth and must record which slice satisfied which AC. |
 | 2026-09-17 | §6 (test plan) | Implementation added **RET-11** (context-label format incl. `(context)` marker) and **RET-12** (retrieval-method label) beyond the table, covering §4.9 provenance which had no explicit test row. | §4.9 was specified but untested; provenance labels are user-visible so they needed direct coverage. |
 

@@ -341,11 +341,28 @@ are injected as `role: 'system'` context messages via `prepareContextMessages()`
 each labelled by `formatChunkLabel()` with its file, heading path, line range, and
 a `(context)` marker on expanded neighbours.
 
-Not yet implemented: the adaptive full-document context path, whole-document
-intent routing / hierarchical map-reduce (**#70**), and optional second-stage
-reranking (**#71**) — large files are still answered from the fused top-N excerpt.
-See `docs/specs/advanced-document-retrieval.md` §4.6–4.8 for those designs; this
-section will be updated again as each slice ships.
+Before hybrid retrieval runs, `prepareContextMessages()` checks the user's query
+with `detectWholeDocumentIntent()` — a conservative, dependency-free regex
+classifier (**#70**). Only recognized whole-document requests (e.g. "summarize
+this document", "review the whole file", "compare all sections") take the
+adaptive whole-document path; every other query stays on the focused hybrid
+retrieval above, so the extra model calls of map-reduce **never auto-trigger**
+for a plain factual question. When the intent matches, the router branches on
+`documentsFitBudget()` (sum of chunk text vs. `FULL_DOC_CHAR_BUDGET = 80,000`
+chars): if the corpus fits, `buildFullDocumentContext()` injects the file's
+**complete** text in `(fileName, ordinal)` order (labelled via
+`formatChunkLabel()`); if it exceeds the budget, `mapReduceSummarize()` runs a
+**hierarchical map-reduce** — `buildMapBatches()` groups chunks into
+sub-budget-sized batches, each summarized in an isolated non-streaming call
+(`stream:false`, no tools), then `reduceSummaries()` recursively folds the
+partial summaries until they fit (max depth 3, then an explicit
+"additional sections omitted" marker rather than silent truncation). A failed
+map batch degrades to a per-section "section omitted" marker instead of aborting
+the whole analysis, and the batch loop honours the shared `activeAbortController`
+signal so Stop cancels mid-analysis. The final user-facing answer is then
+produced by the normal streaming/tool-enabled completion using the injected
+context. Optional second-stage reranking (**#71**) remains future work; see
+`docs/specs/advanced-document-retrieval.md` §4.6–4.8.
 
 
 **Project files (`projectChunks`):** When a project is active, the project's shared

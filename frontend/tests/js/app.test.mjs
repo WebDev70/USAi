@@ -2134,3 +2134,118 @@ test('PD-JS-6: _showChatView clears every inline display override set by _showPr
     globalThis.document = origDoc;
   }
 });
+
+// ---------------------------------------------------------------------------
+// WDA-1…WDA-7: whole-document analysis (#70)
+// Adaptive full-document context + hierarchical map-reduce.
+// ---------------------------------------------------------------------------
+
+test('WDA-1: intent detector flags whole-document phrasings, rejects narrow queries', () => {
+  const whole = [
+    'summarize this document',
+    'Please review the whole file',
+    'give me an overview of the file',
+    'analyze the entire document',
+    'compare all sections',
+  ];
+  for (const q of whole) {
+    assert.equal(app.detectWholeDocumentIntent(q), true, `should flag: "${q}"`);
+  }
+  const narrow = [
+    'what is the revenue in Q3?',
+    'who signed the contract',
+    'find the phone number',
+    'when was it published',
+  ];
+  for (const q of narrow) {
+    assert.equal(app.detectWholeDocumentIntent(q), false, `should NOT flag: "${q}"`);
+  }
+});
+
+test('WDA-2: full-document bypass triggers when combined length fits the budget', () => {
+  const chunks = app.normalizeChunkCache({ chunks: [
+    { fileName: 'a.md', chunkId: 0, text: 'alpha content', headingPath: ['A'], startLine: 1, endLine: 2 },
+    { fileName: 'a.md', chunkId: 1, text: 'beta content', headingPath: ['B'], startLine: 3, endLine: 4 },
+  ] }).chunks;
+  assert.ok(app.documentsFitBudget(chunks, app.FULL_DOC_CHAR_BUDGET));
+  const ctx = app.buildFullDocumentContext(chunks);
+  // Complete text of every chunk is present, in source order.
+  assert.ok(ctx.indexOf('alpha content') < ctx.indexOf('beta content'));
+  assert.match(ctx, /a\.md/);
+});
+
+test('WDA-3: full-document bypass falls back to retrieval when budget exceeded', () => {
+  const big = 'x'.repeat(50);
+  const chunks = app.normalizeChunkCache({ chunks: [
+    { fileName: 'a.md', chunkId: 0, text: big },
+    { fileName: 'a.md', chunkId: 1, text: big },
+  ] }).chunks;
+  assert.equal(app.documentsFitBudget(chunks, 40), false);
+});
+
+test('WDA-4: map phase batches respect the sub-budget and cover 100% of chunks', () => {
+  const chunks = app.normalizeChunkCache({ chunks: [
+    { fileName: 'a.md', chunkId: 0, text: 'a'.repeat(30) },
+    { fileName: 'a.md', chunkId: 1, text: 'b'.repeat(30) },
+    { fileName: 'a.md', chunkId: 2, text: 'c'.repeat(30) },
+  ] }).chunks;
+  const batches = app.buildMapBatches(chunks, 50);
+  // No batch exceeds the sub-budget (a single oversized chunk is allowed alone).
+  for (const b of batches) {
+    const len = b.reduce((n, c) => n + c.text.length, 0);
+    assert.ok(len <= 50 || b.length === 1, 'batch within sub-budget or a lone chunk');
+  }
+  // Every source chunk appears exactly once across all batches.
+  const covered = batches.flat().map(c => c.chunkId).sort();
+  assert.deepEqual(covered, [0, 1, 2]);
+});
+
+test('WDA-5: reduce recurses and stops at max depth with an omitted-section marker', async () => {
+  const chunks = app.normalizeChunkCache({ chunks: Array.from({ length: 6 }, (_, i) => ({
+    fileName: 'a.md', chunkId: i, text: `section ${i} `.repeat(10), headingPath: [`S${i}`], startLine: i * 2 + 1, endLine: i * 2 + 2,
+  })) }).chunks;
+  // callFn echoes back a long constant so summaries never shrink below the budget,
+  // forcing the reducer to recurse until it hits maxDepth.
+  const callFn = async () => ({ assistantText: 'SUMMARY '.repeat(20) });
+  const result = await app._mapReduceSummarizeTest('summarize', chunks, {
+    callFn, subBudget: 40, reduceBudget: 40, maxDepth: 2,
+  });
+  assert.match(result, /additional sections omitted/i);
+});
+
+test('WDA-6: map phase aborts remaining batches when the abort signal fires mid-map', async () => {
+  const chunks = app.normalizeChunkCache({ chunks: Array.from({ length: 4 }, (_, i) => ({
+    fileName: 'a.md', chunkId: i, text: `chunk ${i} `.repeat(20),
+  })) }).chunks;
+  const controller = new AbortController();
+  let calls = 0;
+  const callFn = async () => {
+    calls += 1;
+    if (calls === 1) controller.abort(); // abort right after the first batch call
+    return { assistantText: 'ok' };
+  };
+  const result = await app._mapReduceSummarizeTest('summarize', chunks, {
+    callFn, subBudget: 40, reduceBudget: 100000, maxDepth: 3, signal: controller.signal,
+  });
+  assert.ok(calls < chunks.length, `should stop early, made ${calls} calls`);
+  assert.equal(result.aborted, true);
+});
+
+test('WDA-7: a single failed map batch becomes an omitted-section marker, not a full abort', async () => {
+  const chunks = app.normalizeChunkCache({ chunks: [
+    { fileName: 'a.md', chunkId: 0, text: 'first '.repeat(20), headingPath: ['First'], startLine: 1, endLine: 2 },
+    { fileName: 'a.md', chunkId: 1, text: 'second '.repeat(20), headingPath: ['Second'], startLine: 3, endLine: 4 },
+  ] }).chunks;
+  let calls = 0;
+  const callFn = async () => {
+    calls += 1;
+    if (calls === 1) return { error: 'network boom' };
+    return { assistantText: 'good summary' };
+  };
+  const result = await app._mapReduceSummarizeTest('summarize', chunks, {
+    callFn, subBudget: 40, reduceBudget: 100000, maxDepth: 3,
+  });
+  assert.match(result, /section omitted/i);
+  assert.match(result, /good summary/);
+});
+
