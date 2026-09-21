@@ -1,6 +1,6 @@
 # Spec: Streaming + Tool Calling Together (#9)
 
-**Status:** In Progress
+**Status:** Done
 **Created:** 2026-06-25
 **Updated:** 2026-06-26
 **Author:** Cline

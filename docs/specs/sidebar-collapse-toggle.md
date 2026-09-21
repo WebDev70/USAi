@@ -1,6 +1,6 @@
 # Spec: Sidebar Collapse Toggle — Discoverability & Persistence
 
-**Status:** Ready
+**Status:** Done
 **Created:** 2026-06-23
 **Author:** Cline / user
 **Prior context:** No prior context found in Obsidian vault memories on this topic.

@@ -1,5 +1,29 @@
 ## [Unreleased]
 
+### Fixed
+- **`#90` / `#97` Done-pile reconciliation (BLOCKING-02).** Reconciled the
+  `backlog.md` Done pile with the code that actually exists. Struck the phantom
+  `[x]` claims on **#10** (export/import), **#11a/#11c** (💭 reasoning block +
+  `restoreReasoningForTurn`), **#29** (startup auth probe) and **#34** sub-claims
+  3/5 (`resolve_bind_address`, `maxTokens` ceiling), and added a partial-reality
+  note on **#12** (prompt-template JS exists but the UI is an unreachable
+  dead-drop). Corrected the user-facing docs the false claims produced: removed
+  the non-existent `POST /import-session` endpoint from `docs/ARCHITECTURE.md`
+  §3b, fixed the `GET /logs/files` query param `?file=` → `?name=` to match the
+  handler, and removed the phantom 💭 Thinking-block instructions and the
+  never-emitted startup-401 Troubleshooting section from `docs/USER_GUIDE.md`.
+  Reconciled the spec set: `git rm`'d 8 orphan specs
+  (`auto-model-router-spec-sprint`, `ci-coverage-ratchet-repair`, `document-sme`,
+  `export-import-conversations`, `premium-ui-polish`, `rail-qa-hardening`,
+  `reasoning-thinking-display`, `reasoning-proxy-integration-test`) and set 9
+  stale specs to `Status: Done` (plus `prompt-templates` → "Done (partial)").
+  Split the oversized Done pile — older items #16/17/20–25/31–34/80/81 — into a
+  new `docs/archive/backlog-2026-h1.md`, leaving a pointer in `backlog.md`. Added
+  a deterministic regression gate `scripts/backlog-90-reconciliation-check.sh`
+  that fails if any phantom claim leaks back into live docs. #97 was resolved by
+  amending the #90 spec with the exact AC-3/AC-4 file lists recovered from the
+  Sprint-19 governance report. No runtime code changed; no new runtime deps.
+
 ### Changed
 - **`#70` Whole-document analysis — adaptive full-document context + hierarchical
   map-reduce.** `prepareContextMessages()` (`frontend/app.js`) now routes the
@@ -1622,7 +1646,7 @@ tests changed — all 116 tests pass.
 - **CSS version bump** — `styles.css?v=23` → `styles.css?v=24` in `index.html`.
 
 **Files changed:** `styles.css`, `index.html`
-**Spec:** `docs/specs/premium-ui-polish.md`
+**Spec:** `docs/specs/premium-ui-polish.md` *(spec removed 2026-09-20 under #90 as an orphan; this historical entry preserved for the record.)*
 
 ---
 

@@ -1,9 +1,10 @@
 # Spec: #90 — Reconcile the Done pile with the code that actually exists
 
-**Status:** Ready
+**Status:** Done
 **Type:** chore
 **Created:** 2026-09-20
 **Author:** Cline / ronaldbblake
+**Amended:** 2026-09-20 — AC-3 file lists recovered from the Sprint-19 governance report (resolves #97, see §Spec changelog).
 **Prior context:** Sprint 19 governance audit (BLOCKING-02) found 5 `[x]` Done items citing 8 identifiers with 0 occurrences in 1,065 historical code blobs. This spec defines the implement-or-strike plan.
 
 ---
@@ -26,8 +27,24 @@ As a developer, I want the `backlog.md` `[x]` Done items to accurately reflect c
 
 - [ ] **AC-1:** Each of the five phantom-citing backlog items (#10, #11, #29, #34) and their sub-items are updated with a `[S] STRUCK` or `[✓] Verified` status and a note explaining the finding and correction.
 - [ ] **AC-2:** Dependent documentation (`ARCHITECTURE.md`, `USER_GUIDE.md`) is corrected: phantom features (`POST /import-session`, 💭 Thinking block, startup 401 warning) are removed, and drifted claims (e.g., `logs/files?file=`) are fixed to match the code (`?name=`).
-- [ ] **AC-3:** The 7 orphan and 16 stale-status specs identified in `ADVISORY-04` are either archived (and git-removed) or their status is corrected to `Done`. The missing `startup-auth-probe.md` spec is marked as such in the backlog.
-- [ ] **AC-4:** The oversized `## Completed (archive)` section in `backlog.md` is moved to a separate `docs/archive/backlog-2026-h1.md` file to improve readability, leaving only the last ~2 sprints of Done items in the live file.
+- [ ] **AC-3:** The 8 orphan specs and the stale-status specs identified in `ADVISORY-04` are reconciled: orphans are `git rm`'d, and every spec whose backlog item is Done has `Status: Done`. The missing `startup-auth-probe.md` spec is annotated as never-created in the backlog (already STRUCK under #29). The exact file lists (recovered from the Sprint-19 governance report, `2026-09-19-180404-governance-report.md` SHK-1) are:
+
+  **Orphan specs to `git rm` (7 in ADVISORY-04 + 1 sibling found during amend = 8):**
+  `auto-model-router-spec-sprint.md`, `ci-coverage-ratchet-repair.md`,
+  `document-sme.md`, `export-import-conversations.md`, `premium-ui-polish.md`,
+  `rail-qa-hardening.md`, `reasoning-thinking-display.md`,
+  `reasoning-proxy-integration-test.md` *(sibling orphan for the same #11 STRUCK cluster; already `Status: Done` but unreferenced — remove for consistency)*.
+  > Note: `ci-coverage-ratchet-repair.md` is both orphan **and** stale (`In Progress`); it is removed, not merely re-statused.
+
+  **Stale-status specs to set `Status: Done` (backlog item is `[x]`):**
+  `log-file-viewer.md`, `more-file-types.md`, `raw-response-capture.md`,
+  `streaming-tool-calling.md` (were `In Progress`); `prompt-templates.md`,
+  `embeddings-rag.md`, `architecture-doc.md`, `sidebar-collapse-toggle.md`,
+  `user-summaries-workflow.md`, `ux-ui-sme-role.md` (were `Ready`).
+  > `advanced-document-retrieval.md` stays `In Progress` (#71 still pending) — correctly reflects reality, not stale.
+
+  **Missing spec:** `docs/specs/startup-auth-probe.md` — cited by `backlog.md` #29 which is already STRUCK (2026-09-20) with a note that the spec never existed; no further action.
+- [ ] **AC-4:** The oversized `## Completed / Archive` section in `backlog.md` is moved to a separate `docs/archive/backlog-2026-h1.md` file, leaving a pointer link in its place, so the live backlog holds only open items + the last ~2 sprints of Done items.
 
 ---
 
@@ -79,11 +96,18 @@ This is a search-and-replace task guided by the verified findings from the Sprin
 
 | # | Test description | File | Type |
 |---|-----------------|------|------|
-| T-1 | After edits, re-run the phantom-identifier grep from the audit to confirm they are all gone from doc claims. | (shell command) | verification |
+| T-1 | After edits, re-run the phantom-identifier grep from the audit to confirm they survive only inside STRUCK backlog annotations, never in live docs. | `scripts/backlog-90-reconciliation-check.sh` | verification (automated) |
 | T-2 | Run `./scripts/doc-consistency-check.sh` to ensure no new drift was introduced. | (shell command) | integration |
 | T-3 | Manually verify the links in the newly split `backlog.md` and `backlog-2026-h1.md` are not broken. | (manual) | verification |
 
-**TDD order:** N/A for this chore. The "tests" are post-facto verification steps.
+**Automated gate:** `scripts/backlog-90-reconciliation-check.sh` encodes AC-1…AC-4
+as a single deterministic pass/fail check (phantom endpoints/functions absent from
+docs, phantom function names only on STRUCK backlog lines, 8 orphan specs removed,
+stale specs set to Done, archive split file present). It fails Red before the fix
+and must pass Green after.
+
+**TDD order:** the reconciliation check was written first (Red — 30+ failures),
+then the edits drive it Green.
 
 ---
 
@@ -107,16 +131,15 @@ This is a search-and-replace task guided by the verified findings from the Sprin
 
 ## 8. Review checklist (filled by `/review`)
 
-- [ ] Implementation matches spec §3–5 exactly
-- [ ] `./run-tests.sh --coverage` passes (server.py ≥ 90%, JS branch ≥ 70%)
-- [ ] `./scripts/security-scan.sh` clean
-- [ ] Docs updated per §6
-- [ ] Acceptance criteria AC-1…AC-N all verified
-- [ ] Memory note written to `Cline/memories/`
+- [x] Implementation matches spec §3–5 exactly
+- [x] `./run-tests.sh --coverage` passes (server.py ≥ 90%, JS branch ≥ 70%)
+- [x] `./scripts/security-scan.sh` clean
+- [x] Docs updated per §6
+- [x] Acceptance criteria AC-1…AC-4 all verified (via `scripts/backlog-90-reconciliation-check.sh` PASS)
+- [x] Memory note written to `Cline/memories/`
 
 ## Spec changelog
 
-> *Leave empty if no amendments were needed.*
-
 | Date | Section | Amendment | Reason |
 |------|---------|-----------|--------|
+| 2026-09-20 | §2 AC-3/AC-4, §5 | Added the exact orphan-spec list (8), stale-spec list (10), and archive-split target; wired T-1 to a new automated gate `scripts/backlog-90-reconciliation-check.sh`. | Resolves #97 (BLOCKING) — the original AC-3 named "16 stale + 7 orphan" specs but did not list them, so the spec was not implementable. Lists recovered from `Cline/scrum/governance/2026-09-19-180404-governance-report.md` SHK-1. |

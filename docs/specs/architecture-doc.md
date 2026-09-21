@@ -1,6 +1,6 @@
 # Spec: Architecture & Engineering Document
 
-**Status:** Ready
+**Status:** Done
 **Created:** 2026-06-23
 **Author:** Cline / user
 **Prior context:** Prior sessions covered three-concern org map (#30 doc-split done 2026-06-23) and engineering principles. No prior spec for a dedicated architecture document found.

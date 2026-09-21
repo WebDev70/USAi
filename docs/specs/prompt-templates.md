@@ -1,9 +1,10 @@
 # Spec: Prompt Templates / Saved System Prompts
 
-**Status:** Ready
+**Status:** Done (partial — see note)
 **Type:** feature
 **Created:** 2026-06-26
 **Author:** Cline / Ron
+**Reconciled:** 2026-09-20 (#90) — the JS helpers exist and are tested, but the UI is a dead-drop (no `promptTemplatePanel`/Templates button in `index.html`, no `pt-*` CSS). Wiring the UI is deferred to a re-opened backlog item; the record now matches reality.
 **Prior context:** None found in Obsidian vault. Item #12 has been in the backlog parking lot since project start, listed as "A small library of reusable system prompts." No earlier design notes.
 
 ---

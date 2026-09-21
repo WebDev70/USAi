@@ -1,6 +1,6 @@
 # Spec: Raw API Response Capture (Non-Streaming, v1)
 
-**Status:** In Progress
+**Status:** Done
 **Created:** 2026-06-27
 **Author:** Cline / user
 

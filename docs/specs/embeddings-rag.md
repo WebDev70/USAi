@@ -1,6 +1,6 @@
 # Spec: Real Embeddings for File RAG (#7)
 
-**Status:** Ready
+**Status:** Done
 **Type:** feature
 **Created:** 2026-06-25
 **Updated:** 2026-06-26

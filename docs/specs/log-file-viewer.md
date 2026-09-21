@@ -1,6 +1,6 @@
 # Spec: Log File Viewer in Debug Panel (#50)
 
-**Status:** In Progress
+**Status:** Done
 **Created:** 2026-06-27
 **Author:** Cline
 

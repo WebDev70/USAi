@@ -1,6 +1,6 @@
 # Spec: User Summaries Workflow Convention
 
-**Status:** Ready
+**Status:** Done
 **Type:** docs
 **Created:** 2026-06-26
 **Author:** Cline / user

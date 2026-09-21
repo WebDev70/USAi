@@ -145,7 +145,7 @@ Unmatched paths fall through to `SimpleHTTPRequestHandler` (static file serving)
 | `GET` | `/memory/search` | Full-text search across memory notes (accepts `?projectId=` for project-scoped search) |
 | `GET` | `/memory/read` | Read a single memory note |
 | `GET` | `/logs` | Tail the in-memory log buffer |
-| `GET` | `/logs/files` | List persisted log files; `?file=<name>` reads one (path-traversal guarded) |
+| `GET` | `/logs/files` | List persisted log files; `?name=<name>` reads one (path-traversal guarded) |
 | `GET` | `/raw-responses` | List raw API response capture metadata (newest-first) |
 | `GET` | `/raw-responses?id=` | Read one full raw-response capture record |
 | `DELETE` | `/raw-responses` | Clear all raw-response capture records |
@@ -163,7 +163,6 @@ Unmatched paths fall through to `SimpleHTTPRequestHandler` (static file serving)
 | `POST` | `/chunk-cache` | Store file chunks server-side (accepts `?projectId=` to scope to a project) |
 | `DELETE` | `/chunk-cache` | Clear chunk cache (accepts `?projectId=` to clear only project-scoped chunks) |
 | `DELETE` | `/sessions/{id}` | Delete an archived session |
-| `POST` | `/import-session` | Import a previously exported session JSON (≤512 KB; turns validated) |
 | `POST` | `/extract-text` | Extract plain text from uploaded PDF or DOCX (server-side; `has_pdf` in `/config`) |
 | `GET` | `/mcp/vaults` | List Obsidian vaults known to the MCP bridge (`has_mcp_bridge` required) |
 | `POST` | `/mcp/tool` | Generic MCP tool passthrough — dispatches to any allowlisted tool |

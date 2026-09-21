@@ -112,29 +112,25 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 Sprint-ready in the recommended order. Everything here passes
 [`docs/quality/review-checks/definition-of-ready.md`](docs/quality/review-checks/definition-of-ready.md):
 it has a bounded scope, a named file list, and testable acceptance criteria —
-**except** the three governance items (#90/#91/#92) which are approved but still
+**except** the two remaining governance items (#91/#92) which are approved but still
 need a `/spec` pass to resolve open per-claim product decisions.
 
 | # | Title | Size | Why now |
 |---|-------|------|---------|
-| 90 | 🚨 BLOCKING — reconcile the Done pile with code that actually exists | M | Highest-severity open item. Five `[x]` items (#10, #11a/#11c, #12, #29, #34) cite code absent from history; three docs describe features that don't exist. Needs `/spec` for the implement-or-strike calls. |
-| 91 | 📋 ADVISORY — reconcile `ARCHITECTURE.md` §3b with the live routes | S | Endpoint table lists absent routes and misses live ones; `/logs/files?file=` should be `?name=`. Needs `/spec`. |
-| 92 | 📋 ADVISORY — enforce Mode B self-improvement in session notes | XS | Cheapest of the three; require each note to record a proposal or an explicit "no improvement found". Needs `/spec`. |
+| 91 | 📋 ADVISORY — reconcile `ARCHITECTURE.md` §3b with the live routes | S | Endpoint table lists absent routes and misses live ones. (The `/logs/files?file=`→`?name=` fix and phantom `POST /import-session` removal were done under #90; #91 completes the full §3b reconciliation.) Needs `/spec`. |
+| 92 | 📋 ADVISORY — enforce Mode B self-improvement in session notes | XS | Cheapest of the governance items; require each note to record a proposal or an explicit "no improvement found". Needs `/spec`. |
 | 82 | Project settings modal + detail-view delete | S | DoR ✅. Unblocks #67; removes the fragile create-modal-reuse hack. |
 | 83 | jsdom behavior tests for project detail view | S | DoR ✅. Closes the DOM-coverage gap #81 shipped with. |
 | 84 | Refactor `appendMessage` to a turn object | S | DoR ✅. Retro action; 6-positional-arg signature is now the top regression source. |
-| 70 | Whole-document analysis | L | DoR ✅. Spec already written (`advanced-document-retrieval.md` §4.6–4.7). |
 | 71 | Optional reranking | M | DoR ✅. Spec already written (§4.8); verified `rerank` absent from code. |
 
 **Not ready — needs `/spec` first:** #68 (M, schema changed under it),
 #67 (L, 4 open design questions), #86 (L, new), #13 / #14 / #15 / #57 (parking lot).
 
-**Suggested next sprint (Sprint 21):** clear the remaining governance debt —
-**#90 → #91 → #92** — a cohesive "make the backlog and docs match the code" sprint.
-Note the sequencing: #90 is the load-bearing reconciliation (it may retire or
-correct doc claims that #91 then has to reflect), so do it first. Once the
-governance queue is clear, Sprint 22 takes the **#82 → #83 → #84** project
-detail-view cluster (#82 unblocks #67).
+**Governance debt status (2026-09-20):** #89, #90, #93, #94 and #97 are shipped;
+**#91 → #92** remain — a short "make ARCHITECTURE + session-note process match reality"
+follow-up. Once clear, the **#82 → #83 → #84** project detail-view cluster is next
+(#82 unblocks #67).
 
 
 ### Projects follow-up work (found 2026-09-13)
@@ -349,14 +345,12 @@ detail-view cluster (#82 unblocks #67).
   - Files: `requirements-dev.txt`, `scripts/dev-deps-check.sh`, `Makefile`,
     `backend/tests/python/test_dev_deps.py`, `CHANGELOG.md`.
 
-- [~] **90. 🚨 BLOCKING — reconcile the Done pile with the code that actually exists** *(M)* — spec: docs/specs/done-pile-reconciliation-90.md
+- [x] **90. 🚨 BLOCKING — reconcile the Done pile with the code that actually exists** *(M)* — Done (2026-09-20): STRUCK the phantom claims on #10, #11a/#11c, #29 and #34 sub-claims 3/5 (with a partial-reality note on #12's dead-drop UI); removed phantom `POST /import-session` from ARCHITECTURE §3b and fixed `/logs/files?file=`→`?name=`; removed the phantom 💭 Thinking block + startup-401 troubleshooting section from USER_GUIDE; `git rm`'d 8 orphan specs; set 9 stale specs to `Status: Done` (+ prompt-templates → "Done (partial)"); split older Done items (#16/17/20–25/31–34/80/81) into `docs/archive/backlog-2026-h1.md`. New deterministic gate `scripts/backlog-90-reconciliation-check.sh` PASS. Spec: docs/specs/done-pile-reconciliation-90.md
   - Governance report 2026-09-19 (BLOCKING-02 / SBA-4, ADVISORY-04, ADVISORY-07).
-    Decide implement-or-strike for #10, #11a/#11c, #12, #29, and #34 sub-claims 3/5;
-    correct dependent docs; reconcile stale/orphan/missing specs; archive the oversized Done pile.
+    Decided implement-or-strike for #10, #11a/#11c, #12, #29, and #34 sub-claims 3/5;
+    corrected dependent docs; reconciled stale/orphan/missing specs; archived the oversized Done pile.
 
-- [ ] **97. 🚨 BLOCKING — Fix incomplete spec for #90** *(XS)* — The spec for #90 (`docs/specs/done-pile-reconciliation-90.md`) is not implementable. Acceptance Criterion 3 (AC-3) requires updating 16 stale spec files and removing 7 orphan spec files, but the spec does not list these files. The information could not be located in the referenced `ADVISORY-04` or related governance reports. The spec must be amended to include these file lists before `/loop` can proceed on #90.
-
-  - Needs a dedicated `/spec` because the per-claim product decisions remain open.
+- [x] **97. 🚨 BLOCKING — Fix incomplete spec for #90** *(XS)* — Done (2026-09-20): The #90 spec was amended to list the exact file sets for AC-3 (8 orphan specs to `git rm`, 10 stale specs to set `Status: Done`) and AC-4 (archive split target), recovered from the Sprint-19 governance report `SHK-1`. #90 is now implementable and shipped in the same turn. Spec: docs/specs/done-pile-reconciliation-90.md (see §Amended + §Spec changelog).
 
 - [ ] **91. 📋 ADVISORY — reconcile ARCHITECTURE §3b with the live routes** *(S)*
   - Governance report 2026-09-19 (ADVISORY-01 / SA-2). Remove or annotate absent routes,
@@ -1095,13 +1089,7 @@ detail-view cluster (#82 unblocks #67).
 - [S] **10. Export / import conversations** *(S)* — **STRUCK (2026-09-20)**: This feature was never implemented. The `[x]` Done claim was found to be false during the Sprint 19 governance audit (BLOCKING-02). The cited functions (`exportSessionData`, `buildMarkdownExport`, `_post_import_session`) do not exist in the codebase. See spec `docs/specs/done-pile-reconciliation-90.md`.
   - Download a session as JSON/Markdown; re-import later.
   - Files: `app.js`, possibly `server.py`.
-  - **Done (2026-06-26):** Export button downloads dual-file package (`<title>.json` +
-    `<title>.md` Markdown transcript); Import button file-picker → `POST /import-session`
-    (≤512 KB guard, turns validation) → navigates to new session immediately. `slugify()`,
-    `exportSessionData()`, `buildMarkdownExport()` added to `app.js`; `_post_import_session()`
-    added to `server.py`; Export/Import buttons in `index.html` (`?v=28`); 5 JS unit tests
-    (EX-1…EX-4) + 5 Python tests (T-5…T-9); `docs/USER_GUIDE.md` §8 added. Gates: server.py
-    90% ✅, JS branch 71.27% ✅, security scan clean ✅.
+  - ~~**Done (2026-06-26):** [STRUCK — false claim, see BLOCKING-02] Export button, Import file-picker → import route, helper functions in `app.js`, import handler in `server.py`, Export/Import buttons in `index.html`, JS + Python unit tests, USER_GUIDE §8. None of this exists in the codebase.~~
 
 - [x] **11. Reasoning / thinking display** *(S–M)*
   - Show reasoning-model thinking content in a collapsible block.
@@ -1117,6 +1105,13 @@ detail-view cluster (#82 unblocks #67).
 
 - [x] **12. Prompt templates / saved system prompts** *(S)* — Done (2026-06-26): Built-in + user-saveable prompt template library shipped; Templates button in UI, apply/save/delete/persist with `localStorage`; 12 PT-* tests (PT-1…PT-12); JS branch 70.95% ✅.
        Spec: docs/specs/prompt-templates.md
+       - ⚠️ **Partial-reality note (2026-09-20, BLOCKING-02 / #12 SBA-4):** the JS helpers
+         (`loadPromptTemplates`/`savePromptTemplates`/`applyTemplate`/`deleteUserTemplate`/
+         `renderTemplateDropdown`) exist and are tested, **but the feature is unreachable**:
+         `renderTemplateDropdown()` early-returns on missing `getElementById('promptTemplatePanel')`,
+         and `index.html` has no such element, no Templates button, and `styles.css` has no `pt-*`
+         rules. The code is a dead-drop. Wiring the UI is deferred to a re-opened backlog item
+         (out of scope for #90, which only reconciles the record).
 
 ### Larger / later
 
@@ -1305,297 +1300,13 @@ detail-view cluster (#82 unblocks #67).
   throw-away tree so the suite never recurses into itself; all 5 mutants caught.
   Follow-on to #39 and the `REQUIRE_JSDOM` CI hardening in `aeadec6`.
 
-- [x] **25. Test-Driven Development workflow + thorough QA (coverage-gated)**
-  - Raise the quality bar to TDD-first with measured, **enforced** coverage —
-    keeping the zero-runtime-dependency rule (coverage tooling is dev-only).
-  - **Done:**
-    - New always-on rule `.continue/rules/tdd-workflow.md` (Red → Green → Refactor,
-      tests-first, layers, gates, definition of done).
-    - **HTTP integration tests** (boot the real `ThreadingHTTPServer`, stdlib
-      `urllib`): `tests/python/test_server_http.py`, `test_server_branches.py`,
-      `test_server_proxy.py` (proxy + `/context7` against a fake stdlib upstream,
-      incl. SSE streaming relay + 500/502/503 paths). More `server.py` unit tests
-      (`_resolve_memory_file`, `add_log` rotation, `load_config`).
-    - More `app.js` pure-helper tests + exports (`safeTrim`, `enforceStrictSchema`,
-      `scoreChunkByKeywords`, `chunkText`, `normalizeAssistantText`); 25 JS tests.
-    - Coverage gates: `.coveragerc` (`fail_under=88`, server.py at **90%**),
-      `tests/js-coverage.mjs` (branch ≥ 70% of exported helpers, at **73%**),
-      `run-tests.sh --coverage`, `.gitignore` for coverage artifacts.
-    - CI upgraded to Node 22 + coverage gates (`.github/workflows/tests.yml`);
-      `test-coverage` check tightened; docs synced (strategy doc, AGENTS.md,
-      CONTINUE.md, README). 56 Python + 25 JS tests pass.
-  - Files: `.continue/rules/tdd-workflow.md`, `.continue/checks/test-coverage.md`,
-    `tests/python/test_server_*.py`, `tests/js/app.test.mjs`, `tests/js-coverage.mjs`,
-    `.coveragerc`, `run-tests.sh`, `.github/workflows/tests.yml`, `.gitignore`,
-    `docs/testing-and-agents-strategy.md`, `AGENTS.md`, `.continue/rules/CONTINUE.md`,
-    `README.md`, `app.js` (exports only).
+> 📦 **Older Done items archived.** To keep this file focused on open work and the
+> most recent sprints, completed items **#16, #17, #20, #21, #22, #23, #24, #25,
+> #31, #32, #33, #34, #80, #81** (2026 H1) were moved to
+> [`docs/archive/backlog-2026-h1.md`](docs/archive/backlog-2026-h1.md) on 2026-09-20
+> under item #90 (AC-4). Nothing active was moved; the authoritative queue for what
+> to pull next is the "Ready to pull next" table at the top of this file.
 
-- [x] **17. Unit testing + RAIL (role-based agent pipeline)**
-  - Establish a zero-new-dependency test suite and **RAIL** (*Rule-governed
-    Agentic Iteration Loop*) — a Continue-native agent pipeline that automates
-    planning, implementation, testing, QA review, and continuous improvement as
-    we make changes.
-  - **Full plan:** [`docs/testing-and-agents-strategy.md`](docs/testing-and-agents-strategy.md).
-  - **Test stack (no new deps):** Python `unittest` (stdlib) for `server.py`;
-    Node 18+ `node --test` for `app.js` pure functions; `node --check` /
-    `python3 -m py_compile` as syntax gates. Tests live in `tests/python` and
-    `tests/js`.
-  - **Roles (RAIL):** Product Owner (bookends) → Code Planner → Development SME →
-    Full Test Suite → QA Review → Continuous Improvement (closed loop; learnings
-    recorded to Obsidian), with DevSecOps / IaC / Observability woven through.
-  - **Implemented as:** rules (`.continue/rules/`), checks (`.continue/checks/`
-    run via `/check`), optional agents/modes (`.continue/agents/`), wired through
-    `AGENTS.md`.
-  - **Rollout (incremental):**
-    - [x] Strategy doc + this backlog item.
-    - [x] Rules: `code-planner`, `development-sme`, `testing-standards`,
-      `continuous-improvement`.
-    - [x] Checks: `test-coverage`, `security-review`, `code-quality-review`,
-      `docs-in-sync` (in `.continue/checks/`, run via `/check`).
-    - [x] `tests/` scaffold + starter tests (`renderMarkdown`, `extractJson`,
-      `formatUsage`, `getExcludedParams`, `buildResponseFormat` in JS;
-      `get_memory_dir` traversal guard + `_slugify` in Python) + a Node-only
-      `module.exports` guard in `app.js` so helpers are importable. `run-tests.sh`
-      runs all 22 tests + syntax gates.
-    - [x] `AGENTS.md` workflow wiring (RAIL roles + run `/check`) +
-      README/CONTINUE.md "Running tests" sections.
-    - [x] Optional: dedicated `planner`/`improver` agent modes. **Done:** added
-      `.continue/agents/{product-owner,planner,security,improver}.yaml` (backlog #26).
-    - [x] CI: GitHub Actions workflow (`.github/workflows/tests.yml`) runs the
-      suite on push/PR (JS via `node --test`; Python `unittest` on 3.9 + 3.11).
-      A pre-commit git hook remains an optional future add (see #28).
-  - *See also: #25 (which expanded coverage gates and superseded the in-progress
-    parts of this item; #17 is now fully closed).*
-  - Files: `docs/testing-and-agents-strategy.md`, `.continue/rules/*`,
-    `.continue/checks/*`, `.continue/agents/*`, `tests/*`, `AGENTS.md`,
-    `README.md`, `.continue/rules/CONTINUE.md`.
-
-### Memory / "second brain"
-
-- [x] **16. Obsidian long-term memory (second brain)**
-  - Use an Obsidian vault as persistent long-term memory so the assistant can
-    recall facts/preferences/decisions across conversations.
-  - *depends on: #7 (for sub-task: embeddings-based memory search) — #7 is now Done ✅; Phase 3 embeddings sub-item is unblocked*
-  - **Phase 1 (done):** direct vault file I/O in `server.py` (no MCP/Node dep).
-    - `.env`: `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_MEMORY_SUBDIR` (default `USAi`).
-    - Memories stored as tagged, frontmatter'd Markdown in
-      `<vault>/<subdir>/memories/`, writes confined to that folder (no traversal).
-    - Endpoints: `GET /memory/search`, `GET /memory/list`, `GET /memory/read`,
-      `POST /memory/save`. `/config` exposes `has_obsidian`.
-    - Tools: `search_memory`, `save_memory` in `TOOL_REGISTRY`, gated behind a
-      new **Obsidian Memory** toggle (requires Tool calling on + vault configured).
-  - **Phase 2 (done):** optional `obsidian-mcp` bridge for rich tag/note
-    management (rename-tag, move-note, multi-vault) and reuse with Claude Desktop.
-    Done (2026-06-26): `call_obsidian_mcp()`, `_mcp_enabled()`, `MCP_TOOL_ALLOWLIST`,
-    4 handler methods, 3 new routes (`/mcp/tool`, `/mcp/rename-tag`, `/mcp/move-note`,
-    `/mcp/vaults`), `has_mcp_bridge` in `/config`; 3 new frontend tools
-    (`obsidian_rename_tag`, `obsidian_move_note`, `obsidian_list_vaults`); 17 tests.
-    Spec: `docs/specs/obsidian-mcp-bridge.md`.
-  - **Phase 3:**
-    - [x] Auto-recall: opt-in **Auto-recall memories** toggle injects top-N
-      relevant memories before each message (in `prepareContextMessages`, like
-      the file-RAG path); adds a `Memory: N note(s)` segment to the context note.
-    - [x] Manual **💾 Remember** button on every message (hover) for one-click
-      saves via `saveMemory` → `POST /memory/save` (tagged `manual`). Shown only
-      when a vault is configured; independent of the tool/auto-recall toggles.
-    - [x] Embeddings-based memory search — Done (2026-06-26): `POST /embeddings` proxy, `cosineSimilarity`, `embedTexts`, `embedMemorySearch` re-ranker; `embed_available` on `/memory/search`; `has_embeddings` on `/config`. 10 Python tests + 3 JS tests. Coverage 93%. Spec: `docs/specs/embeddings-memory-search.md`
-  - **Done (2026-06-26):** All three phases complete. Phase 2 ships the obsidian-mcp
-    bridge; Phase 1 + Phase 3 were shipped in prior sprints. Backlog item closed.
-  - Files: `server.py`, `app.js`, `index.html`, `styles.css`, `tests/python/test_server_mcp.py`.
-
-### Front-end design (UI/UX)
-
-- [x] **20. Front-End Design (UI/UX) agent**
-  - A quality-axis role that keeps `index.html`/`styles.css` modern, accessible,
-    and user-friendly, using Context7 (preferred reference: **USWDS**
-    `/uswds/uswds-site`) — adapting principles to our vanilla-CSS token system, with
-    **no new frontend deps/framework/build step**.
-  - Done: auto-attached rule `.continue/rules/ui-ux-design.md` (scoped via `globs`
-    to `index.html`/`styles.css`) + QA check `.continue/checks/ui-ux-review.md`
-    (contrast, `:focus-visible`, semantic/ARIA, reduced-motion, responsive,
-    token-driven, cache-bust). Documented in `docs/testing-and-agents-strategy.md`
-    and wired into `AGENTS.md`.
-  - Files: `.continue/rules/ui-ux-design.md`, `.continue/checks/ui-ux-review.md`,
-    `docs/testing-and-agents-strategy.md`, `AGENTS.md`.
-
-- [x] **21. Accessibility + modern-UI design pass (use the #20 agent)**
-  - Apply the Front-End Design agent to audit and refresh the actual UI: verify
-    WCAG AA contrast in both themes, add `:focus-visible` rings, audit ARIA on
-    icon-only controls (sidebar toggle, attach, send), add a reduced-motion guard,
-    and tastefully adopt modern vanilla CSS (fluid `clamp()` type, `color-mix()`
-    state tints) — all token-driven. Bump `styles.css?v=N`.
-  - Done (USWDS-guided via Context7, `?v=20`): global `:focus-visible` ring
-    (`--focus-ring` tokens, `color-mix`), `prefers-reduced-motion` guard, `.sr-only`
-    utility, accessible names + `aria-hidden` glyphs on send/attach/sidebar-toggle
-    (with synced `aria-expanded`), semantic landmarks/live regions (sidebar label,
-    `role="log"` conversation, `role="list"` history), AA contrast fix for
-    light-theme secondary text (`#6b6b76`→`#595963`), and removed hardcoded
-    `#b4b4b7` inline colors. `color-mix()` state tints / fluid `clamp()` type left
-    as an optional future polish.
-
-### Documentation
-
-- [x] **22. Obsidian guide: how the Continue checks + rules workflow works**
-  - Write a full, detailed guide (stored in the Obsidian vault under
-    `Continue Extension/guides/`) explaining the RAIL agent pipeline
-    (*Rule-governed Agentic Iteration Loop*) end-to-end: what
-    **rules** (`.continue/rules/*`) vs **checks** (`.continue/checks/*`) are, the
-    rule trigger types (Always / Auto-attached via `globs` / Agent-requested /
-    Manual), how the role-based pipeline (Product Owner → Code Planner → Development
-    SME → Full Test Suite → QA Review → Continuous Improvement) flows, how `/check`
-    runs the gates, the UI/UX quality axis, how it ties to `AGENTS.md`, the test
-    stack + `run-tests.sh`, CI, and the Obsidian memory loop. Include a concrete
-    walkthrough of a real change going through the pipeline.
-  - Done: wrote `Continue Extension/guides/RAIL-Pipeline-Guide.md` covering all of
-    the above — Rules vs. Checks, the four rule trigger types (with which of our
-    rules use each), the RAIL roles + TDD inner loop + UI/UX quality axis, the
-    `/check` gates, the zero-dep test stack + `run-tests.sh` + coverage gates + CI,
-    the Obsidian memory loop, and a concrete worked example (the streaming HTTP/1.1
-    fix walked through the roles). Updated 2026-06-20 to match the expanded pipeline
-    (Product Owner bookend + DevSecOps/IaC/Observability cross-cutting concerns).
-    Marked the earlier `Agent-Pipeline-Workflow.md`
-    **superseded** in place (status tag + callout linking to the new guide). The
-    unblocking note below is moot — direct filesystem writes to the vault work
-    reliably (the preferred path per `AGENTS.md`), so #23/#24 were not a true
-    blocker.
-  - Source material: `docs/testing-and-agents-strategy.md`, `AGENTS.md`,
-    `.continue/rules/*`, `.continue/checks/*`.
-
-### UI/UX polish
-
-- [x] **80. Composer attachment tray** *(M)* — Done (2026-09-18): Attachment chip
-  tray added above the composer; additive uploads; per-chip ✕ remove; PDF/DOCX routed
-  through `/extract-text`; provenance record persisted on user turn; sidebar
-  `#uploadedFilesDisplay` retired. `styles.css?v=32`. 11 AT-JS-* tests green
-  (8 in-sprint + AT-JS-9…11 covering the shared `extractTextServerSide` helper).
-  Spec: docs/specs/composer-attachment-tray.md
-
-- [x] **81. Project detail view** *(M)* — Done (2026-09-18): Clicking a project opens
-  a detail view (name, instructions, chat list, ＋ New chat, ⚙ Settings); project chats
-  visible in sidebar sub-list; `GET /sessions?projectId=` backend filter (traversal-safe).
-  6 PD-JS-* + 3 PD-PY-* tests green (PD-JS-6 added post-sprint for the blank-canvas
-  regression in `_showChatView`). Spec: docs/specs/project-detail-view.md
-
-- [x] **33. UI layout polish — assistant metadata below response + user bubble column layout** *(S)*
-  - Two small layout improvements to match modern chat UI conventions:
-    1. **Assistant metadata + Regenerate below response** — the "Context7 + Memory: …
-       total tokens" note and the ↻ Regenerate button moved from a side column to
-       below each assistant response (flush-left), eliminating the cramped narrow column.
-    2. **User bubble vertical stack + green accent outline** — user prompt bubbles now
-       stack vertically (bubble on top, ✎ Edit underneath, right-aligned) to mirror the
-       assistant layout; a `var(--color-accent)` border added to distinguish user bubbles
-       from the chat background in both themes.
-  - Done (2026-06-23): CSS only — no JS or HTML changes.
-    - `styles.css` `?v=21 → v22`: `flex-direction: column; align-items: stretch` on
-      `.message-group.assistant`; `.message-note` left-aligned.
-    - `styles.css` `?v=22 → v23`: `.message-group.user` switched from row to
-      `flex-direction: column; align-items: flex-end`; `border: 1px solid
-      var(--color-accent)` on `.message-group.user .message-bubble`.
-    - `index.html` bumped to `?v=23`.
-  - Files: `styles.css`, `index.html`.
-
-- [x] **31. Sidebar collapse toggle — discoverability + persistence** *(S)*
-  - The ☰ sidebar toggle lacked a tooltip and didn't remember its state across
-    reloads (causing a flash of the wrong layout on page load).
-  - **Acceptance criteria (met):**
-    - Dynamic `aria-label` and `title` ("Collapse sidebar" / "Expand sidebar") keep the
-      button self-describing.
-    - Collapsed/expanded state persisted to `localStorage`; restored synchronously on
-      `DOMContentLoaded` so there is no layout flash.
-    - Six unit tests (T-1…T-6) cover helper behaviour, persistence, and init-time restore.
-  - Done (2026-06-23): `applySidebarCollapsed()` helper (DOM-injectable, testable);
-    click handler persists state; `_testInit()` restores on load; `#sidebarToggle`
-    initial `aria-label` updated in `index.html`.
-  - Spec: `docs/specs/sidebar-collapse-toggle.md`.
-  - Files: `app.js`, `index.html`, `tests/js/app.test.mjs`.
-
-### Documentation
-
-- [x] **32. Architecture reference document** *(S)*
-  - Added `docs/ARCHITECTURE.md` — a concise, overview-level architecture and
-    engineering reference for the USAi Chat app (concern #1 only).
-  - Covers: system overview, Mermaid request-flow + tool-calling diagrams, backend
-    routing pattern, endpoint catalog, config loading, on-disk data stores, frontend
-    tool registry, streaming paths, RAG pipeline, Obsidian memory integration, session
-    management, settings persistence, Markdown rendering, security architecture,
-    and infrastructure.
-  - Done (2026-06-23): `docs/ARCHITECTURE.md` created; `docs/ORGANIZATION.md` updated
-    (new row in file table + "Where to put new things" table); spec at
-    `docs/specs/architecture-doc.md`.
-  - Files: `docs/ARCHITECTURE.md` (new), `docs/specs/architecture-doc.md` (new),
-    `docs/ORGANIZATION.md`.
-
-### Tooling / environment
-
-- [x] **34. RAIL quality-gate hardening** *(S)*
-  - Five targeted improvements to tighten automated quality gates without changing any
-    app behaviour:
-    1. **`scripts/cli-check.sh` full 10-check gate** — added the three missing PO-gated
-       check files (`definition-of-ready.md`, `acceptance-criteria.md`,
-       `definition-of-done.md`) so all ten checks pass as rules to `cn review`.
-    2. **`--strict` security scan in QA-gate paths** — `cli-check.sh` and `make check`
-       now call `./scripts/security-scan.sh --strict`; missing scanners no longer
-       silently pass.
-    3. **`.env.example` drift guard extended** — added `HOST=` and `PORT=` to
-       `.env.example`; extended `test_env_example_sync.py` to union env vars from
-       `resolve_bind_address()` as well as `load_config()`.
-    4. **CI / `make check` alignment documented** — `tests.yml` header rewritten;
-       Makefile `scan` vs `scan-strict` vs `check` comments updated.
-    5. **`maxTokens` input ceiling raised** — `index.html` `max` attribute bumped
-       from `96768` → `131072` (128K) to cover large-output models.
-  - Done (2026-06-23). Relates to #26 (which created these gates) but is a separate
-    hardening pass.
-  - Files: `scripts/cli-check.sh`, `scripts/security-scan.sh`, `Makefile`,
-    `.env.example`, `tests/python/test_env_example_sync.py`,
-    `.github/workflows/tests.yml`, `index.html`.
-
-- [x] **23. Fix Obsidian MCP reliability (`Request timed out`, error -32001)**
-  - The `obsidian-mcp` stdio server intermittently timed out. Root cause:
-    **multiple stale `obsidian-mcp` processes** running at once (duplicate
-    `npm exec`/`npx` launches), which contend for the same vault/stdio pipe so
-    Continue's requests hang → `-32001`.
-  - **Fix:** changed `.continue/mcpServers/new-mcp-server.yaml` to launch `node`
-    directly against a **globally installed** obsidian-mcp
-    (`npm i -g obsidian-mcp`) instead of `npx -y obsidian-mcp`. This removes the
-    `npm exec` parent wrapper + per-launch package resolution that left orphans
-    on MCP reload, so Continue owns exactly one cleanly-managed process at a
-    stable path. Added `scripts/kill-stale-obsidian-mcp.sh` as a manual cleanup
-    escape hatch, and a Troubleshooting row in `CONTINUE.md`. Verified the global
-    binary boots ("Server running on stdio", all tools registered).
-  - **Note:** the global build path is nvm-version-specific; switching Node
-    versions requires re-running `npm i -g obsidian-mcp` and updating the path.
-  - Files: `.continue/mcpServers/new-mcp-server.yaml`,
-    `scripts/kill-stale-obsidian-mcp.sh` (new), `.continue/rules/CONTINUE.md`.
-
-- [x] **24. Obsidian MCP: write timeouts (`-32001`) — Node 20 pin + single-instance ritual**
-  - **Distinct from #23** (which fixed *duplicate* `npx` processes). Observed
-    2026-06-17: Continue's `obsidian-mcp` requests timed out with `-32001`, most
-    reliably on `create-note` **writes** (reads sometimes worked first).
-  - **Root cause:** **orphaned duplicate processes** still piled up — each Continue
-    reload/reset spawned a NEW obsidian-mcp process WITHOUT killing the old one
-    (observed 2–3 simultaneous PIDs), and they contended for the same vault stdio
-    pipe → every request hung. #23's npx→global-node change *reduced* but did not
-    *eliminate* the orphaning, because Continue itself leaves old MCP children alive
-    on reload/reset.
-  - **Proof the server was healthy:** piping a raw JSON-RPC `initialize` (and a
-    `tools/call` `create-note`) directly into the binary succeeded instantly and
-    shut down cleanly — the hang only happened via Continue when duplicates existed.
-  - **Fix / reliable ritual:**
-    1. Pinned **Node 20 LTS** (was non-LTS v24): installed v20.20.2 + obsidian-mcp
-       for v20; YAML now uses the explicit `.../v20.20.2/bin/node` binary + v20
-       build path (not bare `command: node`).
-    2. **kill-all → fully quit VS Code (Cmd+Q) → reopen → verify EXACTLY ONE
-       process** (`ps aux | grep obsidian-mcp`). With a single clean instance,
-       reads AND writes succeed.
-  - **Harmless companion error:** `-32601 Method not found` at load = Continue
-    probing for "resource templates"; obsidian-mcp exposes tools, not that optional
-    capability. Not a fault.
-  - **Fallback:** writing notes directly to the vault via the filesystem works when
-    MCP is flaky (Obsidian auto-indexes them).
-  - **Possible future hardening:** check whether Continue can be configured to
-    terminate MCP children on reload; otherwise the kill-all ritual stands.
-  - Files: `.continue/mcpServers/new-mcp-server.yaml`,
-    `scripts/kill-stale-obsidian-mcp.sh`, `.continue/rules/CONTINUE.md`, `CHANGELOG.md`.
 
 ---
 
@@ -1651,11 +1362,11 @@ detail-view cluster (#82 unblocks #67).
     log + stderr print when the configured API key is rejected (HTTP 401/403),
     so a bad/expired key is obvious immediately rather than surfacing later as a
     cryptic error in the chat UI.
-  - Done: `probe_upstream_auth()` helper (SSRF-guarded, pure, unit-testable);
-    `run_startup_auth_probe()` wired into `run()`; 10 unit tests (T-P1–T-P10);
-    CHANGELOG + `docs/USER_GUIDE.md` (new Troubleshooting entry) updated.
+  - ~~Done: `probe_upstream_auth()` helper (SSRF-guarded, pure, unit-testable); ~~
+    ~~`run_startup_auth_probe()` wired into `run()`; 10 unit tests (T-P1–T-P10); ~~
+    ~~CHANGELOG + USER_GUIDE Troubleshooting entry.~~ [STRUCK — none of this exists; see BLOCKING-02.]
   - Files: `server.py`, `tests/python/test_server.py`, `CHANGELOG.md`,
-    `docs/USER_GUIDE.md`, `docs/specs/startup-auth-probe.md`.
+    `docs/USER_GUIDE.md`, ~~`docs/specs/startup-auth-probe.md`~~ *(spec was never created)*.
 
 - [x] **28. Pre-commit git hook for test/syntax gates** *(S)* — Done (2026-06-27): `make hooks` symlinks `.git/hooks/pre-commit` → `scripts/pre-commit.sh`; 6 regression tests (PC-1…PC-6) green; documented in `README.md` (Git hooks section) and `AGENTS.md`.
        Spec: docs/specs/pre-commit-hook.md

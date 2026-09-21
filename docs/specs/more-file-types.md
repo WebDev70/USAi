@@ -1,6 +1,6 @@
 # Spec: More File Types (PDF/DOCX)
 
-**Status:** In Progress
+**Status:** Done
 **Created:** 2026-06-25
 **Author:** Cline
 **Backlog item:** #8
