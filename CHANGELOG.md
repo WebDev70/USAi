@@ -1,6 +1,21 @@
 ## [Unreleased]
 
 ### Fixed
+- **Project Settings modal unopenable + Chats interactions dead (frontend regression).**
+  A stray/missing `</div>` in `frontend/index.html` left `#projectSettingsModal`
+  **nested inside** `#createProjectModal`. Because the parent overlay carried
+  `hidden` + `display:none`, the child settings overlay collapsed to a 0×0 box even
+  after `_showProjectSettingsModal` cleared its own `hidden` attribute — so the
+  project detail-view **⚙ Settings** button (and, by knock-on malformed structure,
+  the sidebar **Chats** section) appeared unresponsive. Closed the Create Project
+  modal's overlay `<div>` correctly so both modals are again independent, direct
+  children of `.app-container`. Added a jsdom structural regression guard
+  `frontend/tests/js/index-html-structure.test.mjs` (4 tests) that parses the real
+  shipped `index.html` and asserts: both overlays exist + start hidden, no overlay
+  is nested inside another, every overlay is a direct child of `.app-container`, and
+  `#projectSettingsModal` contains every element `_showProjectSettingsModal` queries.
+  Verified the guard fails against a deliberately re-broken copy. No production JS
+  changed; no new runtime deps.
 - **`#90` / `#97` Done-pile reconciliation (BLOCKING-02).** Reconciled the
   `backlog.md` Done pile with the code that actually exists. Struck the phantom
   `[x]` claims on **#10** (export/import), **#11a/#11c** (💭 reasoning block +

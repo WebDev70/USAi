@@ -165,14 +165,17 @@ else
   # --ci-python mirrors the CI `python` job: no npm packages, so no JS suites.
   if [ "$CI_PYTHON" -eq 0 ]; then
     echo "── JS unit tests (node --test) ────────────────────────────"
-    # Pure-helper unit tests (no jsdom). Behavior tests run separately below.
-    node --test $(find frontend/tests/js -name '*.test.mjs' ! -name 'app.behavior.test.mjs')
+    # Pure-helper unit tests (no jsdom). Behavior + structure tests (which need
+    # jsdom) run separately below so a missing jsdom install can't fail this gate.
+    node --test $(find frontend/tests/js -name '*.test.mjs' \
+      ! -name 'app.behavior.test.mjs' \
+      ! -name 'index-html-structure.test.mjs')
 
     echo "── JS behavior tests (jsdom, dev-only) ────────────────────"
     if [ -d "node_modules/jsdom" ]; then
-      node --test frontend/tests/js/app.behavior.test.mjs
+      node --test frontend/tests/js/app.behavior.test.mjs frontend/tests/js/index-html-structure.test.mjs
     else
-      echo "  ⚠ jsdom not installed — skipping behavior tests."
+      echo "  ⚠ jsdom not installed — skipping behavior + structure tests."
       echo "    Run: npm install  (or: make dev-setup)"
     fi
   else
