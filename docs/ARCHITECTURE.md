@@ -104,32 +104,42 @@ Each HTTP verb dispatches through a **`routes` dict** that maps URL paths to
 `_handler` methods:
 
 ```python
-# do_GET example (simplified)
+# do_GET example (simplified — names match server.py)
 routes = {
-    '/config':        self._get_config_handler,
-    '/models':        self._get_models_handler,
-    '/sessions':      self._get_sessions_handler,
-    '/memory/list':   self._get_memory_list_handler,
-    '/memory/search': self._get_memory_search_handler,
-    '/memory/read':   self._get_memory_read_handler,
-    '/logs':          self._get_logs_handler,
+    '/config':        self._get_config,
+    '/sessions':      self._get_sessions,
+    '/chat-history':  self._get_chat_history,
+    '/context7':      self._get_context7,
+    '/memory/list':   self._memory_list,
+    '/memory/search': self._memory_search,
+    '/memory/read':   self._memory_read,
+    '/logs':          self._get_logs,
+    '/logs/files':    self._get_log_files,
     '/chunk-cache':   self._get_chunk_cache,         # also accepts ?projectId=
+    '/raw-responses': self._get_raw_responses,       # also accepts ?id=
     '/projects':      self._get_projects,            # Projects v1 (#27)
     '/mcp/vaults':    self._get_mcp_vaults,          # MCP bridge (#16 Ph2)
 }
 
-# do_POST example (simplified)
+# do_POST example (simplified — names match server.py)
 routes = {
-    '/proxy':         self._proxy_api,
-    '/sessions':      self._post_new_chat_session,
-    '/chunk-cache':   self._post_chunk_cache,        # also accepts ?projectId=
-    '/projects':      self._post_projects,           # Projects v1 (#27)
-    '/memory/save':   self._post_memory_save,
+    '/logs':                self._post_logs,
+    '/logs/clear':          self._post_logs_clear,
+    '/sessions':            self._post_sessions,
+    '/chat-history':        self._post_chat_history,
+    '/new-chat-session':    self._post_new_chat_session,
+    '/chunk-cache':         self._post_chunk_cache,      # also accepts ?projectId=
+    '/embeddings':          self._post_embeddings,
+    '/generate-embeddings': self._post_generate_embeddings,
+    '/projects':            self._post_projects,         # Projects v1 (#27)
+    '/memory/save':         self._memory_save,
     ...
 }
 
-# do_PUT dispatches to self._put_projects()  for PUT /projects/<id>
-# do_DELETE dispatches to self._delete_projects() for DELETE /projects/<id>
+# Prefix dispatch (not table keys — matched with str.startswith):
+#   GET/POST  /api/...        → self._proxy_api(verb)   # upstream proxy
+#   GET/PUT/DELETE /projects/<id> → self._{get,put,delete}_project(id)
+#   PATCH     /sessions/<id>  → self._patch_session(id)
 ```
 
 Unmatched paths fall through to `SimpleHTTPRequestHandler` (static file serving).
@@ -138,36 +148,45 @@ Unmatched paths fall through to `SimpleHTTPRequestHandler` (static file serving)
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/config` | Non-secret config + `has_api_key` / `has_context7` / `has_obsidian` / `has_projects` flags |
-| `GET` | `/models` | Proxied model list from upstream |
+| `GET` | `/config` | Non-secret config + `has_api_key` / `has_context7` / `has_obsidian` / `has_mcp_bridge` / `has_pdf` / `has_projects` flags |
+| `GET` | `/api/*` | Proxy any upstream OpenAI-compatible path (e.g. `/api/v1/models`, `/api/v1/chat/completions`); API key injected server-side |
+| `POST` | `/api/*` | Proxy chat completions and other upstream POST paths (streaming + non-streaming); API key injected server-side |
 | `GET` | `/sessions` | List archived chat sessions; accepts `?projectId=<id>` to filter by project (traversal-safe) |
+| `POST` | `/sessions` | Archive current session; start a new chat (stamps `projectId` on archived session) |
+| `PATCH` | `/sessions/<id>` | Update a session's `projectId` field (move a chat into or out of a project). Body: `{ projectId: string | null }`. Path-traversal-safe in both the URL segment and the `projectId` body value. |
+| `DELETE` | `/sessions/<id>` | Delete an archived session |
+| `GET` | `/chat-history` | Read the active (non-archived) conversation |
+| `POST` | `/chat-history` | Persist the active conversation |
+| `POST` | `/new-chat-session` | Start a fresh active conversation (clears `chat_history.json`) |
+| `GET` | `/context7` | Proxy Context7 documentation queries (`has_context7` required) |
 | `GET` | `/memory/list` | List Obsidian memory notes (accepts `?projectId=` for project-scoped listing) |
 | `GET` | `/memory/search` | Full-text search across memory notes (accepts `?projectId=` for project-scoped search) |
 | `GET` | `/memory/read` | Read a single memory note |
+| `POST` | `/memory/save` | Save a new Obsidian memory note (accepts `projectId` in body for project-scoped save) |
 | `GET` | `/logs` | Tail the in-memory log buffer |
+| `POST` | `/logs` | Append log lines from the browser to the server log buffer |
+| `POST` | `/logs/clear` | Clear the in-memory log buffer |
 | `GET` | `/logs/files` | List persisted log files; `?name=<name>` reads one (path-traversal guarded) |
-| `GET` | `/raw-responses` | List raw API response capture metadata (newest-first) |
-| `GET` | `/raw-responses?id=` | Read one full raw-response capture record |
-| `DELETE` | `/raw-responses` | Clear all raw-response capture records |
-| `DELETE` | `/raw-responses?id=` | Delete one raw-response capture record |
+| `GET` | `/raw-responses` | List raw API response capture metadata (newest-first); `?id=` reads one full record |
+| `DELETE` | `/raw-responses` | Clear all raw-response capture records; `?id=` deletes one |
+| `POST` | `/embeddings` | Proxy a single embeddings request to the upstream embeddings model |
+| `POST` | `/generate-embeddings` | Batch-generate embeddings for stored chunks |
+| `GET` | `/chunk-cache` | List or retrieve file chunks (accepts `?projectId=` for project-scoped listing) |
+| `POST` | `/chunk-cache` | Store file chunks server-side (accepts `?projectId=` to scope to a project) |
+| `DELETE` | `/chunk-cache` | Clear chunk cache (accepts `?projectId=` to clear only project-scoped chunks) |
+| `POST` | `/extract-text` | Extract plain text from uploaded PDF or DOCX (server-side; `has_pdf` in `/config`) |
 | `GET` | `/projects` | List all projects |
 | `POST` | `/projects` | Create a new project (`{name, instructions?, memoryMode?}`) |
 | `PUT` | `/projects/<id>` | Update project name, instructions, pinned state, or memoryMode |
 | `DELETE` | `/projects/<id>` | Delete a project and cascade-delete its chunk cache; orphans chats to "Chats"; preserves Obsidian memory notes |
-| `POST` | `/proxy` | Proxy chat completions to upstream (streaming + non-streaming) |
-| `POST` | `/context7` | Proxy Context7 documentation queries |
-| `POST` | `/memory/save` | Save a new Obsidian memory note (accepts `projectId` in body for project-scoped save) |
-| `PATCH` | `/sessions/<id>` | Update a session's `projectId` field (move a chat into or out of a project). Body: `{ projectId: string | null }`. Path-traversal-safe in both the URL segment and the `projectId` body value. |
-| `POST` | `/sessions` | Archive current session; start a new chat (stamps `projectId` on archived session) |
-| `GET` | `/chunk-cache` | List or retrieve file chunks (accepts `?projectId=` for project-scoped listing) |
-| `POST` | `/chunk-cache` | Store file chunks server-side (accepts `?projectId=` to scope to a project) |
-| `DELETE` | `/chunk-cache` | Clear chunk cache (accepts `?projectId=` to clear only project-scoped chunks) |
-| `DELETE` | `/sessions/{id}` | Delete an archived session |
-| `POST` | `/extract-text` | Extract plain text from uploaded PDF or DOCX (server-side; `has_pdf` in `/config`) |
 | `GET` | `/mcp/vaults` | List Obsidian vaults known to the MCP bridge (`has_mcp_bridge` required) |
 | `POST` | `/mcp/tool` | Generic MCP tool passthrough — dispatches to any allowlisted tool |
 | `POST` | `/mcp/rename-tag` | Convenience endpoint: rename a tag across all vault notes |
 | `POST` | `/mcp/move-note` | Convenience endpoint: move/rename a note within the vault |
+
+> **Doc-drift guard:** `backend/tests/python/test_arch_endpoint_parity.py` asserts this
+> table stays in bidirectional parity with the live `routes` dicts + prefix dispatch in
+> `server.py` (a route without a row here, or a row without a live route, fails the suite).
 
 ### 3c. Config loading
 

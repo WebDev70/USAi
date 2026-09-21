@@ -226,13 +226,23 @@ Walk through each item in the rubric. Score 1–5 and record a brief finding for
 - **Mistake-driven track:** Count entries added since the last audit. Is the log growing?
   Are any prevention rules reflected as actual `.clinerules/` changes?
   Are there recurring mistake patterns (same root cause in 2+ entries) not yet promoted to a permanent rule?
-- **Proactive/efficiency-driven track (Mode B):** For each session memory note written since the last audit,
-  check whether it records either a workflow proposal or an explicit "no improvement found" note.
-  - If session notes lack any Mode B outcome → flag as ADVISORY (the process is being silently skipped).
-  - Are workflow improvement proposals accumulating in `backlog.md` or `Cline/memories/` without being acted on?
-    If a proposal has sat unresolved for 2+ audits → escalate to BLOCKING.
+- **Proactive/efficiency-driven track (Mode B):** Run the deterministic check on the
+  most recent session memory note:
+  ```bash
+  scripts/mode-b-check.sh          # checks newest Cline/memories/*.md
+  scripts/mode-b-check.sh <path>   # or a specific note
+  ```
+  - Exit 0 → Mode B section present ✓
+  - Exit 1 → Mode B missing → flag as ADVISORY (first occurrence) / BLOCKING (2+ audits,
+    per the recurring-finding escalation rule above)
+  - Exit 0 + "SKIP" message → vault unavailable — note in report, do not flag
+  For a thorough audit, run the check against each session note written since the
+  last audit (pass each path as the argument). Are workflow improvement proposals
+  accumulating in `backlog.md` or `Cline/memories/` without being acted on?
+  If a proposal has sat unresolved for 2+ audits → escalate to BLOCKING.
 - **Workflow evolution:** Have any `.clinerules/workflows/*.md` files been updated to reflect
   lessons from the self-improvement log or Mode B proposals? A stagnant workflow file is a signal.
+
 
 **SPMS output:** Score table + list of findings with classification (🚨 / 📋 / 💡).
 

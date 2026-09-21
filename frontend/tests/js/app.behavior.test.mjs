@@ -238,9 +238,11 @@ function loadApp(fetchMap = {}) {
   // (a plain property assignment on win would NOT reach the module-scope `let`).
   if (win.module && win.module.exports) {
     const ex = win.module.exports;
-    const desc = Object.getOwnPropertyDescriptor(ex, 'currentProjectId');
-    if (desc && (desc.get || desc.set)) {
-      Object.defineProperty(win, 'currentProjectId', desc);
+    for (const prop of ['currentProjectId', 'currentSessionId']) {
+      const desc = Object.getOwnPropertyDescriptor(ex, prop);
+      if (desc && (desc.get || desc.set)) {
+        Object.defineProperty(win, prop, desc);
+      }
     }
   }
 
@@ -340,6 +342,68 @@ describe('streamChatApi', () => {
     assert.ok(result.error.includes('429'));
   });
 });
+// ---------------------------------------------------------------------------
+// SIE-1 / SIE-2 / SIE-3  streamChatApi in-band SSE error frames (#99)
+// An upstream gateway that is rate-limited *after* committing to a 200 OK
+// stream delivers the error INSIDE the SSE body as {"error":{...}} rather
+// than as choices[].delta.content. streamChatApi must surface it as { error }
+// so sendMessage short-circuits before persisting a fake "No assistant text
+// received." turn (the reload ghost).
+// ---------------------------------------------------------------------------
+describe('streamChatApi in-band SSE error (#99)', () => {
+  test('SIE-1: error-only frame — returns { error }, onDelta never called', async () => {
+    const sseChunks = [
+      'data: {"error":{"message":"I\'m receiving a high volume of requests right now, so I couldn\'t complete your request. Please wait a moment and try again.","type":"rate_limit"}}\n\n',
+      'data: [DONE]\n\n',
+    ];
+    const win = loadApp({
+      '/config': { status: 200, body: JSON.stringify({ has_api_key: true, base_url: 'http://x' }) },
+      '/api/v1/chat/completions': { stream: true, status: 200, chunks: sseChunks },
+    });
+    const deltas = [];
+    const result = await win.streamChatApi(
+      { messages: [{ role: 'user', content: 'hi' }] },
+      (delta) => deltas.push(delta),
+    );
+    assert.equal(deltas.length, 0, 'onDelta must not fire for an in-band error frame');
+    assert.ok(result.error, 'an in-band error frame must surface as { error }');
+    assert.ok(result.error.includes('high volume of requests'),
+      'error string must carry the upstream message');
+    assert.ok(!result.assistantText, 'no assistantText when the stream errored');
+  });
+
+  test('SIE-2: content deltas then error frame — error is authoritative', async () => {
+    const sseChunks = [
+      'data: {"choices":[{"delta":{"content":"Partial"}}]}\n\n',
+      'data: {"error":{"message":"rate_limit exceeded","type":"rate_limit"}}\n\n',
+      'data: [DONE]\n\n',
+    ];
+    const win = loadApp({
+      '/config': { status: 200, body: JSON.stringify({ has_api_key: true, base_url: 'http://x' }) },
+      '/api/v1/chat/completions': { stream: true, status: 200, chunks: sseChunks },
+    });
+    const result = await win.streamChatApi({ messages: [] }, () => {});
+    assert.ok(result.error, 'an error frame after partial content must still return { error }');
+    assert.ok(result.error.includes('rate_limit exceeded'));
+  });
+
+  test('SIE-3: normal content stream — no error surfaced (regression, AC-3)', async () => {
+    const sseChunks = [
+      'data: {"choices":[{"delta":{"content":"All"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":" good"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ];
+    const win = loadApp({
+      '/config': { status: 200, body: JSON.stringify({ has_api_key: true, base_url: 'http://x' }) },
+      '/api/v1/chat/completions': { stream: true, status: 200, chunks: sseChunks },
+    });
+    const result = await win.streamChatApi({ messages: [] }, () => {});
+    assert.ok(!result.error, 'a normal stream must not surface an error');
+    assert.equal(result.assistantText, 'All good');
+  });
+});
+
+
 
 // ---------------------------------------------------------------------------
 // B-06 / B-07  appendMessage
@@ -596,6 +660,126 @@ describe('#82 Project Settings & Delete', () => {
 
     assert.equal(deleteCalled, false, 'cancelled delete must NOT DELETE the project');
     assert.equal(win.currentProjectId, 'p1', 'currentProjectId must remain set when cancelled');
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// DEL-1 .. DEL-4  Ghost-chat-after-delete fix
+//
+// Regression suite for the bug where deleting a chat left its conversation on
+// screen (and it reappeared on reload). The fix adds clearActiveChatView() and
+// an option-A guard in the .session-delete handler. These tests drive the
+// handler through the sidebar DOM.
+// ---------------------------------------------------------------------------
+describe('#ghost-chat delete clears the main panel (DEL-*)', () => {
+  // Seed the main panel into the in-conversation state as if a saved chat were
+  // being viewed, with the given session id marked active.
+  function seedActiveChat(win, sessionId) {
+    const conv = win.document.getElementById('conversation');
+    conv.innerHTML = '<div class="message-group">hi</div>';
+    win.document.querySelector('.main-content').classList.add('in-conversation');
+    if (win.chatDisplayHistory) win.chatDisplayHistory.push({ role: 'user', content: 'hi' });
+    if (win.conversationHistory) win.conversationHistory.push({ role: 'user', content: 'hi' });
+    win.currentSessionId = sessionId;
+  }
+
+  function bootWithSessions(sessions) {
+    return loadApp({
+      '/config':       { status: 200, body: '{}' },
+      '/chunk-cache':  { status: 200, body: '[]' },
+      '/projects':     { status: 200, body: '[]' },
+      '/chat-history': { status: 200, body: JSON.stringify({ turns: [] }) },
+      '/sessions': (url, opts) => {
+        if (opts && opts.method === 'DELETE') return { status: 200, body: '{}' };
+        return { status: 200, body: JSON.stringify(sessions) };
+      },
+    });
+  }
+
+  test('DEL-1: deleting the active chat wipes the panel + nulls currentSessionId', async () => {
+    const sessions = [{ id: 's1', title: 'A', messageCount: 2 }];
+    const win = bootWithSessions(sessions);
+    await win.showSessionsList();
+    seedActiveChat(win, 's1');
+    sessions.length = 0; // server list empty after delete
+
+    const delBtn = win.document.querySelector('.session-delete');
+    assert.ok(delBtn, 'a delete button should be rendered');
+    delBtn.click();
+    await new Promise(r => setTimeout(r, 20));
+
+    assert.equal(
+      win.document.getElementById('conversation').innerHTML, '',
+      'main panel DOM must be cleared when the active chat is deleted');
+    assert.equal(win.currentSessionId, null, 'currentSessionId must be nulled');
+    assert.equal(
+      win.document.querySelector('.main-content').classList.contains('in-conversation'),
+      false, 'in-conversation class must be removed');
+    const post = fetchCalls.find(c =>
+      c.url.includes('/chat-history') && c.options?.method === 'POST');
+    assert.ok(post, 'clearActiveChatView must POST empty /chat-history');
+    assert.deepEqual(JSON.parse(post.options.body).turns, []);
+  });
+
+  test('DEL-2: deleting the LAST chat while a saved chat is shown clears the panel', async () => {
+    const sessions = [{ id: 's1', title: 'A', messageCount: 2 }];
+    const win = bootWithSessions(sessions);
+    await win.showSessionsList();
+    seedActiveChat(win, 's2'); // a different saved chat is on screen
+    sessions.length = 0;
+
+    win.document.querySelector('.session-delete').click();
+    await new Promise(r => setTimeout(r, 20));
+
+    assert.equal(
+      win.document.getElementById('conversation').innerHTML, '',
+      'emptying the list while a saved chat is shown must clear the panel');
+    assert.equal(win.currentSessionId, null);
+  });
+
+  test('DEL-3: deleting a non-active chat leaves the current chat untouched', async () => {
+    const sessions = [
+      { id: 's1', title: 'A', messageCount: 2 },
+      { id: 's2', title: 'B', messageCount: 2 },
+    ];
+    const win = bootWithSessions(sessions);
+    await win.showSessionsList();
+    seedActiveChat(win, 's2'); // viewing s2, delete s1 (one remains)
+    const remaining = sessions.filter(s => s.id !== 's1');
+    sessions.length = 0;
+    sessions.push(...remaining);
+
+    win.document.querySelector('.session-delete').click();
+    await new Promise(r => setTimeout(r, 20));
+
+    assert.notEqual(
+      win.document.getElementById('conversation').innerHTML, '',
+      'deleting a non-active chat must NOT clear the on-screen conversation');
+    assert.equal(win.currentSessionId, 's2', 'the active session must be preserved');
+  });
+
+  test('DEL-4: option-A safety — an unsaved chat (currentSessionId null) is never wiped', async () => {
+    const sessions = [{ id: 's1', title: 'A', messageCount: 2 }];
+    const win = bootWithSessions(sessions);
+    await win.showSessionsList();
+    // Unsaved conversation on screen: DOM populated but currentSessionId === null.
+    win.document.getElementById('conversation').innerHTML =
+      '<div class="message-group">unsaved work</div>';
+    win.document.querySelector('.main-content').classList.add('in-conversation');
+    win.currentSessionId = null;
+    sessions.length = 0; // list empties after delete
+
+    win.document.querySelector('.session-delete').click();
+    await new Promise(r => setTimeout(r, 20));
+
+    assert.equal(
+      win.document.getElementById('conversation').innerHTML,
+      '<div class="message-group">unsaved work</div>',
+      'an unsaved on-screen conversation must never be wiped (option A)');
+    const post = fetchCalls.find(c =>
+      c.url.includes('/chat-history') && c.options?.method === 'POST');
+    assert.equal(post, undefined, 'no empty-history POST should fire for unsaved chats');
   });
 });
 

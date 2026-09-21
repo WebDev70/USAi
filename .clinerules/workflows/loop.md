@@ -167,6 +167,7 @@ note's `## Working-tree state` section (see template above).
       If any of these are not yet satisfied, emit them as `[housekeeping]` GAPs before
       declaring Done.
 - [ ] Memory note written (see below)
+- [ ] Mode B self-improvement section recorded in session note (proposal or explicit "no improvement found")
 - [ ] **`Recommended Next Step` section emitted** immediately after the Completed
       Summary, with all four labelled parts (`Next Step`, `Why this should happen
       next`, `What this enables`, `Impact if not completed`). Mandatory on every
@@ -268,6 +269,25 @@ iteration. Append the loop summary here — **do not create a new duplicate note
    - [ ] No API keys, Bearer tokens, or passwords in this note
    - [ ] No `sk-` prefixed values
    - [ ] `scripts/security-scan.sh` memory-note scan block passes (4/4)
+   - [ ] Mode B self-improvement section present (proposal or "no improvement found")
+   ```
+
+   Append the following required section before closing if not already present
+   (the `/review §6d` gate and `scripts/mode-b-check.sh` both fail if absent):
+
+   ```markdown
+   ## Mode B self-improvement
+
+   *(Required — fill in before closing this session.)*
+
+   Proactive process-improvement scan: review the workflow used this session and record
+   **one** of the following:
+
+   - **Proposal:** `<title> — <one-sentence description>` (add to `backlog.md` if actionable)
+   - **No improvement found:** "no improvement found — <date> — <brief reason>"
+
+   Leave nothing blank. A missing section is flagged as a GAP by `/review §6d`
+   and `scripts/mode-b-check.sh`.
    ```
 
 ---

@@ -130,6 +130,10 @@ Cross-check spec §6 (Docs to update):
 - [ ] `docs/USER_GUIDE.md` updated (if user-facing feature)
 - [ ] `README.md` updated (if setup/env/config changed)
 - [ ] `AGENTS.md` / `CONTINUE.md` updated (if conventions changed)
+- [ ] **Mode B self-improvement** — session memory note contains a `## Mode B self-improvement`
+  heading with a non-empty body (proposal or "no improvement found") → else emit
+  `GAP [process]: session note missing Mode B self-improvement section.`
+  *(Verify with `scripts/mode-b-check.sh` if vault is available.)*
 - [ ] **`backlog.md` lifecycle complete** — verify the backlog entry:
   - Status is `[x]` (not `[ ]` or `[~]`)
   - Entry includes a Done date (`Done (YYYY-MM-DD)`), a one-line outcome, and a spec link

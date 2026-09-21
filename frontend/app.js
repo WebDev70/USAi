@@ -482,6 +482,30 @@ function resetChatContextState() {
   projectChunks.length = 0;
 }
 
+// clearActiveChatView returns the main panel to the empty greeting state. It is
+// the shared "wipe what's on screen" routine used by the New-chat button and by
+// the session-delete handler when the deleted chat is the one being displayed
+// (or the chat list has just emptied). It clears the DOM, both in-memory history
+// arrays, and per-chat/project retrieval state, nulls the active session id, and
+// hands display control back to the stylesheet via _showChatView(). It also
+// resets the persisted active conversation (chat_history.json) by saving an empty
+// snapshot, so a reload cannot resurrect the just-deleted "ghost" conversation.
+async function clearActiveChatView() {
+  const conversation = document.getElementById('conversation');
+  if (conversation) conversation.innerHTML = '';
+  conversationHistory.length = 0;
+  chatDisplayHistory.length = 0;
+  // Drop any per-chat/project file context so it can't bleed into the next chat.
+  resetChatContextState();
+  currentSessionId = null;
+  lastFetchedContext = null;
+  _showChatView();
+  document.querySelector('.main-content')?.classList.remove('in-conversation');
+  // Persist the now-empty conversation so loadChatHistory() on the next page
+  // load finds no turns and stays in the empty state (kills the reload ghost).
+  await saveChatHistory();
+}
+
 
 // extractTextServerSide POSTs a PDF/DOCX File to the /extract-text endpoint and
 // returns { text, filename }, where `filename` is the .txt-suffixed name used as
@@ -1695,11 +1719,24 @@ async function showSessionsList() {
     el.querySelectorAll('.session-delete').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
-        await loggedFetch(`/sessions?id=${encodeURIComponent(btn.dataset.id)}`, { method: 'DELETE' });
-        if (btn.dataset.id === currentSessionId) currentSessionId = null;
-        showSessionsList();
+        const deletedId = btn.dataset.id;
+        const wasActive = deletedId === currentSessionId;
+        await loggedFetch(`/sessions?id=${encodeURIComponent(deletedId)}`, { method: 'DELETE' });
+        // Re-render the sidebar first so we can observe how many chats remain.
+        await showSessionsList();
+        // Option A (safe): only wipe the main panel when the on-screen chat is a
+        // *saved* one that is now gone. We NEVER clear an unsaved conversation
+        // (currentSessionId === null) — that would destroy work the user hasn't
+        // archived yet. Clear when the deleted chat was the active one, or when
+        // deleting emptied the chat list while a saved chat is on screen.
+        const list = document.getElementById('chatSessionsList');
+        const chatsRemain = list ? list.querySelectorAll('.session-item').length > 0 : false;
+        if (wasActive || (currentSessionId !== null && !chatsRemain)) {
+          await clearActiveChatView();
+        }
       });
     });
+
     // ── Bind session ⋯ menu buttons (Move to project…) ────────────────────
     el.querySelectorAll('.session-menu-btn').forEach(btn => {
       btn.addEventListener('click', e => {
@@ -3751,6 +3788,13 @@ async function streamChatApi(payload, onDelta) {
     const decoder = new TextDecoder();
     let buffer = '';
     let usage = null;
+    // Some upstream gateways commit to a 200 OK stream and only THEN discover
+    // they must reject the request (e.g. rate limiting). They signal this by
+    // emitting the error INSIDE the SSE body as {"error":{...}} rather than as
+    // a choices[].delta.content chunk. Detect it and surface it as { error };
+    // otherwise assistantText stays empty and the caller persists a bogus
+    // "No assistant text received." turn that then reappears on reload (#99).
+    let streamError = null;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -3769,6 +3813,16 @@ async function streamChatApi(payload, onDelta) {
           if (data === '[DONE]') continue;
           try {
             const json = JSON.parse(data);
+            // In-band error frame — authoritative; stop reading the stream.
+            const inbandError = json?.error;
+            if (inbandError) {
+              const msg = typeof inbandError === 'string'
+                ? inbandError
+                : (inbandError.message || JSON.stringify(inbandError));
+              streamError = `API error (stream): ${msg}`;
+              logger.error('chat', 'Upstream error delivered in SSE stream', { error: msg });
+              break; // stop processing lines in this frame
+            }
             const delta = json?.choices?.[0]?.delta?.content;
             if (delta) {
               assistantText += delta;
@@ -3780,8 +3834,14 @@ async function streamChatApi(payload, onDelta) {
             // Ignore keep-alive comments or partial JSON; will be retried next chunk
           }
         }
+        if (streamError) break; // stop processing remaining frames
       }
+      if (streamError) break; // stop reading remaining chunks
     }
+
+    // An in-band error is authoritative even if some content streamed first —
+    // a partial answer must not be silently persisted as if it were complete.
+    if (streamError) return { error: streamError };
 
     return { assistantText: assistantText || null, usage };
   } catch (err) {
@@ -4875,12 +4935,19 @@ if (typeof module !== 'undefined' && module.exports) {
     // Expose currentProjectId state
     get currentProjectId() { return currentProjectId; },
     set currentProjectId(v) { currentProjectId = v; },
+    // Expose currentSessionId so the ghost-chat DEL-* tests can seed/inspect the
+    // active-session marker that the delete handler and clearActiveChatView use.
+    get currentSessionId() { return currentSessionId; },
+    set currentSessionId(v) { currentSessionId = v; },
     // _renderProjectItemTest: synchronous wrapper for _renderProjectItem
     _renderProjectItemTest: (p, projectSessions) => _renderProjectItem(p, projectSessions),
     // Panel switchers exposed so PD-JS-6 can assert that _showChatView undoes
     // every inline style _showProjectDetailView sets (blank-canvas regression).
     _showProjectDetailView,
     _showChatView,
+    // Ghost-chat-after-delete fix: expose the shared "wipe the main panel"
+    // routine so the DEL-* tests can drive it directly.
+    clearActiveChatView,
     // ── Phase 1: Composer Attachment Tray (#80) test hooks ───────────────────
     // Expose mutable arrays so tests can seed/inspect state
     get uploadedFiles() { return uploadedFiles; },

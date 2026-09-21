@@ -121,10 +121,9 @@ need a `/spec` pass to resolve open per-claim product decisions.
 
 | # | Title | Size | Why now |
 |---|-------|------|---------|
-| 91 | 📋 ADVISORY — reconcile `ARCHITECTURE.md` §3b with the live routes | S | Endpoint table lists absent routes and misses live ones. (The `/logs/files?file=`→`?name=` fix and phantom `POST /import-session` removal were done under #90; #91 completes the full §3b reconciliation.) Needs `/spec`. |
+| 91 | 📋 ADVISORY — reconcile `ARCHITECTURE.md` §3b with the live routes | S | **In Progress** — spec written 2026-09-20 (`docs/specs/architecture-endpoint-reconciliation-91.md`); §3a/§3b reconciliation + automated parity guard. The `?file=`→`?name=` fix and phantom `POST /import-session` removal were done under #90; #91 completes the full §3b reconciliation. |
 | 92 | 📋 ADVISORY — enforce Mode B self-improvement in session notes | XS | Cheapest of the governance items; require each note to record a proposal or an explicit "no improvement found". Needs `/spec`. |
-| 82 | Project settings modal + detail-view delete | S | DoR ✅. Unblocks #67; removes the fragile create-modal-reuse hack. |
-| 83 | jsdom behavior tests for project detail view | S | DoR ✅. Closes the DOM-coverage gap #81 shipped with. |
+| 83 | jsdom behavior tests for project detail view | S | DoR ✅. Closes the DOM-coverage gap #81 shipped with (#82 is Done). |
 | 84 | Refactor `appendMessage` to a turn object | S | DoR ✅. Retro action; 6-positional-arg signature is now the top regression source. |
 | 71 | Optional reranking | M | DoR ✅. Spec already written (§4.8); verified `rerank` absent from code. |
 
@@ -132,9 +131,9 @@ need a `/spec` pass to resolve open per-claim product decisions.
 #67 (L, 4 open design questions), #86 (L, new), #13 / #14 / #15 / #57 (parking lot).
 
 **Governance debt status (2026-09-20):** #89, #90, #93, #94 and #97 are shipped;
-**#91 → #92** remain — a short "make ARCHITECTURE + session-note process match reality"
-follow-up. Once clear, the **#82 → #83 → #84** project detail-view cluster is next
-(#82 unblocks #67).
+**#91 (In Progress — spec written) → #92** remain — a short "make ARCHITECTURE +
+session-note process match reality" follow-up. Once clear, the **#83 → #84** project
+detail-view cluster is next (#82 is Done, which unblocks #67).
 
 
 ### Projects follow-up work (found 2026-09-13)
@@ -356,12 +355,13 @@ follow-up. Once clear, the **#82 → #83 → #84** project detail-view cluster i
 
 - [x] **97. 🚨 BLOCKING — Fix incomplete spec for #90** *(XS)* — Done (2026-09-20): The #90 spec was amended to list the exact file sets for AC-3 (8 orphan specs to `git rm`, 10 stale specs to set `Status: Done`) and AC-4 (archive split target), recovered from the Sprint-19 governance report `SHK-1`. #90 is now implementable and shipped in the same turn. Spec: docs/specs/done-pile-reconciliation-90.md (see §Amended + §Spec changelog).
 
-- [ ] **91. 📋 ADVISORY — reconcile ARCHITECTURE §3b with the live routes** *(S)*
+- [x] **91. 📋 ADVISORY — reconcile ARCHITECTURE §3b with the live routes** *(S)* — Done (2026-09-20): reconciled `docs/ARCHITECTURE.md` §3a handler names + §3b endpoint catalog (added `/api/*`, `/chat-history`, `/embeddings`, `/generate-embeddings`, `/logs/clear`, `/new-chat-session`; removed phantom `/models`, `/proxy`; fixed `/sessions/{id}`→`<id>`) and landed a bidirectional doc-drift parity guard `backend/tests/python/test_arch_endpoint_parity.py`. Spec: docs/specs/architecture-endpoint-reconciliation-91.md
   - Governance report 2026-09-19 (ADVISORY-01 / SA-2). Remove or annotate absent routes,
     document omitted live routes and prefix dispatch, and fix `/logs/files?file=` to `?name=`.
     Consider generating the endpoint table to prevent recurrence.
 
-- [ ] **92. 📋 ADVISORY — enforce Mode B self-improvement in session notes** *(XS)*
+- [x] **92. 📋 ADVISORY — enforce Mode B self-improvement in session notes** *(XS)* — Done (2026-09-21): four enforcement points — `build.md §3a` + `loop.md` Step 5 templates require `## Mode B self-improvement` section; `/review §6d` gate emits GAP if absent; `govern.md` SPMS-5 references `scripts/mode-b-check.sh` deterministically; new `scripts/mode-b-check.sh` (exit 0/1/skip) + 5 hermetic tests (`test_mode_b_check.py` T-1…T-5 + G-4 redaction). All gates green.
+      Spec: docs/specs/mode-b-self-improvement-enforcement-92.md
   - Governance report 2026-09-19 (ADVISORY-03 / SPMS-5). Require each session note to record
     either a workflow improvement proposal or an explicit "no improvement found" outcome.
 
@@ -1289,6 +1289,39 @@ follow-up. Once clear, the **#82 → #83 → #84** project detail-view cluster i
 ---
 
 ## Completed / Archive
+
+### Bug fixes
+
+- [x] **99. "No assistant text received." ghost turn on upstream rate-limit (streaming)** *(S)* — Done (2026-09-21):
+  when the gateway is rate-limited *after* committing to a `200 OK` stream it emits
+  the error **inside** the SSE body as `{"error":{"message":…,"type":"rate_limit"}}`,
+  not as a `choices[].delta.content` chunk. `streamChatApi` only read `delta.content`,
+  so the frame was ignored — `assistantText` stayed empty, `{ assistantText: null }`
+  was returned, and `normalizeAssistantText(null)` persisted the placeholder
+  **"No assistant text received."** as a fake turn that reappeared on reload
+  (written into `chat_history.json`). Fix: `streamChatApi` (`frontend/app.js`) now
+  detects an in-band `error` object in the SSE parse loop, logs it, stops reading,
+  and returns `{ error }` so the existing `if (error) … return` branches in
+  `sendMessage` short-circuit **before** `persistExchange` (no ghost rendered or
+  saved). An error frame after partial content is authoritative. Regression tests
+  **SIE-1..SIE-3** in `frontend/tests/js/app.behavior.test.mjs`. Full suite green
+  (`server.py` branch 92.31%, JS branch 75.29%); security scan clean (2/4 ran,
+  0 findings — gitleaks/memory-note unavailable in shell). No new runtime deps.
+  Spec: docs/specs/streaming-inband-error-99.md
+
+- [x] **98. Ghost chat persists in the main panel after deleting a chat** *(S)* — Done (2026-09-21):
+  the `.session-delete` handler archived the session + re-rendered the sidebar but never
+  cleared the *active* conversation feeding the main panel, so the deleted chat's messages
+  stayed on screen and reappeared on reload (`chat_history.json` untouched). Added shared
+  `clearActiveChatView()` in `frontend/app.js` (empties `#conversation`, resets
+  `conversationHistory`/`chatDisplayHistory`, `resetChatContextState()`, nulls
+  `currentSessionId`/`lastFetchedContext`, `_showChatView()` + removes `.in-conversation`,
+  persists empty `/chat-history`). Rewrote the handler with an **option-A** safety guard:
+  clear only when the deleted chat is the one shown, or when deleting empties the list while
+  a *saved* chat is shown; **never** wipe an unsaved conversation (`currentSessionId === null`).
+  Regression tests DEL-1..DEL-4 in `frontend/tests/js/app.behavior.test.mjs`. Full suite green;
+  `server.py` branch 92.31%, JS branch 75.29%; security scan clean (2/4, unavailable scanners
+  skipped). No new runtime deps.
 
 ### Testing & agent automation
 

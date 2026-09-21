@@ -117,6 +117,24 @@ This is the **one file** used throughout the whole `/build` → `/review` → `/
 cycle. The Red receipt (below) is appended here. The `/loop` Continuous Improvement
 role **appends to this same file** at the end — it does not create a new note.
 
+Before closing the session, append the following required section to this note
+(the `/review §6d` gate and `scripts/mode-b-check.sh` both fail if it is absent):
+
+```markdown
+## Mode B self-improvement
+
+*(Required — fill in before closing this session.)*
+
+Proactive process-improvement scan: review the workflow used this session and record
+**one** of the following:
+
+- **Proposal:** `<title> — <one-sentence description>` (add to `backlog.md` if actionable)
+- **No improvement found:** "no improvement found — <date> — <brief reason>"
+
+Leave nothing blank. A missing section is flagged as a GAP by `/review §6d`
+and `scripts/mode-b-check.sh`.
+```
+
 ### 3b. RED — write failing tests first
 
 From spec §5 (Test plan), write **all specified tests** before touching production

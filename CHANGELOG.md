@@ -1,6 +1,40 @@
 ## [Unreleased]
 
 ### Fixed
+- **"No assistant text received." ghost turn on upstream rate-limit (streaming).**
+  When the gateway is rate-limited *after* committing to a `200 OK` streaming
+  response, it delivers the error **inside** the SSE body as
+  `{"error":{"message":"…","type":"rate_limit"}}` rather than as a
+  `choices[].delta.content` chunk. `streamChatApi` (`frontend/app.js`) only read
+  `delta.content`, so the frame was silently ignored: `assistantText` stayed empty,
+  the function returned `{ assistantText: null }`, and `normalizeAssistantText(null)`
+  rendered/persisted the placeholder **"No assistant text received."** as a fake
+  assistant turn that then reappeared on reload (it was written to
+  `chat_history.json`). `streamChatApi` now detects an in-band `error` object in the
+  SSE parse loop, logs it, stops reading the stream, and returns `{ error }` — so the
+  existing `if (error) { … return; }` branches in `sendMessage` short-circuit **before**
+  `persistExchange`, and no ghost turn is rendered or saved. An error frame after
+  partial content is authoritative (the partial answer is discarded). Regression
+  tests **SIE-1..SIE-3** in `frontend/tests/js/app.behavior.test.mjs`. Frontend-only;
+  no proxy or runtime-dep change. Spec: `docs/specs/streaming-inband-error-99.md`.
+
+- **Ghost chat persists in the main panel after deleting a chat.** Deleting a chat
+  from the sidebar archived the session server-side and re-rendered the sidebar, but
+  never cleared the *active* conversation that feeds the main panel — the deleted
+  chat's messages stayed on screen and reappeared on reload (because
+  `chat_history.json` was untouched). Added a shared `clearActiveChatView()` helper
+  in `frontend/app.js` that empties `#conversation`, resets `conversationHistory` /
+  `chatDisplayHistory`, calls `resetChatContextState()`, nulls `currentSessionId` /
+  `lastFetchedContext`, restores the empty view via `_showChatView()` + removes the
+  `.in-conversation` class, and persists an empty snapshot via `saveChatHistory()`
+  (kills the reload ghost). Rewrote the `.session-delete` handler with an **option-A
+  safety guard**: it clears the main panel only when the deleted chat is the one on
+  screen, **or** when deleting empties the chat list while a *saved* chat is shown —
+  and **never** wipes an unsaved conversation (`currentSessionId === null`). Added
+  regression tests **DEL-1..DEL-4** in `frontend/tests/js/app.behavior.test.mjs`
+  and exposed `clearActiveChatView` + a `currentSessionId` accessor on the test
+  exports. No new runtime deps.
+
 - **Project Settings modal unopenable + Chats interactions dead (frontend regression).**
   A stray/missing `</div>` in `frontend/index.html` left `#projectSettingsModal`
   **nested inside** `#createProjectModal`. Because the parent overlay carried
