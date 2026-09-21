@@ -1,5 +1,23 @@
 ## [Unreleased]
 
+### Added
+- **Truncated-response indicator + higher Max tokens ceiling.** Users reported
+  replies "cut off mid-thought." The client never trims assistant text — a
+  cut-off answer means the *model* stopped at its output-token ceiling
+  (OpenAI-compatible `finish_reason: "length"`), which the app previously never
+  surfaced. Now `callChatApi` and `streamChatApi` (`frontend/app.js`) capture
+  `finish_reason` and thread it through `runWithTools` to `sendMessage`; a new
+  pure helper `truncationNote(finishReason)` renders a visible **"⚠ Response
+  truncated — hit the Max tokens limit"** note on the affected turn (all three
+  paths: tool-loop, streaming, non-streaming) and persists it so it survives a
+  reload. Nothing is stripped from the reply — the note is purely additive. The
+  **Max tokens** input ceiling in `index.html` was raised `32768 → 131072` (128K)
+  so the field itself is no longer the limiter; `docs/USER_GUIDE.md` documents the
+  new range and the cut-off troubleshooting. New JS unit tests **TR-1..TR-6**
+  (`frontend/tests/js/truncation-note.test.mjs`) lock the predicate contract
+  (only `"length"` warns; `stop`/`tool_calls`/`null`/unknown stay silent).
+  Frontend-only; no proxy or runtime-dep change.
+
 ### Fixed
 - **"No assistant text received." ghost turn on upstream rate-limit (streaming).**
   When the gateway is rate-limited *after* committing to a `200 OK` streaming

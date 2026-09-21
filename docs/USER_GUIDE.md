@@ -181,7 +181,7 @@ Open the **Prompt & Parameters** section.
 |---------|--------------|
 | **System prompt** | Optional instructions that set the AI's behavior/persona for the whole chat |
 | **Temperature** (0–2) | Creativity dial. Lower = focused/predictable, higher = creative/varied. **Leave blank to omit** (some models reject it) |
-| **Max tokens** | Cap the reply length. **Leave blank** to let the model use its own default (recommended). Reasoning models ignore this field — it is omitted automatically even if set. |
+| **Max tokens** | Cap the reply length (**1–131072**). **Leave blank** to let the model use its own default (recommended). Reasoning models ignore this field — it is omitted automatically even if set. |
 | **Reasoning effort** | In the composer toolbar — how much a reasoning model "thinks" before answering |
 
 > Leaving **Temperature** or **Max tokens** blank means the app won't send that
@@ -189,6 +189,12 @@ Open the **Prompt & Parameters** section.
 > this is the recommended setting — most models already impose a sensible cap.
 > Reasoning models (e.g. o1, o3) never receive `max_tokens` regardless of what
 > you enter here; the field is silently ignored for those models.
+>
+> **"My reply got cut off mid-sentence."** The app never trims the model's text —
+> a cut-off answer means the model *itself* stopped at its output-token ceiling.
+> When that happens the turn shows a **⚠ Response truncated — hit the Max tokens
+> limit** note. Fix it by **raising** the Max tokens value (now up to 131072) or
+> **clearing** the field so the model uses its own, larger default.
 
 ---
 

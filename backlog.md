@@ -10,36 +10,40 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 
 > **Note on IDs:** Item numbers are **stable identifiers** (referenced in
 > `CHANGELOG.md` and other docs), not sequential order. Gaps indicate items
-> that were renumbered, merged, or retired; the highest-assigned ID is **96**.
+> that were renumbered, merged, or retired; the highest-assigned ID is **100**.
 >
 > Before assigning a new ID, confirm the current maximum (see #85):
 > ```bash
 > grep -oE '^- \[.\] +\*\*[0-9]+\.' backlog.md | grep -oE '[0-9]+' | sort -n | tail -3
 > ```
 
-> **Last groomed:** 2026-09-20 — post-Sprint-21 grooming pass. Since the
-> post-Sprint-20 groom, four more items shipped: **#82** (dedicated project
-> settings modal + detail-view delete), **#90** (BLOCKING — reconcile the Done
-> pile with real code), **#97** (BLOCKING — fix the incomplete #90 spec), and
-> **#70** (whole-document analysis). `./run-tests.sh` and `./scripts/quality-gate.sh`
-> both green (exit 0); working tree clean. **Both governance BLOCKING items are now
-> closed** — the earlier "`main` is red / #76 is BLOCKING" verification below is
-> **resolved and historical** (#76 shipped 2026-09-19).
+> **Last groomed:** 2026-09-21 — post-Sprint-21 grooming pass (2nd, bugfix
+> follow-up). Since the 2026-09-20 groom, two bug-fix items shipped: **#98**
+> (ghost chat persists in the main panel after delete) and **#99** ("No assistant
+> text received." ghost turn on upstream rate-limit / in-band SSE error). Both are
+> already `[x]` Done in the Completed/Archive → Bug fixes section. `./run-tests.sh`
+> (exit 0, "All checks passed ✓") and `./scripts/quality-gate.sh` (exit 0) both
+> green this session; working tree clean. **No BLOCKING item is open.** #91 and
+> #92 (the two remaining governance-debt items) **both shipped** (#91 2026-09-20,
+> #92 2026-09-21) — the earlier "advisory only: #91/#92" note below is now
+> **resolved and historical**.
 >
-> **Sync note:** the #90/#97, #70, and this grooming commit are **ahead of
-> `origin/main`** — push when the groom is committed.
+> **Sync note:** #98 and #99 shipped on branch `fix/project-settings-modal-nesting`
+> (commits `3500e8b`, `fe22d2c`), which is **2 commits ahead of `origin/main`** and
+> **not yet merged to `main`**. Merge/push before starting new sprint work so the
+> Done pile on `main` matches this backlog.
 >
-> **Highest-severity open item:** none is BLOCKING. Remaining governance debt is
-> **advisory only**: **#91** (📋 reconcile ARCHITECTURE §3b with live routes)
-> and **#92** (📋 enforce Mode B self-improvement in session notes).
-> Recommended order: **#91 → #92** (governance debt) → **#83 → #84**
-> (project detail-view cluster; #82 is Done, which unblocks **#67**) → **#71**
-> (retrieval reranking, spec already written).
+> **Highest-severity open item:** none is BLOCKING; no governance debt remains.
+> **Recommended order for the next pull:**
+> **#83 → #84** (project detail-view test/refactor cluster — both DoR ✅, small)
+> → **#71** (retrieval reranking, spec already written, DoR ✅)
+> → then the `/spec`-needed items **#67 → #68 → #86** and the parking lot.
 >
-> **Note on ID #96:** the header count reflects ID **96**, which was assigned to the
-> *batch spec* `docs/specs/spec-workflow-hardening-79-85.md` covering #79+#85 — there
-> is no standalone `#96` backlog item, and per the "gaps are never reused" rule the
-> next new ID is **97**.
+> **Note on next ID:** highest-assigned ID is **100** (bugfix #100 — truncation
+> indicator). Per the "gaps are never reused" rule, the next new backlog item is
+> **#101**. There is no
+> standalone `#96` item — that ID belongs to the *batch spec*
+> `docs/specs/spec-workflow-hardening-79-85.md` (covered #79+#85).
 >
 > Mirror: `Cline/scrum/product-backlog.md` in the Obsidian vault.
 >
@@ -1291,6 +1295,23 @@ detail-view cluster is next (#82 is Done, which unblocks #67).
 ## Completed / Archive
 
 ### Bug fixes
+
+- [x] **100. Replies "cut off mid-thought" not flagged (finish_reason: "length" ignored)** *(S)* — Done (2026-09-21):
+  users reported answers ending mid-sentence. Verified the client **never** truncates
+  assistant text (`streamChatApi` accumulates every `delta.content`; `callChatApi`
+  reads full `message.content`) — a cut-off reply means the upstream **model** stopped
+  at its output-token ceiling, reported as `finish_reason: "length"`, which
+  `frontend/app.js` ignored entirely (grep confirmed zero handling). Fix (purely
+  additive — nothing stripped): new pure helper `truncationNote(finishReason)` renders
+  a visible **"⚠ Response truncated — hit the Max tokens limit"** note only for
+  `"length"`; `callChatApi`/`streamChatApi` now capture `finish_reason` and
+  `runWithTools` threads it through; `sendMessage` surfaces the note in all three render
+  paths (tool-loop, streaming, non-streaming) and persists it via `persistExchange` so
+  it survives reload. Also raised the Max tokens input ceiling in `index.html`
+  `32768 → 131072` (128K) so the field is no longer the limiter. Regression tests
+  **TR-1..TR-6** in `frontend/tests/js/truncation-note.test.mjs`. `./run-tests.sh`
+  green (exit 0, "All checks passed ✓"); `./scripts/quality-gate.sh` passed. No new
+  runtime deps; frontend-only. Docs: CHANGELOG.md, docs/USER_GUIDE.md §5.
 
 - [x] **99. "No assistant text received." ghost turn on upstream rate-limit (streaming)** *(S)* — Done (2026-09-21):
   when the gateway is rate-limited *after* committing to a `200 OK` stream it emits

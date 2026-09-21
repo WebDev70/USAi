@@ -296,6 +296,19 @@ function shouldSendMaxTokens(excludedParams, maxTokens) {
   return !excludedParams.has('max_tokens') && !Number.isNaN(maxTokens) && maxTokens > 0;
 }
 
+// Build a user-visible note when the model stopped because it hit its output
+// token ceiling (OpenAI-compatible `finish_reason: "length"`). This never
+// alters or strips the assistant text — it only flags that MORE text would have
+// followed, so a "cut off mid-thought" reply is explained rather than looking
+// like a silent client-side truncation (which we never do). Returns '' for any
+// other finish reason (stop, tool_calls, null/undefined) so normal turns are
+// unchanged. Pure — no DOM, no network, no side effects.
+function truncationNote(finishReason) {
+  return finishReason === 'length'
+    ? '⚠ Response truncated — hit the Max tokens limit (raise or clear Max tokens for a longer reply)'
+    : '';
+}
+
 // Reflect the current model's parameter support in the sidebar UI: disabled,
 // dimmed fields with an explanatory tooltip when a param is unsupported.
 function updateParamFieldStates() {
@@ -3625,8 +3638,9 @@ async function callChatApi(payload) {
     const parsed = JSON.parse(text);
     const message = parsed?.choices?.[0]?.message || null;
     const assistantText = message?.content || null;
+    const finishReason = parsed?.choices?.[0]?.finish_reason || null;
     const usage = parsed?.usage || null;
-    return { assistantText, message, usage };
+    return { assistantText, message, usage, finishReason };
   } catch (err) {
     if (err?.name === 'AbortError') {
       logger.info('chat', 'Request cancelled by user');
@@ -3694,7 +3708,7 @@ async function runWithTools(basePayload, conversation, {
 
     // Tool calls require a non-streaming request so we can inspect tool_calls.
     const payload = { ...basePayload, messages, tools, tool_choice: 'auto' };
-    const { message, usage, error, aborted } = await callFn(payload);
+    const { message, usage, error, aborted, finishReason } = await callFn(payload);
     if (aborted) return { aborted: true };
     if (error) {
       logger.error('tools', `Round ${round} request failed`, { error });
@@ -3720,7 +3734,7 @@ async function runWithTools(basePayload, conversation, {
         if (streamResult.aborted) return { aborted: true, assistantText: streamResult.assistantText };
         return { ...streamResult, toolsUsed };
       }
-      return { assistantText: message?.content || null, usage: lastUsage, toolsUsed };
+      return { assistantText: message?.content || null, usage: lastUsage, toolsUsed, finishReason };
     }
 
     // Record the assistant's tool-call turn verbatim (required by the API).
@@ -3748,10 +3762,10 @@ async function runWithTools(basePayload, conversation, {
   // This safety-net path stays non-streamed to keep the logic simple.
   logger.warn('tools', `Reached MAX_TOOL_ROUNDS (${MAX_TOOL_ROUNDS}); forcing final answer`);
   const finalPayload = { ...basePayload, messages };
-  const { assistantText, usage, error, aborted } = await callFn(finalPayload);
+  const { assistantText, usage, error, aborted, finishReason } = await callFn(finalPayload);
   if (aborted) return { aborted: true };
   if (error) return { error };
-  return { assistantText, usage: usage || lastUsage, toolsUsed };
+  return { assistantText, usage: usage || lastUsage, toolsUsed, finishReason };
 }
 
 // Stream a chat completion, invoking onDelta(textChunk) as tokens arrive.
@@ -3788,6 +3802,7 @@ async function streamChatApi(payload, onDelta) {
     const decoder = new TextDecoder();
     let buffer = '';
     let usage = null;
+    let finishReason = null;
     // Some upstream gateways commit to a 200 OK stream and only THEN discover
     // they must reject the request (e.g. rate limiting). They signal this by
     // emitting the error INSIDE the SSE body as {"error":{...}} rather than as
@@ -3828,6 +3843,11 @@ async function streamChatApi(payload, onDelta) {
               assistantText += delta;
               if (onDelta) onDelta(delta, assistantText);
             }
+            // Capture the terminal finish_reason so a "length"-truncated stream
+            // can be flagged to the user. It arrives on the last content-bearing
+            // frame (and/or the trailing usage frame); keep the last non-null one.
+            const fr = json?.choices?.[0]?.finish_reason;
+            if (fr) finishReason = fr;
             // The usage chunk arrives with an empty choices array near the end
             if (json?.usage) usage = json.usage;
           } catch (_) {
@@ -3843,7 +3863,7 @@ async function streamChatApi(payload, onDelta) {
     // a partial answer must not be silently persisted as if it were complete.
     if (streamError) return { error: streamError };
 
-    return { assistantText: assistantText || null, usage };
+    return { assistantText: assistantText || null, usage, finishReason };
   } catch (err) {
     if (err?.name === 'AbortError') {
       logger.info('chat', 'Stream cancelled by user');
@@ -4091,7 +4111,7 @@ async function sendMessage() {
         conversation.scrollTop = conversation.scrollHeight;
       } : null;
 
-      const { assistantText, usage, toolsUsed, error, aborted } = await runWithTools(
+      const { assistantText, usage, toolsUsed, error, aborted, finishReason } = await runWithTools(
         payload, conversation,
         { streamFinalAnswer: streamEnabled, onDelta: toolOnDelta },
       );
@@ -4108,6 +4128,7 @@ async function sendMessage() {
 
       const finalText = normalizeAssistantText(assistantText);
       const usageText = formatUsage(usage);
+      const truncNote = truncationNote(finishReason);
       const uniqueTools = toolsUsed && toolsUsed.length ? [...new Set(toolsUsed)] : [];
       const toolNote = uniqueTools.length ? `Tools: ${uniqueTools.join(', ')}` : '';
       // When the model actually used tools to pull in external info, the
@@ -4117,10 +4138,10 @@ async function sendMessage() {
         ? ''
         : contextNote;
       const { group, noteEl } = appendMessage(conversation, finalText, 'assistant', contextNote);
-      setMessageNote(group, noteEl, [contextNoteForAssistant, toolNote, modelTierLabel, usageText]);
+      setMessageNote(group, noteEl, [contextNoteForAssistant, toolNote, modelTierLabel, usageText, truncNote]);
       addMessageActions(group, 'assistant', userDisplayIndex + 1);
       conversation.scrollTop = conversation.scrollHeight;
-      await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages, [contextNoteForAssistant, toolNote, modelTierLabel]);
+      await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages, [contextNoteForAssistant, toolNote, modelTierLabel, truncNote]);
 
       const duration = (performance.now() - startTime).toFixed(2);
       logger.info('chat', 'Tool-assisted response received', { duration: `${duration}ms`, textLength: finalText.length, usage: usage || null, toolsUsed });
@@ -4129,7 +4150,7 @@ async function sendMessage() {
       const { group, bubble, noteEl } = appendMessage(conversation, '', 'assistant', contextNote);
       bubble.classList.add('streaming');
 
-      const { assistantText, usage, error, aborted } = await streamChatApi(payload, (_delta, full) => {
+      const { assistantText, usage, error, aborted, finishReason } = await streamChatApi(payload, (_delta, full) => {
         // Render partial tokens as plain text (Markdown on incomplete input looks
         // broken); the final text is re-rendered as Markdown below.
         renderBubbleText(bubble, full, false, false);
@@ -4153,17 +4174,18 @@ async function sendMessage() {
       }
       renderBubbleText(bubble, finalText, true);
       const usageText = formatUsage(usage);
-      setMessageNote(group, noteEl, [contextNote, aborted ? 'cancelled' : '', modelTierLabel, usageText]);
+      const truncNote = truncationNote(finishReason);
+      setMessageNote(group, noteEl, [contextNote, aborted ? 'cancelled' : '', modelTierLabel, usageText, truncNote]);
       addMessageActions(group, 'assistant', userDisplayIndex + 1);
       conversation.scrollTop = conversation.scrollHeight;
-      await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages);
+      await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages, [contextNote, aborted ? 'cancelled' : '', modelTierLabel, truncNote]);
       if (aborted) responseLog.textContent = 'Request cancelled (partial response kept).';
 
       const duration = (performance.now() - startTime).toFixed(2);
       logger.info('chat', 'Streamed response received', { duration: `${duration}ms`, textLength: finalText.length, usage: usage || null, aborted: !!aborted });
     } else {
       // 3c. Non-streaming request (also used for structured-output JSON mode)
-      const { assistantText, usage, error, aborted } = await callChatApi(payload);
+      const { assistantText, usage, error, aborted, finishReason } = await callChatApi(payload);
       responseLog.textContent = '';
 
       if (aborted) {
@@ -4190,11 +4212,12 @@ async function sendMessage() {
         }
       }
       const usageText = formatUsage(usage);
+      const truncNote = truncationNote(finishReason);
       const { group, noteEl } = appendMessage(conversation, finalText, 'assistant', contextNote);
-      setMessageNote(group, noteEl, [contextNote, jsonNote, modelTierLabel, usageText]);
+      setMessageNote(group, noteEl, [contextNote, jsonNote, modelTierLabel, usageText, truncNote]);
       addMessageActions(group, 'assistant', userDisplayIndex + 1);
       conversation.scrollTop = conversation.scrollHeight;
-      await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages);
+      await persistExchange(inputs.content, finalText, contextNote, usageText, userApiContent, attachedImages, [contextNote, jsonNote, modelTierLabel, truncNote]);
 
       const duration = (performance.now() - startTime).toFixed(2);
       logger.info('chat', 'Message sent and response received', { duration: `${duration}ms`, textLength: finalText.length, usage: usage || null, jsonMode: inputs.jsonMode });
@@ -4827,6 +4850,7 @@ if (typeof module !== 'undefined' && module.exports) {
     // _mapReduceSummarizeTest: injectable callFn/signal, no live network.
     _mapReduceSummarizeTest: (query, chunks, opts) => mapReduceSummarize(query, chunks, opts),
     normalizeAssistantText,
+    truncationNote,
     // Sidebar collapse helpers (tested via injected DOM stubs):
     applySidebarCollapsed,
     _testToggle,
