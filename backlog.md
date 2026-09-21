@@ -17,20 +17,24 @@ a time; each item is checked off when implemented and recorded in `CHANGELOG.md`
 > grep -oE '^- \[.\] +\*\*[0-9]+\.' backlog.md | grep -oE '[0-9]+' | sort -n | tail -3
 > ```
 
-> **Last groomed:** 2026-09-20 — post-Sprint-20 audit + grooming pass. Six items
-> shipped since the 2026-09-19 governance close: **#89** (BLOCKING mutmut pin),
-> **#94** (BLOCKING project-isolation RAG leak), **#95** (max_tokens copy),
-> **#85** (backlog-ID pre-flight guard), **#79** (grep-redact Check G-4), and
-> **#93** (security-scan skip reporting). All committed and pushed to `origin/main`
-> (HEAD `cd36dc6`); working tree clean; `./run-tests.sh --coverage`,
-> `./scripts/security-scan.sh`, and `./scripts/quality-gate.sh` all green. The
-> earlier "`main` is red / #76 is BLOCKING" verification below is **resolved and
-> historical** — #76 shipped 2026-09-19.
+> **Last groomed:** 2026-09-20 — post-Sprint-21 grooming pass. Since the
+> post-Sprint-20 groom, four more items shipped: **#82** (dedicated project
+> settings modal + detail-view delete), **#90** (BLOCKING — reconcile the Done
+> pile with real code), **#97** (BLOCKING — fix the incomplete #90 spec), and
+> **#70** (whole-document analysis). `./run-tests.sh` and `./scripts/quality-gate.sh`
+> both green (exit 0); working tree clean. **Both governance BLOCKING items are now
+> closed** — the earlier "`main` is red / #76 is BLOCKING" verification below is
+> **resolved and historical** (#76 shipped 2026-09-19).
 >
-> **Highest-severity open item:** **#90** (🚨 BLOCKING — reconcile the Done pile
-> with code that actually exists). #89 (the other Sprint-19 blocker) is now Done.
-> Recommended order: **#90 → #91 → #92** (governance debt) → **#82 → #83 → #84**
-> (project detail-view cluster) → **#70 → #71** (retrieval, specs already written).
+> **Sync note:** the #90/#97, #70, and this grooming commit are **ahead of
+> `origin/main`** — push when the groom is committed.
+>
+> **Highest-severity open item:** none is BLOCKING. Remaining governance debt is
+> **advisory only**: **#91** (📋 reconcile ARCHITECTURE §3b with live routes)
+> and **#92** (📋 enforce Mode B self-improvement in session notes).
+> Recommended order: **#91 → #92** (governance debt) → **#83 → #84**
+> (project detail-view cluster; #82 is Done, which unblocks **#67**) → **#71**
+> (retrieval reranking, spec already written).
 >
 > **Note on ID #96:** the header count reflects ID **96**, which was assigned to the
 > *batch spec* `docs/specs/spec-workflow-hardening-79-85.md` covering #79+#85 — there
