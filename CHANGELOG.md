@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+### Documentation
+
+- **OpenCode sessions now end with a paste-ready next prompt.** A new rule,
+  [`.opencode/rules/paste-next-prompt.md`](.opencode/rules/paste-next-prompt.md), loaded
+  through [`opencode.json`](opencode.json), adds to the existing `Recommended Next Step`
+  hand-off. After it come: any value the user must supply, a self-contained prompt with
+  fixed fields (action, scope, source files, allowed actions, stop conditions, checks,
+  evidence destination), and the step after that. Cline and Continue are unchanged.
+
 ### Added
 - **Truncated-response indicator + higher Max tokens ceiling.** Users reported
   replies "cut off mid-thought." The client never trims assistant text — a

@@ -89,7 +89,8 @@ back to the user — ends with a mandatory **`Recommended Next Step`** section s
 one action, why it comes next, what it enables, and the impact of skipping it. Canonical
 definition: [`docs/rail-pipeline.md`](docs/rail-pipeline.md) § "Recommended Next Step".
 Harness wiring: `.clinerules/recommended-next-step.md` (Cline) ·
-`.continue/rules/recommended-next-step.md` (Continue).
+`.continue/rules/recommended-next-step.md` (Continue) ·
+`.opencode/rules/paste-next-prompt.md` (OpenCode — adds a paste-ready next prompt).
 
 ---
 
