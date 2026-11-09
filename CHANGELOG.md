@@ -19,6 +19,30 @@
   Frontend-only; no proxy or runtime-dep change.
 
 ### Fixed
+- **The Docker image can now start the app.** The [`Dockerfile`](Dockerfile) copied six
+  backend files and the three frontend files into one flat `/app` folder, then ran
+  `python server.py`. But `backend/server.py` finds the frontend and its data folders
+  relative to the folder above `backend/`, and it imports its own modules as
+  `backend.<module>`. In the flat layout it looked in the wrong places, and 10 of the 16
+  backend modules were never copied. The non-root user also could not create the data
+  folders the server makes at start-up.
+  - **Fix.** The image now keeps the repo layout (`/app/backend/*.py`,
+    `/app/frontend/{index.html,app.js,styles.css}`), runs `python backend/server.py`, and
+    gives `appuser` ownership of `/app` only (not `-R`), so it can create data folders while
+    the code stays read-only. Tests and `.env` are still left out.
+  - **Tests first.** The new
+    [`backend/tests/python/test_dockerfile.py`](backend/tests/python/test_dockerfile.py)
+    reads the Dockerfile and resolves its `COPY` lines against the real file tree. It checks
+    that every module `server.py` imports, directly or indirectly, lands in
+    `/app/backend/`; that the frontend lands in `/app/frontend/`; that the start command runs
+    `backend/server.py`; that `/app` is writable by `appuser`; and that neither tests nor
+    `.env` are copied. Four of its seven tests failed before the fix. It runs without
+    Docker.
+  - **Not yet container-tested.** Docker was not running on the development machine, so no
+    image was built. Instead the image layout was recreated in a temporary folder and the
+    server was started from it: `GET /config` and `GET /` both returned 200, and the data
+    folders were created next to `backend/`.
+
 - **Streamed chat replies are now valid HTTP.** The SSE relay in
   [`backend/proxy_handlers.py`](backend/proxy_handlers.py) sent a
   `Transfer-Encoding: chunked` header but then wrote bare SSE bytes. It sent no chunk-size

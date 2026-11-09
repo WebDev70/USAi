@@ -3,7 +3,7 @@
 # WHY: docs/principles.md §3 — `docker compose up` is the single, reproducible
 # bootstrap for the app, replacing the manual venv + run steps. This is dev/deploy
 # tooling (it ships nothing INTO the app per §1); the container's runtime surface
-# is still only the Python stdlib + python-dotenv.
+# is still only the Python stdlib + the hash-pinned requirements.txt packages.
 #
 #   docker compose up --build        # start (build on first run)
 #   docker compose down              # stop

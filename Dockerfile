@@ -3,7 +3,7 @@
 # WHY: docs/principles.md §3 — running the app should be DECLARATIVE and
 # REPRODUCIBLE, not a list of manual steps. This image is dev/deploy tooling
 # (per §1, Docker ships nothing INTO the app); the container's runtime surface is
-# still only the Python stdlib + python-dotenv.
+# still only the Python stdlib + the hash-pinned requirements.txt packages.
 #
 # Build & run via the Makefile / docker-compose (preferred), or directly:
 #   docker build -t usai-chat .
@@ -22,16 +22,26 @@ RUN useradd --create-home --uid 10001 appuser
 WORKDIR /app
 
 # Install ONLY the runtime dependency first for better layer caching.
-# requirements.txt is the single source of truth for runtime deps (python-dotenv).
+# requirements.txt is the single source of truth for runtime deps (python-dotenv,
+# pypdf and its transitive typing_extensions), all hash-pinned.
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy just the files the running app needs (keeps the image minimal & auditable).
+# Copy just the files the running app needs (keeps the image minimal & auditable),
+# preserving the repo layout. backend/server.py anchors every path on REPO_ROOT
+# (the parent of backend/) and imports its siblings as `backend.<module>`, so the
+# code must live in /app/backend/ and the static assets in /app/frontend/.
+# Flattening them into /app breaks both. The globs pick up every backend module
+# but not backend/tests/ or frontend/tests/, so no test code ships.
 # .env is intentionally NOT copied — it's provided at run time via --env-file /
 # compose env_file, so secrets never bake into the image.
-COPY backend/server.py backend/proxy_handlers.py backend/session_handlers.py \
-     backend/memory_handlers.py backend/mcp_handlers.py backend/projects_handlers.py ./
-COPY frontend/index.html frontend/app.js frontend/styles.css ./
+COPY backend/*.py backend/
+COPY frontend/index.html frontend/app.js frontend/styles.css frontend/
+
+# server.py creates its data dirs (.chunk_cache/, .projects/, logs/, …) and
+# chat_history.json under /app at start-up. Give the non-root user /app itself
+# (not -R) so it can write data there, while the code stays root-owned and read-only.
+RUN chown appuser:appuser /app
 
 USER appuser
 EXPOSE 8000
@@ -40,4 +50,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/config', timeout=2).status==200 else 1)"
 
-CMD ["python", "server.py"]
+CMD ["python", "backend/server.py"]
