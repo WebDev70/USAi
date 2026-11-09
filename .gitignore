@@ -9,6 +9,8 @@ Archive/
 
 # Continue extension — MCP server configs may contain API keys (e.g. Context7)
 .continue/mcpServers/
+# Roo extension — same risk: mcp.json carries the Context7 Bearer key inline
+.roo/mcp.json
 
 # Runtime/local state written by the server (not source)
 chat_history.json
