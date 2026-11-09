@@ -1150,6 +1150,119 @@ class ProxyFirstFrameNotDroppedTests(unittest.TestCase):
                 msg=f'first SSE frame dropped on attempt {attempt + 1}')
 
 
+class _ChunkedSlowStreamUpstreamHandler(BaseHTTPRequestHandler):
+    """HTTP/1.1 upstream that sends its SSE body with chunked transfer-encoding.
+
+    Real OpenAI-compatible gateways stream this way. The relay must decode the
+    upstream framing rather than leak its hex chunk-size lines into the body.
+    """
+
+    protocol_version = 'HTTP/1.1'
+    inter_chunk_delay = 0.3
+
+    def log_message(self, *args):
+        pass
+
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length', 0))
+        if length:
+            self.rfile.read(length)
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Transfer-Encoding', 'chunked')
+        self.end_headers()
+        frames = [f'data: chunk{i}\n\n'.encode('utf-8') for i in range(4)]
+        frames.append(b'data: [DONE]\n\n')
+        for i, frame in enumerate(frames):
+            self.wfile.write(b'%x\r\n%s\r\n' % (len(frame), frame))
+            self.wfile.flush()
+            if i < len(frames) - 1:
+                time.sleep(self.inter_chunk_delay)
+        self.wfile.write(b'0\r\n\r\n')
+        self.wfile.flush()
+
+
+class ProxyStreamFramingTests(unittest.TestCase):
+    """Regression: the streamed reply must be valid HTTP/1.1 chunked framing.
+
+    The relay advertised `Transfer-Encoding: chunked` but wrote raw SSE bytes
+    with no chunk-size lines and no terminating zero chunk. Raw-socket tests
+    only grep for markers, so they passed; any real HTTP client (http.client,
+    browsers' fetch) failed to parse the body. These tests read through
+    http.client, so malformed framing fails them.
+    """
+
+    EXPECTED = (b'data: chunk0\n\ndata: chunk1\n\ndata: chunk2\n\n'
+                b'data: chunk3\n\ndata: [DONE]\n\n')
+
+    @classmethod
+    def setUpClass(cls):
+        cls._saved_config = dict(server.CONFIG)
+        cls._ups = {}
+        for name, handler in (('plain', _SlowStreamUpstreamHandler),
+                              ('chunked', _ChunkedSlowStreamUpstreamHandler)):
+            up = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+            threading.Thread(target=up.serve_forever, daemon=True).start()
+            cls._ups[name] = up
+        server.CONFIG = dict(cls._saved_config)
+        server.CONFIG.update({'api_key': 'k', '_test_allow_loopback': True})
+        cls._app = ThreadingHTTPServer(('127.0.0.1', 0),
+                                       server.EnvConfigHTTPRequestHandler)
+        cls._port = cls._app.server_address[1]
+        threading.Thread(target=cls._app.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._app.shutdown(); cls._app.server_close()
+        for up in cls._ups.values():
+            up.shutdown(); up.server_close()
+        server.CONFIG = cls._saved_config
+
+    def _stream_via_http_client(self, upstream):
+        """Return (status, headers, body, first_event_at, done_at) via http.client."""
+        import http.client
+        port = self._ups[upstream].server_address[1]
+        server.CONFIG['base_url'] = f'http://127.0.0.1:{port}'
+        server.CONFIG['_test_allow_loopback'] = True
+        conn = http.client.HTTPConnection('127.0.0.1', self._port, timeout=10)
+        try:
+            body = json.dumps({'stream': True, 'messages': []})
+            conn.request('POST', '/api/v1/chat/completions', body=body,
+                         headers={'Content-Type': 'application/json'})
+            resp = conn.getresponse()
+            received = b''
+            first_event_at = done_at = None
+            while True:
+                piece = resp.read1(4096)  # raises IncompleteRead on bad framing
+                if not piece:
+                    break
+                received += piece
+                now = time.monotonic()
+                if first_event_at is None and b'data: chunk0' in received:
+                    first_event_at = now
+                if done_at is None and b'[DONE]' in received:
+                    done_at = now
+            return resp.status, resp.headers, received, first_event_at, done_at
+        finally:
+            conn.close()
+
+    def _assert_valid_stream(self, upstream):
+        status, headers, body, first_at, done_at = self._stream_via_http_client(upstream)
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get('Transfer-Encoding', '').lower(), 'chunked')
+        self.assertEqual(body, self.EXPECTED,
+                         msg='decoded stream body must equal the upstream SSE payload')
+        self.assertIsNotNone(first_at)
+        self.assertGreater(done_at - first_at, 0.4,
+                           msg='stream was buffered rather than relayed incrementally')
+
+    def test_close_delimited_upstream_yields_valid_chunked_stream(self):
+        self._assert_valid_stream('plain')
+
+    def test_chunked_upstream_is_decoded_and_rechunked(self):
+        self._assert_valid_stream('chunked')
+
+
 class _MalformedJsonUpstreamHandler(BaseHTTPRequestHandler):
     """Replies with invalid JSON (non-streaming) to test proxy robustness."""
 

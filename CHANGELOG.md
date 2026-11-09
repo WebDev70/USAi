@@ -19,6 +19,24 @@
   Frontend-only; no proxy or runtime-dep change.
 
 ### Fixed
+- **Streamed chat replies are now valid HTTP.** The SSE relay in
+  [`backend/proxy_handlers.py`](backend/proxy_handlers.py) sent a
+  `Transfer-Encoding: chunked` header but then wrote bare SSE bytes. It sent no chunk-size
+  lines and no closing zero-length chunk. A comment wrongly said the stdlib handler adds the
+  framing itself; it does not. Real HTTP clients failed partway through the body
+  (`http.client` raised `IncompleteRead`). The existing raw-socket tests only searched for
+  text markers, so they still passed.
+  - **Fix.** Each upstream read is now wrapped as `<hex-length>\r\n<data>\r\n`, and the
+    stream ends with `0\r\n\r\n`. Reads now go through `HTTPResponse.read1`, which decodes
+    the upstream's own chunked or length framing. Before, they went through the raw buffered
+    reader. Chunked upstream framing is no longer passed through into the body or the raw
+    capture. Relaying stays incremental, and the first-frame and disconnect handling are
+    unchanged.
+  - **Tests first.** The new `ProxyStreamFramingTests` read the stream through `http.client`,
+    once from a connection-close upstream and once from a chunked upstream. They check that
+    the decoded body is exactly the upstream SSE payload and that events still arrive
+    incrementally. They failed before the fix and pass now.
+
 - **"No assistant text received." ghost turn on upstream rate-limit (streaming).**
   When the gateway is rate-limited *after* committing to a `200 OK` streaming
   response, it delivers the error **inside** the SSE body as
