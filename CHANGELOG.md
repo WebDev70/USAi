@@ -751,6 +751,31 @@
 
 ### Security
 
+- **`pypdf` upgraded to 6.21.4 to clear 18 known vulnerabilities.** `pip-audit` was failing
+  on 18 GHSA advisories against the `6.19.0` pin, fixed across 6.21.2–6.21.4. `pypdf` parses
+  PDFs that users upload, so these flaws could be reached through file uploads.
+  [`requirements.txt`](requirements.txt) now pins `pypdf==6.21.4` with fresh `sha256` hashes
+  for the published wheel and source archive. The hashes were checked by downloading both
+  files and running `pip hash`. This is the newest 6.x release: `7.0.0` requires Python
+  3.10, which would break the 3.9 CI baseline. Its only runtime dependency is still
+  `typing_extensions>=4.0`, which the existing `4.15.0` pin satisfies. Verified by
+  reinstalling with `pip install --require-hashes` and running `./run-tests.sh --coverage`
+  (1,035 Python tests, including the end-to-end PDF extraction test). `pip-audit` now
+  reports no unignored vulnerabilities.
+
+- **`pypdf` upgraded to 6.19.0 to clear three known vulnerabilities (#155).** The security
+  scan's dependency step was failing on `PYSEC-2026-4157`, `PYSEC-2026-4159`, and
+  `PYSEC-2026-4160`, all of which affect the previous `6.18.1` pin. `pypdf` is one of only
+  two approved runtime packages — it reads text out of PDF files in
+  [`backend/file_parser.py`](backend/file_parser.py) — so the fix is a version bump and
+  nothing else. [`requirements.txt`](requirements.txt:43) now pins `pypdf==6.19.0` with
+  fresh `sha256` hashes for the published wheel and source archive, which is how pip proves
+  the downloaded bytes are the real ones. `6.19.0` still supports Python 3.9, so the 3.9 CI
+  baseline is unaffected. Verified by reinstalling with `pip install --require-hashes` and
+  re-running the suite: 971 Python tests pass, including the end-to-end PDF extraction test
+  that builds a real PDF and reads the text back. `pip-audit` now reports no unignored
+  vulnerabilities.
+
 - **`/extract-text` upload DoS guard (fix):** The file-upload endpoint now
   enforces a documented 25 MB size cap. It returns **413 Payload Too Large**
   before reading the request body when `Content-Length` exceeds the cap, and
